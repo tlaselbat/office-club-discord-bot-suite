@@ -4,20 +4,26 @@ import { createDiscordClient } from './bot/client.js';
 import type { Environment } from './config/environment.js';
 import { createPrismaClient } from './database/prisma.js';
 import { PrismaJobStore } from './database/job-store.js';
-import { PrismaSteamLinkRepository } from './database/steam-link-repository.js';
+import { PrismaSteamLinkRepository } from './modules/tenman/database/steam-link-repository.js';
 import type { PrismaClient } from './generated/prisma/client.js';
 import { createHttpServer } from './http/server.js';
 import type { Logger } from 'pino';
-import { MatchService } from './services/match-service.js';
-import { SteamLinkService } from './services/steam-link-service.js';
-import { MatchCredentialService } from './services/match-credential-service.js';
-import { MatchZyEventService } from './services/matchzy-event-service.js';
-import { StartupRecovery } from './services/startup-recovery.js';
-import { MatchControlService } from './services/match-control-service.js';
-import { CredentialCipher } from './services/credential-cipher.js';
-import { DatHostClient } from './integrations/dathost/client.js';
-import { createJobHandlers } from './jobs/handlers.js';
+import { MatchService } from './modules/tenman/services/match-service.js';
+import { SteamLinkService } from './modules/tenman/services/steam-link-service.js';
+import { MatchCredentialService } from './modules/tenman/services/match-credential-service.js';
+import { MatchZyEventService } from './modules/tenman/services/matchzy-event-service.js';
+import { StartupRecovery } from './modules/tenman/services/startup-recovery.js';
+import { MatchControlService } from './modules/tenman/services/match-control-service.js';
+import { CredentialCipher } from './modules/tenman/services/credential-cipher.js';
+import { DiagnosticsService } from './modules/tenman/services/diagnostics-service.js';
+import { GuildResourceService } from './modules/tenman/services/guild-resource-service.js';
+import { GuildSettingsService } from './modules/tenman/services/guild-settings-service.js';
+import { WebSessionService } from './services/web-session-service.js';
+import { DatHostClient } from './modules/tenman/integrations/dathost/client.js';
 import { WorkerRunner } from './jobs/runner.js';
+import { ModuleRegistry } from './core/modules/registry.js';
+import { createTenManModule } from './modules/tenman/module.js';
+import { createRewardsModule } from './modules/rewards/module.js';
 
 export interface Application {
   prisma: PrismaClient;
@@ -46,19 +52,6 @@ export async function createApplication(
     password: environment.DATHOST_PASSWORD,
   });
   const matchControlService = new MatchControlService(prisma, dathost, logger);
-  const http = await createHttpServer({
-    logger,
-    readiness: async () => {
-      try {
-        await prisma.$queryRaw`SELECT 1`;
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    steam: { steamLinkService, publicBaseUrl: new URL(environment.PUBLIC_BASE_URL) },
-    matchzy: { prisma, credentials: credentialService, events: matchzyEventService },
-  });
   const discord = createDiscordClient({
     token: environment.DISCORD_TOKEN,
     clientId: environment.DISCORD_CLIENT_ID,
@@ -71,9 +64,37 @@ export async function createApplication(
     componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
     logger,
   });
-  const worker = new WorkerRunner(
-    new PrismaJobStore(prisma),
-    createJobHandlers({
+  const guildSettingsService = new GuildSettingsService(prisma, discord);
+  const guildResourceService = new GuildResourceService(prisma, discord, logger);
+  const diagnosticsService = new DiagnosticsService(prisma, discord, dathost);
+  const http = await createHttpServer({
+    logger,
+    readiness: async () => {
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    steam: { steamLinkService, publicBaseUrl: new URL(environment.PUBLIC_BASE_URL) },
+    matchzy: { prisma, credentials: credentialService, events: matchzyEventService },
+    admin: {
+      prisma,
+      discord,
+      settings: guildSettingsService,
+      resources: guildResourceService,
+      diagnostics: diagnosticsService,
+      sessions: new WebSessionService(prisma),
+      publicBaseUrl: new URL(environment.PUBLIC_BASE_URL),
+      clientId: environment.DISCORD_CLIENT_ID,
+      clientSecret: environment.DISCORD_CLIENT_SECRET,
+      ownerIds: environment.PANEL_OWNER_DISCORD_USER_IDS,
+      sessionSecret: environment.PANEL_SESSION_SECRET,
+    },
+  });
+  const modules = new ModuleRegistry([
+    createTenManModule({
       prisma,
       dathost,
       discord,
@@ -86,6 +107,16 @@ export async function createApplication(
       matchzyReconciliationIntervalMs: environment.MATCHZY_RECONCILIATION_INTERVAL_MS,
       logger,
     }),
+    createRewardsModule({
+      prisma,
+      discord,
+      logger,
+      componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
+    }),
+  ]);
+  const worker = new WorkerRunner(
+    new PrismaJobStore(prisma),
+    modules.jobHandlers(),
     {
       workerId: 'primary',
       pollIntervalMs: environment.WORKER_POLL_INTERVAL_MS,
@@ -105,11 +136,17 @@ export async function createApplication(
       await prisma.$connect();
       await http.listen({ host: environment.HOST, port: environment.PORT });
       await discord.login(environment.DISCORD_TOKEN);
+      await prisma.guildSettings.createMany({
+        data: [...discord.guilds.cache.keys()].map((guildId) => ({ guildId })),
+        skipDuplicates: true,
+      });
       await new StartupRecovery(prisma).run();
+      await modules.start();
       worker.start();
     },
     async stop() {
       await worker.stop();
+      await modules.stop();
       await discord.destroy();
       await http.close();
       await prisma.$disconnect();

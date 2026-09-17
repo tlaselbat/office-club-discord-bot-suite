@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MatchZyEventService } from '../../../src/services/matchzy-event-service.js';
+import { MatchZyEventService } from '../../../src/modules/tenman/services/matchzy-event-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
 const matchId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';

@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   process.once('SIGINT', () => void shutdown('SIGINT'));
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
   await application.start();
-  logger.info({ action: 'startup', result: 'ready' }, '10Man backend ready');
+  logger.info({ action: 'startup', result: 'ready' }, 'Office Club bot suite ready');
 }
 
 main().catch((error: unknown) => {

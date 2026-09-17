@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from 'pino';
-import { MatchZyReconciliationService } from '../../../src/services/matchzy-reconciliation-service.js';
+import { MatchZyReconciliationService } from '../../../src/modules/tenman/services/matchzy-reconciliation-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
-import type { DatHostClient } from '../../../src/integrations/dathost/client.js';
+import type { DatHostClient } from '../../../src/modules/tenman/integrations/dathost/client.js';
 
 function createMockPrisma(matchOverrides: object = {}): PrismaClient {
   return {

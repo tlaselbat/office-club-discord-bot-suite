@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RandomTeamBalancer, validateLockedTeams } from '../../src/domain/teams.js';
+import { RandomTeamBalancer, validateLockedTeams } from '../../src/modules/tenman/domain/teams.js';
 
 const players = Array.from({ length: 10 }, (_, index) => ({
   discordUserId: String(1000 + index),

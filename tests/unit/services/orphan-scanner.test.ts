@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { OrphanScanner } from '../../../src/services/orphan-scanner.js';
+import { OrphanScanner } from '../../../src/modules/tenman/services/orphan-scanner.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
-import type { DatHostServer } from '../../../src/integrations/dathost/schemas.js';
+import type { DatHostServer } from '../../../src/modules/tenman/integrations/dathost/schemas.js';
 
 function createMockPrisma(overrides: { match?: object; attempt?: object } = {}): PrismaClient {
   return {

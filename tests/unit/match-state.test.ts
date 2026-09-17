@@ -3,7 +3,7 @@ import {
   canTransitionMatch,
   occupiesGuildSlot,
   transitionMatch,
-} from '../../src/domain/match-state.js';
+} from '../../src/modules/tenman/domain/match-state.js';
 
 describe('match state machine', () => {
   it('allows the expected forward lifecycle', () => {

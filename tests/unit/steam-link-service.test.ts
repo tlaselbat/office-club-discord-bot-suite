@@ -4,7 +4,7 @@ import {
   type SteamIdentityRecord,
   type SteamLinkRepository,
   type SteamLinkSessionRecord,
-} from '../../src/services/steam-link-service.js';
+} from '../../src/modules/tenman/services/steam-link-service.js';
 
 class MemoryRepository implements SteamLinkRepository {
   public sessions = new Map<string, SteamLinkSessionRecord>();

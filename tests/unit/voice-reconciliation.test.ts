@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { desiredLobbyMoves, desiredTeamVoiceMoves } from '../../src/voice/reconciliation.js';
+import {
+  desiredLobbyMoves,
+  desiredTeamVoiceMoves,
+} from '../../src/modules/tenman/voice/reconciliation.js';
 
 describe('voice reconciliation', () => {
   it('uses persisted teams and marks disconnected users waiting', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildMatchZyConfig } from '../../src/integrations/matchzy/config-builder.js';
-import { renderMatchZyCommand } from '../../src/integrations/matchzy/commands.js';
-import { matchzyEventSchema } from '../../src/integrations/matchzy/schemas.js';
+import { buildMatchZyConfig } from '../../src/modules/tenman/integrations/matchzy/config-builder.js';
+import { renderMatchZyCommand } from '../../src/modules/tenman/integrations/matchzy/commands.js';
+import { matchzyEventSchema } from '../../src/modules/tenman/integrations/matchzy/schemas.js';
 
 const players = Array.from({ length: 10 }, (_, index) => ({
   steamId64: String(76561197960265728n + BigInt(index)),

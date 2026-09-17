@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CleanupOrchestrator } from '../../../src/orchestrator/cleanup.js';
+import { CleanupOrchestrator } from '../../../src/modules/tenman/orchestrator/cleanup.js';
 
 const resource = {
   matchId: 'match',

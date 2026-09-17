@@ -3,7 +3,7 @@ import {
   decideReconciliation,
   shouldReconcile,
   type ActiveMatchStatus,
-} from '../../../src/integrations/matchzy/reconciliation.js';
+} from '../../../src/modules/tenman/integrations/matchzy/reconciliation.js';
 
 const match: ActiveMatchStatus = {
   matchId: 'internal',

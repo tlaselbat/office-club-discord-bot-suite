@@ -95,6 +95,17 @@ enum ManagedSetupStep {
   TEAM2_VOICE_CREATED
 }
 
+enum RewardSource {
+  TEXT_ACTIVITY
+  VOICE_ACTIVITY
+  ADMIN_ADJUSTMENT
+}
+
+enum RewardVoiceSessionStatus {
+  ACTIVE
+  CLOSED
+}
+
 model User {
   discordUserId   String          @id @map("discord_user_id")
   displayName     String          @map("display_name")
@@ -102,6 +113,7 @@ model User {
   updatedAt       DateTime        @updatedAt @map("updated_at")
   steamIdentities SteamIdentity[]
   matchPlayers    MatchPlayer[]
+  rewardMembers   RewardMember[]
 
   @@map("users")
 }
@@ -135,7 +147,34 @@ model SteamLinkSession {
   @@map("steam_link_sessions")
 }
 
+model WebSession {
+  id            String   @id @default(uuid()) @db.Uuid
+  tokenHash     String   @unique @map("token_hash")
+  discordUserId String   @map("discord_user_id")
+  expiresAt     DateTime @map("expires_at")
+  lastSeenAt    DateTime @default(now()) @map("last_seen_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("web_sessions")
+}
+
 model GuildSettings {
+  guildId                   String               @id @map("guild_id")
+  createdAt                 DateTime             @default(now()) @map("created_at")
+  updatedAt                 DateTime             @updatedAt @map("updated_at")
+  tenManSettings            TenManSettings?
+  rewardSettings            RewardSettings?
+  rewardMembers             RewardMember[]
+  rewardLevels              RewardLevel[]
+  rewardLedgerEntries       RewardLedgerEntry[]
+  rewardActivityReceipts    RewardActivityReceipt[]
+  rewardVoiceSessions       RewardVoiceSession[]
+
+  @@map("suite_guilds")
+}
+
+model TenManSettings {
   guildId                 String   @id @map("guild_id")
   lobbyTextChannelId      String?  @map("lobby_text_channel_id")
   lobbyVoiceChannelId     String?  @map("lobby_voice_channel_id")
@@ -158,8 +197,118 @@ model GuildSettings {
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @updatedAt @map("updated_at")
   matches                  Match[]
+  suite                    GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@map("guild_settings")
+}
+
+model RewardSettings {
+  guildId                   String        @id @map("guild_id")
+  enabled                   Boolean       @default(false)
+  textXpAmount              Int           @default(10) @map("text_xp_amount")
+  textCooldownSeconds       Int           @default(60) @map("text_cooldown_seconds")
+  voiceXpAmount             Int           @default(5) @map("voice_xp_amount")
+  voiceIntervalSeconds      Int           @default(300) @map("voice_interval_seconds")
+  textChannelIds            String[]      @default([]) @map("text_channel_ids")
+  voiceChannelIds           String[]      @default([]) @map("voice_channel_ids")
+  tagRequiredSeconds        Int           @default(2592000) @map("tag_required_seconds")
+  tagRewardRoleId           String?       @map("tag_reward_role_id")
+  tagReconcileSeconds       Int           @default(900) @map("tag_reconcile_seconds")
+  version                   Int           @default(0)
+  createdAt                 DateTime      @default(now()) @map("created_at")
+  updatedAt                 DateTime      @updatedAt @map("updated_at")
+  guild                     GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@map("reward_settings")
+}
+
+model RewardMember {
+  guildId             String              @map("guild_id")
+  discordUserId       String              @map("discord_user_id")
+  effectiveXp         Int                 @default(0) @map("effective_xp")
+  currentLevel        Int                 @default(0) @map("current_level")
+  lastTextAwardAt     DateTime?           @map("last_text_award_at")
+  tagQualifiedSince   DateTime?           @map("tag_qualified_since")
+  tagLastCheckedAt    DateTime?           @map("tag_last_checked_at")
+  tagRoleGranted      Boolean             @default(false) @map("tag_role_granted")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  guild               GuildSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  user                User                @relation(fields: [discordUserId], references: [discordUserId])
+  ledgerEntries       RewardLedgerEntry[]
+  voiceSessions       RewardVoiceSession[]
+
+  @@id([guildId, discordUserId])
+  @@index([guildId, effectiveXp])
+  @@map("reward_members")
+}
+
+model RewardLevel {
+  guildId       String        @map("guild_id")
+  level         Int
+  xpThreshold   Int           @map("xp_threshold")
+  label         String?
+  roleId        String?       @map("role_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  guild         GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@id([guildId, level])
+  @@unique([guildId, xpThreshold])
+  @@map("reward_levels")
+}
+
+model RewardLedgerEntry {
+  id                   String        @id @default(uuid()) @db.Uuid
+  guildId              String        @map("guild_id")
+  discordUserId        String        @map("discord_user_id")
+  amount               Int
+  source               RewardSource
+  idempotencyKey       String        @map("idempotency_key")
+  actorDiscordUserId   String?       @map("actor_discord_user_id")
+  reason               String?
+  metadata             Json
+  createdAt            DateTime      @default(now()) @map("created_at")
+  guild                GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  member               RewardMember @relation(fields: [guildId, discordUserId], references: [guildId, discordUserId], onDelete: Cascade)
+
+  @@unique([guildId, idempotencyKey])
+  @@index([guildId, discordUserId, createdAt])
+  @@map("reward_ledger_entries")
+}
+
+model RewardActivityReceipt {
+  id             String        @id @default(uuid()) @db.Uuid
+  guildId        String        @map("guild_id")
+  discordUserId  String        @map("discord_user_id")
+  idempotencyKey String        @map("idempotency_key")
+  source         RewardSource
+  accepted       Boolean
+  createdAt      DateTime      @default(now()) @map("created_at")
+  guild          GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, idempotencyKey])
+  @@index([guildId, createdAt])
+  @@map("reward_activity_receipts")
+}
+
+model RewardVoiceSession {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  guildId              String                   @map("guild_id")
+  discordUserId        String                   @map("discord_user_id")
+  channelId            String                   @map("channel_id")
+  status               RewardVoiceSessionStatus @default(ACTIVE)
+  connectedAt          DateTime                 @map("connected_at")
+  checkpointAt         DateTime                 @map("checkpoint_at")
+  closedAt             DateTime?                @map("closed_at")
+  version              Int                      @default(0)
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+  guild                GuildSettings            @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  member               RewardMember             @relation(fields: [guildId, discordUserId], references: [guildId, discordUserId], onDelete: Cascade)
+
+  @@index([guildId, status, checkpointAt])
+  @@map("reward_voice_sessions")
 }
 
 model GameProfile {
@@ -206,7 +355,7 @@ model Match {
   startedAt                DateTime?             @map("started_at")
   finishedAt               DateTime?             @map("finished_at")
   updatedAt                DateTime              @updatedAt @map("updated_at")
-  guild                    GuildSettings         @relation(fields: [guildId], references: [guildId])
+  guild                    TenManSettings        @relation(fields: [guildId], references: [guildId])
   profile                  GameProfile           @relation(fields: [selectedGameProfileKey], references: [key])
   players                  MatchPlayer[]
   transitions              MatchStateTransition[]

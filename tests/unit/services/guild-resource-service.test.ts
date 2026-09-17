@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GuildResourceService } from '../../../src/services/guild-resource-service.js';
+import { GuildResourceService } from '../../../src/modules/tenman/services/guild-resource-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
 function createService(settings: object | null, activeMatch: object | null = null) {
   const transaction = {
     $executeRaw: vi.fn().mockResolvedValue(0),
-    guildSettings: {
+    tenManSettings: {
       findUnique: vi.fn().mockResolvedValue(settings),
       update: vi.fn().mockResolvedValue(undefined),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -14,7 +14,7 @@ function createService(settings: object | null, activeMatch: object | null = nul
     auditEvent: { create: vi.fn().mockResolvedValue(undefined) },
   };
   const prisma = {
-    guildSettings: { findUnique: vi.fn().mockResolvedValue(settings) },
+    tenManSettings: { findUnique: vi.fn().mockResolvedValue(settings) },
     match: { findFirst: vi.fn().mockResolvedValue(activeMatch) },
     $transaction: vi.fn(async (callback: (client: typeof transaction) => Promise<unknown>) =>
       callback(transaction),
@@ -46,7 +46,7 @@ describe('GuildResourceService lifecycle guards', () => {
     await expect(
       service.disable('123456789012345678', '223456789012345678', 'correlation'),
     ).resolves.toBe(true);
-    expect(transaction.guildSettings.update).toHaveBeenCalledWith({
+    expect(transaction.tenManSettings.update).toHaveBeenCalledWith({
       where: { guildId: '123456789012345678' },
       data: { enabled: false, version: { increment: 1 } },
     });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PanelService } from '../../../src/services/panel-service.js';
+import { PanelService } from '../../../src/modules/tenman/services/panel-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
 function createMockPrisma(matchOverrides: object = {}): PrismaClient {

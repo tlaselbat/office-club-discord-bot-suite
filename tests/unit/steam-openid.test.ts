@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SteamOpenId } from '../../src/integrations/steam/openid.js';
+import { SteamOpenId } from '../../src/modules/tenman/integrations/steam/openid.js';
 
 const returnUrl = 'https://bot.example.com/auth/steam/callback';
 

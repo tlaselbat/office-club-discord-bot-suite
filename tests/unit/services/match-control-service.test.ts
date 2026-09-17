@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from 'pino';
-import { MatchControlService } from '../../../src/services/match-control-service.js';
+import { MatchControlService } from '../../../src/modules/tenman/services/match-control-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
-import type { DatHostClient } from '../../../src/integrations/dathost/client.js';
+import type { DatHostClient } from '../../../src/modules/tenman/integrations/dathost/client.js';
 
 function createMockPrisma(matchOverrides: object = {}): PrismaClient {
   const match = {

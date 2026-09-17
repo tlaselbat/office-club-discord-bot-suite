@@ -2,6 +2,8 @@ import pino, { type Logger } from 'pino';
 
 const redactPaths = [
   'discordToken',
+  'discordClientSecret',
+  'panelSessionSecret',
   'dathostPassword',
   'rconPassword',
   'joinPassword',
@@ -10,6 +12,8 @@ const redactPaths = [
   'req.headers.authorization',
   'req.headers.x-matchzy-token',
   '*.discordToken',
+  '*.discordClientSecret',
+  '*.panelSessionSecret',
   '*.dathostPassword',
   '*.rconPassword',
   '*.joinPassword',

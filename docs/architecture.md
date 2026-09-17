@@ -15,13 +15,21 @@ MatchZy manages the CS2 match and reports authenticated events.
 | Component            | Responsibility                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------ |
 | Discord bot          | Slash commands, signed components, persistent panels, private connection details, voice movement |
-| Fastify HTTP service | Health checks, Steam OpenID, authenticated MatchZy config and webhook endpoints                  |
+| Fastify HTTP service | Health checks, owner-only web configuration, Steam OpenID, and authenticated MatchZy endpoints   |
 | Worker runner        | Exclusively leases durable jobs and executes one polling cycle at a time                         |
 | PostgreSQL           | Match state, one-active-slot invariant, jobs, credentials, events, audit history                 |
 | DatHost client       | Disposable server creation, duplication, configuration, lifecycle, and console commands          |
 | MatchZy integration  | Config builder, event ingestion, score updates, reconciliation, semantic command allowlist       |
 
 Slash command definitions are deployed explicitly with `pnpm discord:register`; application startup does not modify global Discord commands.
+
+## Module architecture
+
+The application is a modular monolith: one Discord client, Fastify server, PostgreSQL database, and durable worker host compile-time modules through `src/core/modules`. The registry rejects duplicate module, command, component-prefix, and job namespaces and composes startup/shutdown hooks. Disabled modules remain registered but reject or ignore new mutations while preserving durable state.
+
+`GuildSettings` maps to the shared `suite_guilds` parent. `TenManSettings` retains the existing `guild_settings` table and all match/channel/provisioning configuration, while `RewardSettings` owns rewards policy. This separation lets each module evolve and toggle independently without weakening existing match foreign keys.
+
+Member Rewards uses an immutable signed-amount ledger plus transactionally maintained effective XP and level projections. Text awards use database-idempotent cooldown buckets. Voice sessions persist checkpoints and reconcile after restart. Guild-tag observations treat Discord fetch errors as unknown, so outages never reset a streak or remove a loyalty role.
 
 ## Guild and match invariants
 
@@ -88,8 +96,10 @@ Soft disable prevents only new match creation. Existing match components, MatchZ
 
 ## Security model
 
+- The `/admin` panel uses Discord `identify` OAuth, an explicit owner-ID allowlist, hashed eight-hour server-side sessions, session-bound CSRF tokens, no-store responses, and a restrictive content security policy.
+- Panel settings writes reuse guild validation and auditing; managed setup, recovery, teardown, and runtime secrets remain outside the web surface.
 - No raw Discord-to-RCON path exists.
-- MatchZy commands are allowlisted and rendered in `src/integrations/matchzy/commands.ts`.
+- MatchZy commands are allowlisted and rendered in `src/modules/tenman/integrations/matchzy/commands.ts`.
 - MatchZy tokens are scoped (`CONFIG_READ` or `EVENT_WRITE`) and bound to a match and server generation.
 - RCON and join passwords are encrypted with AES-256-GCM; tokens are stored as hashes.
 - Steam OpenID sessions are random, hashed, expiring, and single-use.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderMatchPanel } from '../../../src/bot/panel.js';
+import { renderMatchPanel } from '../../../src/modules/tenman/bot/panel.js';
 
 describe('match panel cleanup UX', () => {
   it('distinguishes a finished match from pending cleanup', () => {

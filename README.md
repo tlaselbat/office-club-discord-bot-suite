@@ -1,9 +1,13 @@
-# Discord CS2 10man Backend
+# Office Club Discord Bot Suite
 
-A production-oriented Discord bot and HTTP backend for organizing privileged Counter-Strike 2 10mans on disposable DatHost servers managed by MatchZy 0.8.15.
+A modular Discord server-management suite with independently configurable member rewards and Counter-Strike 2 10man modules, a secure owner web panel, durable jobs, and PostgreSQL-backed state.
 
 ## What it does
 
+- A compile-time module registry composes Discord commands, interactions, durable jobs, and lifecycle hooks without runtime plugin risk.
+- Member Rewards grants idempotent XP for allowlisted text and voice activity, calculates configurable levels, manages level roles, and exposes profiles and leaderboards.
+- Guild-tag loyalty tracks continuous use of the server's primary-guild identity and grants a configurable role after the required duration.
+- The OAuth-protected `/admin` panel independently configures and toggles modules and records audited manual XP adjustments.
 - A configured privileged user creates one active match per Discord guild.
 - The bot publishes a persistent panel in the configured lobby text channel.
 - Steam-verified users join up to the enabled profile's capacity.
@@ -15,6 +19,7 @@ A production-oriented Discord bot and HTTP backend for organizing privileged Cou
 - MatchZy events persist scores/results and refresh the panel.
 - Finish, cancellation, and provisioning failure trigger safe credential, voice, server, and guild-slot cleanup.
 - Startup recovery resumes unfinished work, while recurring reconciliation and orphan scans detect missed events and unexplained resources.
+- An owner-only web panel at `/admin` configures connected guilds, toggles creation, and runs diagnostics through Discord OAuth.
 
 ## Documentation
 

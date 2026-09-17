@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { CredentialCipher } from '../../src/services/credential-cipher.js';
+import { CredentialCipher } from '../../src/modules/tenman/services/credential-cipher.js';
 
 describe('CredentialCipher', () => {
   it('encrypts and authenticates credentials with match context', () => {

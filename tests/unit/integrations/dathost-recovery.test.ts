@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   assertDeletionAllowed,
   reconcileDuplicate,
-} from '../../../src/integrations/dathost/duplicate-recovery.js';
-import type { DatHostServer } from '../../../src/integrations/dathost/schemas.js';
+} from '../../../src/modules/tenman/integrations/dathost/duplicate-recovery.js';
+import type { DatHostServer } from '../../../src/modules/tenman/integrations/dathost/schemas.js';
 
 const baseAttempt = {
   persistedServerId: null,

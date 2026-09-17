@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSteamId64 } from '../../src/domain/steam-id.js';
+import { isSteamId64 } from '../../src/modules/tenman/domain/steam-id.js';
 
 describe('SteamID64 validation', () => {
   it('accepts a valid individual account ID', () => {

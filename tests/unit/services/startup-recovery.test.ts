@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { StartupRecovery } from '../../../src/services/startup-recovery.js';
+import { StartupRecovery } from '../../../src/modules/tenman/services/startup-recovery.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
 function createMockPrisma(matches: object[]): PrismaClient {

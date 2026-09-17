@@ -1,15 +1,22 @@
+import cookie from '@fastify/cookie';
+import formbody from '@fastify/formbody';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyBaseLogger } from 'fastify';
 import type { Logger } from 'pino';
-import { registerSteamRoutes, type SteamRoutesDependencies } from './routes/steam.js';
-import { registerMatchZyRoutes, type MatchZyRoutesDependencies } from './routes/matchzy.js';
+import { registerAdminRoutes, type AdminRoutesDependencies } from './routes/admin.js';
+import { registerSteamRoutes, type SteamRoutesDependencies } from '../modules/tenman/http/steam.js';
+import {
+  registerMatchZyRoutes,
+  type MatchZyRoutesDependencies,
+} from '../modules/tenman/http/matchzy.js';
 
 export interface HttpServerDependencies {
   logger: Logger;
   readiness: () => Promise<boolean>;
   steam?: SteamRoutesDependencies;
   matchzy?: MatchZyRoutesDependencies;
+  admin?: AdminRoutesDependencies;
 }
 
 export async function createHttpServer(dependencies: HttpServerDependencies) {
@@ -18,8 +25,11 @@ export async function createHttpServer(dependencies: HttpServerDependencies) {
     bodyLimit: 64 * 1024,
     requestIdHeader: false,
   });
+  await app.register(cookie);
+  await app.register(formbody);
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+  if (dependencies.admin !== undefined) registerAdminRoutes(app, dependencies.admin);
   if (dependencies.steam !== undefined) registerSteamRoutes(app, dependencies.steam);
   if (dependencies.matchzy !== undefined) registerMatchZyRoutes(app, dependencies.matchzy);
 

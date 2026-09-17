@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCustomId, parseCustomId } from '../../../src/bot/custom-id.js';
+import { createCustomId, parseCustomId } from '../../../src/modules/tenman/bot/custom-id.js';
 
 const secret = 'a'.repeat(32);
 const payload = { action: 'JOIN', matchId: '123e4567-e89b-12d3-a456-426614174000', version: 3 };

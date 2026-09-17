@@ -8,6 +8,26 @@ const environmentSchema = z.object({
   DATABASE_URL: z.url().refine((value) => value.startsWith('postgresql://'), 'Must be PostgreSQL'),
   DISCORD_TOKEN: z.string().min(1),
   DISCORD_CLIENT_ID: z.string().regex(/^\d{17,20}$/),
+  DISCORD_CLIENT_SECRET: z.string().min(1),
+  PANEL_OWNER_DISCORD_USER_IDS: z.string().transform((value, context) => {
+    const ids = [
+      ...new Set(
+        value
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (ids.length === 0 || ids.some((id) => !/^\d{17,20}$/.test(id))) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Must contain comma-separated Discord user IDs',
+      });
+      return z.NEVER;
+    }
+    return ids;
+  }),
+  PANEL_SESSION_SECRET: z.string().min(32),
   DATHOST_EMAIL: z.email(),
   DATHOST_PASSWORD: z.string().min(1),
   DATHOST_TEMPLATE_SERVER_ID: z.string().min(1),

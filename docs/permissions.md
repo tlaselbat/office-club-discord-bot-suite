@@ -54,6 +54,14 @@ Managed setup, setup recovery, and teardown additionally require guild-level **M
 
 The bot does not currently require Speak for its implemented voice behavior. If server-level or category overrides deny one of these permissions, configuration or diagnostics reports the affected channel.
 
+### Member Rewards roles
+
+The bot requires **Manage Roles** to grant or remove configured level and guild-tag roles. Every configured reward role must be unmanaged and lower than the bot's highest role. The rewards service changes only roles explicitly configured for that module.
+
+Text rewards require access to guild message events but not Message Content. Voice rewards use connection state only. Complete startup and guild-tag reconciliation requires the privileged **Server Members Intent** in the Developer Portal.
+
+The owner allowlist controlling `/admin` may save reward settings, toggle Member Rewards, and issue audited manual XP adjustments. Member-facing reward commands are read-only.
+
 ## Discord application scopes
 
 The invite must include:

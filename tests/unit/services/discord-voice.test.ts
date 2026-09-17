@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DiscordVoiceAdapter } from '../../../src/services/discord-voice.js';
+import { DiscordVoiceAdapter } from '../../../src/modules/tenman/services/discord-voice.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
 function createMockPrisma(overrides: object = {}): PrismaClient {

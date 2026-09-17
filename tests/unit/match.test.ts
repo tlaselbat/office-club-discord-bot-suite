@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MatchAggregate } from '../../src/domain/match.js';
+import { MatchAggregate } from '../../src/modules/tenman/domain/match.js';
 
 const players = Array.from({ length: 10 }, (_, index) => ({
   discordUserId: String(1000 + index),

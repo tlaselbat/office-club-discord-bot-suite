@@ -3,7 +3,7 @@ import {
   adminGeneration,
   createAdminCustomId,
   parseAdminCustomId,
-} from '../../../src/bot/admin-custom-id.js';
+} from '../../../src/modules/tenman/bot/admin-custom-id.js';
 
 const secret = 'a'.repeat(32);
 const payload = {

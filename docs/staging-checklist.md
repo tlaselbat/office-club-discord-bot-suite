@@ -86,6 +86,23 @@
 - [ ] Round/map score appears in ephemeral and persistent panels
 - [ ] `series_end` persists result and queues cleanup
 
+## Member Rewards
+
+- [ ] Server Members Intent is enabled and the bot has Manage Roles
+- [ ] Rewards settings save through `/admin` with valid channel and role allowlists
+- [ ] Stale settings versions and invalid CSRF tokens are rejected
+- [ ] Two messages inside the elapsed cooldown produce one award
+- [ ] Messages outside allowlisted channels and bot/webhook messages produce no award
+- [ ] Voice join, move, leave, restart, disable, and re-enable produce exact whole-interval awards
+- [ ] Removing an active voice channel from the allowlist closes its reward session
+- [ ] Level threshold changes enqueue role reconciliation and never modify unrelated roles
+- [ ] Positive and negative manual adjustments preserve immutable ledger and audit history
+- [ ] Leaderboard paging and profile progress match database totals
+- [ ] Guild-tag wear grants the role only after continuous qualification
+- [ ] Removing and re-wearing the tag removes the role and restarts progress
+- [ ] Simulated Discord fetch failure preserves the current guild-tag streak and role
+- [ ] Rewards diagnostics report missing channels, blocked roles, stale sessions, and failed jobs
+
 ## Durable work and recovery
 
 - [ ] Worker does not overlap polling cycles during a slow handler

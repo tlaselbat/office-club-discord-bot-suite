@@ -19,6 +19,9 @@
 | `DATABASE_URL`                       | yes      | —             | Must start with `postgresql://`                                                                     |
 | `DISCORD_TOKEN`                      | yes      | —             | Bot token; also used by `pnpm discord:register`                                                     |
 | `DISCORD_CLIENT_ID`                  | yes      | —             | Application ID containing 17-20 digits                                                              |
+| `DISCORD_CLIENT_SECRET`              | yes      | —             | OAuth client secret for the owner panel                                                             |
+| `PANEL_OWNER_DISCORD_USER_IDS`       | yes      | —             | Comma-separated Discord user IDs allowed to access `/admin`                                         |
+| `PANEL_SESSION_SECRET`               | yes      | —             | At least 32 characters; signs OAuth state and CSRF tokens                                           |
 | `DATHOST_EMAIL`                      | yes      | —             | DatHost API account email                                                                           |
 | `DATHOST_PASSWORD`                   | yes      | —             | DatHost API account password                                                                        |
 | `DATHOST_TEMPLATE_SERVER_ID`         | yes      | —             | Globally protected template ID used by ownership safety checks                                      |
@@ -31,6 +34,8 @@
 | `MATCHZY_STALE_AFTER_MS`             | no       | `120000`      | Integer of at least 30000 milliseconds                                                              |
 
 The application validates the complete runtime environment before startup. The dedicated command-registration script validates only its two Discord variables.
+
+Configure `https://<PUBLIC_BASE_URL host>/admin/auth/callback` as a redirect in the Discord Developer Portal. The panel requests only the `identify` OAuth scope, stores no Discord OAuth tokens, and issues opaque eight-hour server-side sessions. Only IDs in `PANEL_OWNER_DISCORD_USER_IDS` can establish a session. Runtime secrets and managed channel lifecycle operations are never exposed in the panel.
 
 ## Generating secrets
 
@@ -58,6 +63,14 @@ The second output must decode to exactly 32 bytes. Keep all values outside sourc
 Settings are versioned and configuration changes are audited. Initial configuration requires native Discord Administrator permission. Later configuration accepts either native Administrator or the configured administrator role.
 
 A match cannot be created until settings are enabled and have a default profile. Creation also requires the configured lobby text channel to remain available.
+
+## Member Rewards settings
+
+Configure Member Rewards from `/admin/guilds/<guild-id>/rewards`, then enable it independently from 10man. Settings include text XP and cooldown, allowlisted text channels, voice XP and interval, allowlisted voice channels, guild-tag duration and role, reconciliation interval, and ordered level thresholds with optional roles.
+
+The structured level table accepts a level number, XP threshold, optional label, and optional Discord role. Thresholds must be nonnegative and strictly increasing. Configured roles must be unmanaged and below the bot's highest role. Manual XP adjustments require a member ID, nonzero signed amount, and reason; they create immutable ledger and audit records.
+
+Disabling Member Rewards preserves XP, streak history, settings, and managed roles. It stops new awards and closes active voice sessions so disabled time cannot be credited after re-enabling. Message content is neither requested nor stored.
 
 ## Game profiles
 

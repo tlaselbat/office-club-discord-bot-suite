@@ -6,8 +6,13 @@
 2. Create an application and bot.
 3. Configure the bot for the gateway capabilities used by the application:
    - Guilds
+   - Guild messages
    - Guild voice states
-4. Copy the bot token to `DISCORD_TOKEN` and the 17-20 digit application ID to `DISCORD_CLIENT_ID`.
+   - Server Members Intent (privileged; required for complete rewards role and guild-tag reconciliation)
+
+The Message Content intent is not required. Member Rewards uses message metadata and never reads or stores message bodies.
+
+1. Copy the bot token to `DISCORD_TOKEN` and the 17-20 digit application ID to `DISCORD_CLIENT_ID`.
 
 ## Invite the bot
 
@@ -26,6 +31,7 @@ Grant the bot these channel permissions:
 - Read Message History
 - Connect
 - Move Members
+- Manage Roles (required for configured rewards level and guild-tag roles)
 - Manage Channels (required only for managed setup, recovery, and teardown)
 
 The setup validator checks the permissions it needs in each configured channel. See [Permissions](permissions.md) for the application-role authorization model.
@@ -38,7 +44,7 @@ Command registration is an explicit deployment action and is not performed durin
 corepack pnpm discord:register
 ```
 
-Only `DISCORD_TOKEN` and `DISCORD_CLIENT_ID` are required by this command. Run it after the first deployment and whenever `src/bot/commands.ts` changes. Discord global command propagation may not be immediate.
+Only `DISCORD_TOKEN` and `DISCORD_CLIENT_ID` are required by this command. Run it after the first deployment and whenever a module's command definitions changes. Discord global command propagation may not be immediate.
 
 ## Prepare the guild
 
@@ -67,6 +73,9 @@ After setup, either a native Discord administrator or a member with the configur
 
 ## Slash commands
 
+- `/rewards profile [member]` — show XP, level, rank, and progress to the next configured level.
+- `/rewards leaderboard` — show the server's top reward members.
+- `/rewards tag-status [member]` — show guild-tag loyalty qualification progress.
 - `/10man create` — create a match for the guild; requires a configured privileged, moderator, or administrator role.
 - `/10man status` — show the active match as an ephemeral fresh panel.
 - `/10man cancel` — cancel the active match; leader, moderator, or administrator only.

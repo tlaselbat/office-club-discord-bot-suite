@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAuthorized, type ActorContext } from '../../src/domain/authorization.js';
+import { isAuthorized, type ActorContext } from '../../src/modules/tenman/domain/authorization.js';
 
 const participant: ActorContext = {
   discordUserId: 'player',

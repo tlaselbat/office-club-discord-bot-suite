@@ -10,25 +10,36 @@ import {
   type MessageComponentInteraction,
 } from 'discord.js';
 import type { PrismaClient } from '../generated/prisma/client.js';
-import type { MatchService } from '../services/match-service.js';
-import type { SteamLinkService } from '../services/steam-link-service.js';
-import { GuildSettingsService } from '../services/guild-settings-service.js';
-import type { MatchControlService } from '../services/match-control-service.js';
-import type { CredentialCipher } from '../services/credential-cipher.js';
-import type { DatHostClient } from '../integrations/dathost/client.js';
-import { DiagnosticsService } from '../services/diagnostics-service.js';
-import { PanelService } from '../services/panel-service.js';
-import { renderMatchPanel } from './panel.js';
-import { commands } from './commands.js';
-import { buildMatchControls, buildTeamChoiceControls } from './components.js';
-import { parseCustomId } from './custom-id.js';
-import { assertAuthorized, type ActorContext } from '../domain/authorization.js';
+import type { MatchService } from '../modules/tenman/services/match-service.js';
+import type { SteamLinkService } from '../modules/tenman/services/steam-link-service.js';
+import { GuildSettingsService } from '../modules/tenman/services/guild-settings-service.js';
+import type { MatchControlService } from '../modules/tenman/services/match-control-service.js';
+import type { CredentialCipher } from '../modules/tenman/services/credential-cipher.js';
+import type { DatHostClient } from '../modules/tenman/integrations/dathost/client.js';
+import { DiagnosticsService } from '../modules/tenman/services/diagnostics-service.js';
+import { PanelService } from '../modules/tenman/services/panel-service.js';
+import { renderMatchPanel } from '../modules/tenman/bot/panel.js';
+import { commands } from '../modules/tenman/bot/commands.js';
+import { buildMatchControls, buildTeamChoiceControls } from '../modules/tenman/bot/components.js';
+import { parseCustomId } from '../modules/tenman/bot/custom-id.js';
+import { assertAuthorized, type ActorContext } from '../modules/tenman/domain/authorization.js';
 import type { Logger } from 'pino';
 import { publicMessage } from '../errors/public-error.js';
-import { parseMatchScore } from '../domain/score.js';
-import { GuildResourceService, type ManagedPreview } from '../services/guild-resource-service.js';
-import { adminGeneration, parseAdminCustomId } from './admin-custom-id.js';
-import { buildAdminConfirmationControls } from './admin-components.js';
+import { parseMatchScore } from '../modules/tenman/domain/score.js';
+import {
+  GuildResourceService,
+  type ManagedPreview,
+} from '../modules/tenman/services/guild-resource-service.js';
+import { adminGeneration, parseAdminCustomId } from '../modules/tenman/bot/admin-custom-id.js';
+import { buildAdminConfirmationControls } from '../modules/tenman/bot/admin-components.js';
+import { ModuleRegistry } from '../core/modules/registry.js';
+import { createTenManModule } from '../modules/tenman/module.js';
+import { RewardService } from '../modules/rewards/services/reward-service.js';
+import { TextActivityService } from '../modules/rewards/services/text-activity-service.js';
+import { createRewardsModule } from '../modules/rewards/module.js';
+import { LevelRoleService } from '../modules/rewards/services/level-role-service.js';
+import { VoiceActivityService } from '../modules/rewards/services/voice-activity-service.js';
+import { TagLoyaltyService } from '../modules/rewards/services/tag-loyalty-service.js';
 
 async function fetchAllowedProfiles(
   prisma: PrismaClient,
@@ -54,14 +65,104 @@ export interface BotDependencies {
   logger: Logger;
 }
 
-export async function registerCommands(token: string, clientId: string): Promise<void> {
+export async function registerCommands(
+  token: string,
+  clientId: string,
+  commandBody: readonly unknown[] = commands,
+): Promise<void> {
   const rest = new REST().setToken(token);
-  await rest.put(Routes.applicationCommands(clientId), { body: commands });
+  await rest.put(Routes.applicationCommands(clientId), { body: commandBody });
 }
 
 export function createDiscordClient(dependencies: BotDependencies): Client {
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.GuildVoiceStates,
+    ],
+  });
+  const rewardService = new RewardService(dependencies.prisma);
+  const textActivity = new TextActivityService(dependencies.prisma, rewardService);
+  const levelRoles = new LevelRoleService(dependencies.prisma, client);
+  const voiceActivity = new VoiceActivityService(dependencies.prisma, rewardService, levelRoles);
+  const tagLoyalty = new TagLoyaltyService(dependencies.prisma, client, dependencies.logger);
+  client.on(Events.MessageCreate, (message) => {
+    if (message.guildId === null || message.author.bot || message.webhookId !== null) return;
+    void textActivity
+      .record({
+        guildId: message.guildId,
+        channelId: message.channelId,
+        discordUserId: message.author.id,
+        displayName:
+          message.member?.displayName ?? message.author.globalName ?? message.author.username,
+        messageId: message.id,
+        occurredAt: message.createdAt,
+      })
+      .then(async (result) => {
+        if (result?.applied === true) {
+          await levelRoles.reconcile(message.guildId ?? '', message.author.id);
+        }
+      })
+      .catch((error: unknown) => {
+        dependencies.logger.error(
+          { err: error, guildId: message.guildId, userId: message.author.id },
+          'Reward text activity failed',
+        );
+      });
+  });
+  client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+    const member = newState.member ?? oldState.member;
+    if (member === null || member.user.bot) return;
+    void voiceActivity
+      .observe({
+        guildId: newState.guild.id,
+        discordUserId: member.id,
+        displayName: member.displayName,
+        channelId: newState.channelId,
+        observedAt: new Date(),
+      })
+      .catch((error: unknown) => {
+        dependencies.logger.error(
+          { err: error, guildId: newState.guild.id, userId: member.id },
+          'Reward voice activity failed',
+        );
+      });
+  });
+  client.on(Events.GuildMemberUpdate, (_oldMember, member) => {
+    const primaryGuild = member.user.primaryGuild;
+    void tagLoyalty
+      .observe(
+        member.guild.id,
+        member,
+        primaryGuild?.identityEnabled === true && primaryGuild.identityGuildId === member.guild.id,
+      )
+      .catch((error: unknown) => {
+        dependencies.logger.error(
+          { err: error, guildId: member.guild.id, userId: member.id },
+          'Reward guild-tag update failed',
+        );
+      });
+  });
+  client.on(Events.UserUpdate, (_oldUser, user) => {
+    for (const guild of client.guilds.cache.values()) {
+      const member = guild.members.cache.get(user.id);
+      if (member === undefined) continue;
+      void tagLoyalty
+        .observe(
+          guild.id,
+          member,
+          user.primaryGuild?.identityEnabled === true &&
+            user.primaryGuild.identityGuildId === guild.id,
+        )
+        .catch((error: unknown) => {
+          dependencies.logger.error(
+            { err: error, guildId: guild.id, userId: user.id },
+            'Reward guild-tag update failed',
+          );
+        });
+    }
   });
   const guildSettingsService = new GuildSettingsService(dependencies.prisma, client);
   const guildResourceService = new GuildResourceService(
@@ -69,13 +170,37 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
     client,
     dependencies.logger,
   );
+  const modules = new ModuleRegistry([
+    {
+      ...createTenManModule(),
+      handleInteraction: async ({ interaction }) => {
+        if (interaction.isChatInputCommand()) {
+          await handleCommand(
+            interaction,
+            dependencies,
+            client,
+            guildSettingsService,
+            guildResourceService,
+          );
+        } else if (interaction.customId.startsWith('tma:')) {
+          await handleAdminComponent(interaction, dependencies, guildResourceService);
+        } else {
+          await handleComponent(interaction, dependencies, dependencies.matchControlService);
+        }
+      },
+    },
+    createRewardsModule({
+      prisma: dependencies.prisma,
+      logger: dependencies.logger,
+      componentSigningSecret: dependencies.componentSigningSecret,
+    }),
+  ]);
   client.on(Events.InteractionCreate, (interaction) => {
     if (!interaction.isChatInputCommand() && !interaction.isMessageComponent()) return;
-    const operation = interaction.isChatInputCommand()
-      ? handleCommand(interaction, dependencies, client, guildSettingsService, guildResourceService)
-      : interaction.customId.startsWith('tma:')
-        ? handleAdminComponent(interaction, dependencies, guildResourceService)
-        : handleComponent(interaction, dependencies, dependencies.matchControlService);
+    const operation = modules.dispatch(interaction).then(async (handled) => {
+      if (!handled)
+        await interaction.reply({ content: 'Unknown module interaction.', ephemeral: true });
+    });
     void operation.catch(async (error: unknown) => {
       dependencies.logger.error(
         {
@@ -133,7 +258,7 @@ async function handleCommand(
     return;
   }
   if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'create') {
-    const settings = await dependencies.prisma.guildSettings.findUnique({
+    const settings = await dependencies.prisma.tenManSettings.findUnique({
       where: { guildId: interaction.guildId },
     });
     const roles = interaction.member?.roles;
@@ -259,7 +384,7 @@ async function handleCommand(
   if (interaction.commandName === 'match' && interaction.options.getSubcommandGroup() === 'admin') {
     const subcommand = interaction.options.getSubcommand();
     if (subcommand === 'status') {
-      const settings = await dependencies.prisma.guildSettings.findUnique({
+      const settings = await dependencies.prisma.tenManSettings.findUnique({
         where: { guildId: interaction.guildId },
       });
       if (settings === null) {
@@ -730,7 +855,7 @@ async function createGuildAdminActor(
   prisma: PrismaClient,
 ): Promise<ActorContext> {
   if (interaction.guildId === null) throw new Error('Guild interaction required');
-  const settings = await prisma.guildSettings.findUnique({
+  const settings = await prisma.tenManSettings.findUnique({
     where: { guildId: interaction.guildId },
   });
   const nativeAdministrator =
@@ -761,7 +886,7 @@ async function createActorContext(
 ): Promise<ActorContext> {
   if (interaction.guildId === null) throw new Error('Guild interaction required');
   const [settings, participant] = await Promise.all([
-    prisma.guildSettings.findUnique({ where: { guildId: interaction.guildId } }),
+    prisma.tenManSettings.findUnique({ where: { guildId: interaction.guildId } }),
     prisma.matchPlayer.findUnique({
       where: { matchId_discordUserId: { matchId, discordUserId: interaction.user.id } },
       select: { id: true },

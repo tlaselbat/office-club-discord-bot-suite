@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildMatchControls, buildTeamChoiceControls } from '../../../src/bot/components.js';
-import { parseCustomId } from '../../../src/bot/custom-id.js';
+import {
+  buildMatchControls,
+  buildTeamChoiceControls,
+} from '../../../src/modules/tenman/bot/components.js';
+import { parseCustomId } from '../../../src/modules/tenman/bot/custom-id.js';
 
 const matchId = '123e4567-e89b-12d3-a456-426614174000';
 const secret = 'a'.repeat(32);

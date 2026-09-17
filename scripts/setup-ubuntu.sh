@@ -91,6 +91,17 @@ write_environment() {
     DOMAIN="$(sed -n 's/^PUBLIC_BASE_URL=https:\/\///p' "${ENV_FILE}" | tail -n 1 | tr -d '"')"
     [[ -n "${DOMAIN}" ]] || die "Existing .env has no usable PUBLIC_BASE_URL."
     validate_domain "${DOMAIN}"
+    if ! grep -q '^DISCORD_CLIENT_SECRET=' "${ENV_FILE}"; then
+      prompt_value DISCORD_CLIENT_SECRET "Discord OAuth client secret" true
+      prompt_value PANEL_OWNER_DISCORD_USER_IDS "Comma-separated owner Discord user IDs"
+      local panel_session_secret
+      panel_session_secret="$(openssl rand -base64 48 | tr -d '\n')"
+      {
+        printf 'DISCORD_CLIENT_SECRET=%s\n' "$(dotenv_quote "${DISCORD_CLIENT_SECRET}")"
+        printf 'PANEL_OWNER_DISCORD_USER_IDS=%s\n' "$(dotenv_quote "${PANEL_OWNER_DISCORD_USER_IDS}")"
+        printf 'PANEL_SESSION_SECRET=%s\n' "$(dotenv_quote "${panel_session_secret}")"
+      } >> "${ENV_FILE}"
+    fi
     return
   fi
 
@@ -99,14 +110,17 @@ write_environment() {
   prompt_value DISCORD_TOKEN "Discord bot token" true
   prompt_value DISCORD_CLIENT_ID "Discord application ID"
   validate_discord_id "${DISCORD_CLIENT_ID}"
+  prompt_value DISCORD_CLIENT_SECRET "Discord OAuth client secret" true
+  prompt_value PANEL_OWNER_DISCORD_USER_IDS "Comma-separated owner Discord user IDs"
   prompt_value DATHOST_EMAIL "DatHost account email"
   [[ "${DATHOST_EMAIL}" == *@*.* ]] || die "DatHost email does not look valid."
   prompt_value DATHOST_PASSWORD "DatHost account password" true
   prompt_value DATHOST_TEMPLATE_SERVER_ID "DatHost template server ID"
 
-  local postgres_password signing_secret encryption_key
+  local postgres_password signing_secret panel_session_secret encryption_key
   postgres_password="$(openssl rand -hex 24)"
   signing_secret="$(openssl rand -base64 48 | tr -d '\n')"
+  panel_session_secret="$(openssl rand -base64 48 | tr -d '\n')"
   encryption_key="$(openssl rand -base64 32 | tr -d '\n')"
 
   umask 077
@@ -119,6 +133,9 @@ write_environment() {
     printf 'DATABASE_URL=%s\n' "$(dotenv_quote "postgresql://postgres:${postgres_password}@postgres:5432/tenman")"
     printf 'DISCORD_TOKEN=%s\n' "$(dotenv_quote "${DISCORD_TOKEN}")"
     printf 'DISCORD_CLIENT_ID=%s\n' "$(dotenv_quote "${DISCORD_CLIENT_ID}")"
+    printf 'DISCORD_CLIENT_SECRET=%s\n' "$(dotenv_quote "${DISCORD_CLIENT_SECRET}")"
+    printf 'PANEL_OWNER_DISCORD_USER_IDS=%s\n' "$(dotenv_quote "${PANEL_OWNER_DISCORD_USER_IDS}")"
+    printf 'PANEL_SESSION_SECRET=%s\n' "$(dotenv_quote "${panel_session_secret}")"
     printf 'DATHOST_EMAIL=%s\n' "$(dotenv_quote "${DATHOST_EMAIL}")"
     printf 'DATHOST_PASSWORD=%s\n' "$(dotenv_quote "${DATHOST_PASSWORD}")"
     printf 'DATHOST_TEMPLATE_SERVER_ID=%s\n' "$(dotenv_quote "${DATHOST_TEMPLATE_SERVER_ID}")"
@@ -161,6 +178,32 @@ configure_firewall() {
   fi
 }
 
+install_systemd_service() {
+  log "Installing 10manbot systemd service for automatic startup and failure recovery"
+  cat > /etc/systemd/system/10manbot.service <<EOF
+[Unit]
+Description=10Man Discord bot and HTTP backend
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=0
+WorkingDirectory=${PROJECT_DIR}
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable 10manbot
+}
+
 deploy_bot() {
   log "Building application containers"
   cd "${PROJECT_DIR}"
@@ -178,8 +221,9 @@ deploy_bot() {
   log "Registering Discord slash commands"
   docker compose run --rm app node dist/register-commands.js
 
-  log "Starting the bot"
-  docker compose up -d app
+  log "Installing and starting persistent 10manbot systemd service"
+  install_systemd_service
+  systemctl restart 10manbot
 }
 
 verify_deployment() {

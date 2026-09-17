@@ -1,11 +1,11 @@
 import { ChannelType } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
-import { DiagnosticsService } from '../../../src/services/diagnostics-service.js';
+import { DiagnosticsService } from '../../../src/modules/tenman/services/diagnostics-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
 function createMockPrisma(overrides: object = {}): PrismaClient {
   return {
-    guildSettings: {
+    tenManSettings: {
       findUnique: vi.fn().mockResolvedValue({
         guildId: 'guild-1',
         enabled: true,
@@ -96,7 +96,7 @@ describe('DiagnosticsService', () => {
 
   it('reports unconfigured guild', async () => {
     const prisma = createMockPrisma();
-    prisma.guildSettings.findUnique = vi.fn().mockResolvedValue(null);
+    prisma.tenManSettings.findUnique = vi.fn().mockResolvedValue(null);
     const service = new DiagnosticsService(
       prisma,
       createMockClient() as unknown as ConstructorParameters<typeof DiagnosticsService>[1],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gameProfileSchema } from '../../src/domain/game-profile.js';
+import { gameProfileSchema } from '../../src/modules/tenman/domain/game-profile.js';
 
 const profile = {
   key: 'competitive_5v5',

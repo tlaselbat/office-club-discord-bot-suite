@@ -1,6 +1,6 @@
 import { ChannelType } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
-import { GuildSettingsService } from '../../../src/services/guild-settings-service.js';
+import { GuildSettingsService } from '../../../src/modules/tenman/services/guild-settings-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
 function createMockPrisma(profileExists = true): PrismaClient {
@@ -10,7 +10,7 @@ function createMockPrisma(profileExists = true): PrismaClient {
         .fn()
         .mockResolvedValue(profileExists ? { key: 'competitive_5v5', enabled: true } : null),
     },
-    guildSettings: {
+    tenManSettings: {
       findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue(undefined),
     },
@@ -19,7 +19,12 @@ function createMockPrisma(profileExists = true): PrismaClient {
     },
     $transaction: vi.fn(async (callback) =>
       callback({
+        $executeRaw: vi.fn().mockResolvedValue(undefined),
         guildSettings: { upsert: vi.fn().mockResolvedValue(undefined) },
+        tenManSettings: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue(undefined),
+        },
         auditEvent: { create: vi.fn().mockResolvedValue(undefined) },
       }),
     ),

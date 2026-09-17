@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { DatHostServer } from '../../../src/integrations/dathost/schemas.js';
+import type { DatHostServer } from '../../../src/modules/tenman/integrations/dathost/schemas.js';
 import {
   ProvisioningOrchestrator,
   type ProvisioningAttemptRecord,
   type ProvisioningRepository,
-} from '../../../src/orchestrator/provisioning.js';
+} from '../../../src/modules/tenman/orchestrator/provisioning.js';
 
 class MemoryAttempts implements ProvisioningRepository {
   public attempt: ProvisioningAttemptRecord | null = null;
