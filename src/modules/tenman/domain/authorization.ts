@@ -25,6 +25,24 @@ export const matchActions = [
   'ENABLE_GUILD',
   'TEARDOWN_GUILD',
   'DIAGNOSTICS',
+  'JOIN_QUEUE',
+  'LEAVE_QUEUE',
+  'MANAGE_QUEUE',
+  'WITHDRAW_READY',
+  'CAPTAIN_VOLUNTEER',
+  'CAPTAIN_PICK',
+  'VETO_MAP',
+  'FORCE_READY',
+  'REPLACE_PARTICIPANT',
+  'RESTART_PHASE',
+  'OVERRIDE_CAPTAIN',
+  'OVERRIDE_TEAM',
+  'OVERRIDE_MAP',
+  'VIEW_ADMIN',
+  'ROLLBACK_MATCH',
+  'RESET_PLAYER_STATS',
+  'QUEUE_BAN',
+  'QUEUE_UNBAN',
 ] as const;
 
 export type MatchAction = (typeof matchActions)[number];
@@ -53,6 +71,8 @@ const leaderActions = new Set<MatchAction>([
   'RESUME',
   'RESTORE',
   'STOP',
+  'CAPTAIN_PICK',
+  'VETO_MAP',
 ]);
 
 const moderatorActions = new Set<MatchAction>([
@@ -60,6 +80,18 @@ const moderatorActions = new Set<MatchAction>([
   'TRANSFER_LEADER',
   'REMOVE_PARTICIPANT',
   'DIAGNOSTICS',
+  'MANAGE_QUEUE',
+  'FORCE_READY',
+  'REPLACE_PARTICIPANT',
+  'RESTART_PHASE',
+  'OVERRIDE_CAPTAIN',
+  'OVERRIDE_TEAM',
+  'OVERRIDE_MAP',
+  'VIEW_ADMIN',
+  'ROLLBACK_MATCH',
+  'RESET_PLAYER_STATS',
+  'QUEUE_BAN',
+  'QUEUE_UNBAN',
 ]);
 
 export function isAuthorized(
@@ -82,8 +114,14 @@ export function isAuthorized(
   if (actor.isModerator && moderatorActions.has(action)) return true;
   if (action === 'CREATE') return actor.isPrivilegedMember;
   if (action === 'VIEW') return actor.isParticipant || actor.isPrivilegedMember;
-  if (action === 'JOIN') return !actor.isParticipant;
-  if (action === 'LEAVE' || action === 'READY') return actor.isParticipant;
+  if (action === 'JOIN' || action === 'JOIN_QUEUE') return !actor.isParticipant;
+  if (
+    action === 'LEAVE' ||
+    action === 'READY' ||
+    action === 'WITHDRAW_READY' ||
+    action === 'LEAVE_QUEUE'
+  )
+    return actor.isParticipant;
   return (
     match !== undefined &&
     match.leaderDiscordUserId === actor.discordUserId &&

@@ -50,16 +50,19 @@ export class MatchZyEventService {
           });
         }
         await transaction.job.upsert({
-          where: { idempotencyKey: `panel:${matchId}:event:${journal.id}` },
+          where: { idempotencyKey: `match-dashboard:${matchId}:event:${journal.id}` },
           update: {},
           create: {
             matchId,
-            type: 'PANEL_REFRESH',
-            idempotencyKey: `panel:${matchId}:event:${journal.id}`,
+            type: 'MATCH_DASHBOARD_REFRESH',
+            idempotencyKey: `match-dashboard:${matchId}:event:${journal.id}`,
             payload: { matchId },
           },
         });
         if (event.event === 'series_end') {
+          if (match.resultStatus === 'PENDING') {
+            await applyV2Result(transaction, matchId, event);
+          }
           await transaction.job.upsert({
             where: { idempotencyKey: `cleanup:${matchId}` },
             update: {},
@@ -84,6 +87,56 @@ export class MatchZyEventService {
       return 'processed';
     });
   }
+}
+
+async function applyV2Result(
+  transaction: Parameters<PrismaClient['$transaction']>[0] extends (arg: infer T) => unknown
+    ? T
+    : never,
+  matchId: string,
+  event: Extract<MatchZyEvent, { event: 'series_end' }>,
+): Promise<void> {
+  const match = await transaction.match.findUnique({
+    where: { id: matchId },
+    include: { players: true },
+  });
+  if (match === null || match.resultStatus !== 'PENDING') return;
+  const winner =
+    event.winner.team === 'team1' ? 'TEAM_1' : event.winner.team === 'team2' ? 'TEAM_2' : null;
+  if (winner === null) return;
+  for (const player of match.players) {
+    if (player.team !== 'TEAM_1' && player.team !== 'TEAM_2') continue;
+    const won = player.team === winner;
+    const stat = await transaction.playerGuildStats.upsert({
+      where: {
+        guildId_discordUserId: { guildId: match.guildId, discordUserId: player.discordUserId },
+      },
+      update: {
+        wins: { increment: won ? 1 : 0 },
+        losses: { increment: won ? 0 : 1 },
+        matchesPlayed: { increment: 1 },
+        rating: { increment: won ? 25 : -25 },
+      },
+      create: {
+        guildId: match.guildId,
+        discordUserId: player.discordUserId,
+        rating: 1000 + (won ? 25 : -25),
+        wins: won ? 1 : 0,
+        losses: won ? 0 : 1,
+        matchesPlayed: 1,
+      },
+    });
+    await transaction.matchRatingChange.create({
+      data: {
+        matchId,
+        discordUserId: player.discordUserId,
+        ratingBefore: stat.rating - (won ? 25 : -25),
+        delta: won ? 25 : -25,
+        ratingAfter: stat.rating,
+      },
+    });
+  }
+  await transaction.match.update({ where: { id: matchId }, data: { resultStatus: 'APPLIED' } });
 }
 
 function eventDedupeKey(event: MatchZyEvent, payloadHash: string): string {

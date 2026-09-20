@@ -16,11 +16,25 @@ export class StartupRecovery {
         state: true,
         cleanupStatus: true,
         dathostServerId: true,
+        phaseDeadlineAt: true,
+        version: true,
       },
     });
 
     for (const match of matches) {
-      await this.recoverMatch(match.id, match.state, match.cleanupStatus, match.dathostServerId);
+      await this.recoverMatch(match);
+    }
+
+    const queues = await this.prisma.tenManQueue.findMany({
+      where: { guild: { enabled: true } },
+      select: { guildId: true },
+    });
+    for (const queue of queues) {
+      await this.enqueue(
+        'QUEUE_PANEL_REFRESH',
+        { guildId: queue.guildId },
+        `queue-panel:${queue.guildId}`,
+      );
     }
 
     await this.enqueue('ORPHAN_SCAN', {}, 'orphan-scan', new Date(Date.now() + 5 * 60 * 1000));
@@ -32,12 +46,34 @@ export class StartupRecovery {
     );
   }
 
-  private async recoverMatch(
-    matchId: string,
-    state: string,
-    cleanupStatus: string,
-    serverId: string | null,
-  ): Promise<void> {
+  private async recoverMatch(match: {
+    id: string;
+    state: string;
+    cleanupStatus: string;
+    dathostServerId: string | null;
+    phaseDeadlineAt: Date | null;
+    version: number;
+  }): Promise<void> {
+    const { id: matchId, state, cleanupStatus, dathostServerId: serverId } = match;
+    if (!['FINISHED', 'CANCELED', 'FAILED'].includes(state) && cleanupStatus === 'NOT_REQUIRED') {
+      await this.enqueue('MATCH_RESOURCE_RECONCILE', { matchId }, `match-resources:${matchId}`);
+      if (
+        ['READY_CHECK', 'TEAM_SELECTION', 'MAP_VETO'].includes(state) &&
+        match.phaseDeadlineAt !== null
+      ) {
+        await this.enqueue(
+          'MATCH_PHASE_TIMEOUT',
+          {
+            matchId,
+            expectedState: state,
+            expectedVersion: match.version,
+            deadline: match.phaseDeadlineAt.toISOString(),
+          },
+          `phase-timeout:${matchId}:${state}:${String(match.version)}`,
+          match.phaseDeadlineAt,
+        );
+      }
+    }
     if (PROVISIONING_STATES.includes(state as (typeof PROVISIONING_STATES)[number])) {
       await this.enqueue('PROVISION_SERVER', { matchId }, `provision:${matchId}`);
       return;
@@ -53,7 +89,11 @@ export class StartupRecovery {
     }
 
     if (ACTIVE_MATCH_STATES.includes(state as (typeof ACTIVE_MATCH_STATES)[number])) {
-      await this.enqueue('PANEL_REFRESH', { matchId }, `panel:${matchId}:recovery`);
+      await this.enqueue(
+        'MATCH_DASHBOARD_REFRESH',
+        { matchId },
+        `match-dashboard:${matchId}:recovery`,
+      );
       await this.enqueue('VOICE_RECONCILE', { matchId }, `voice:${matchId}:recovery`);
     }
 

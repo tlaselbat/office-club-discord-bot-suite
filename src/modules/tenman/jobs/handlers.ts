@@ -7,12 +7,16 @@ import { CleanupOrchestrator } from '../orchestrator/cleanup.js';
 import { PrismaProvisioningRepository } from '../database/provisioning-repository.js';
 import { PrismaCleanupRepository } from '../database/cleanup-repository.js';
 import { DiscordVoiceAdapter } from '../services/discord-voice.js';
-import { PanelService } from '../services/panel-service.js';
 import { OrphanScanner } from '../services/orphan-scanner.js';
 import { MatchZyReconciliationService } from '../services/matchzy-reconciliation-service.js';
 import type { CredentialCipher } from '../services/credential-cipher.js';
 import type { MatchCredentialService } from '../services/match-credential-service.js';
 import { ProvisioningService } from '../services/provisioning-service.js';
+import { ReadyCheckService } from '../services/ready-check-service.js';
+import { PhaseTimeoutService } from '../services/phase-timeout-service.js';
+import { MatchResourceService } from '../services/match-resource-service.js';
+import { QueuePanelService } from '../services/queue-panel-service.js';
+import { MatchDashboardService } from '../services/match-dashboard-service.js';
 import type { JobHandler, LeasedJob } from '../../../jobs/worker.js';
 
 export interface WorkerDependencies {
@@ -55,12 +59,6 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
     dependencies.templateServerIds,
   );
 
-  const panel = new PanelService(
-    dependencies.prisma,
-    dependencies.discord,
-    dependencies.componentSigningSecret,
-  );
-
   const orphanScanner = new OrphanScanner(
     dependencies.prisma,
     dependencies.dathost,
@@ -72,6 +70,19 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
     dependencies.dathost,
     dependencies.matchzyStaleAfterMs,
     dependencies.logger,
+  );
+  const readyCheck = new ReadyCheckService(dependencies.prisma);
+  const phaseTimeout = new PhaseTimeoutService(dependencies.prisma);
+  const matchResources = new MatchResourceService(dependencies.prisma, dependencies.discord);
+  const queuePanel = new QueuePanelService(
+    dependencies.prisma,
+    dependencies.discord,
+    dependencies.componentSigningSecret,
+  );
+  const dashboard = new MatchDashboardService(
+    dependencies.prisma,
+    dependencies.discord,
+    dependencies.componentSigningSecret,
   );
 
   const provisionHandler: JobHandler = (job: LeasedJob) => {
@@ -92,10 +103,52 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
     ['PROVISION_SERVER', provisionHandler],
     ['POLL_SERVER_BOOT', bootHandler],
     [
+      'MATCH_DASHBOARD_REFRESH',
+      async (job: LeasedJob) => {
+        const { matchId } = job.payload as { matchId: string };
+        await dashboard.refresh(matchId);
+      },
+    ],
+    [
+      'QUEUE_PANEL_REFRESH',
+      async (job: LeasedJob) => {
+        const { guildId } = job.payload as { guildId: string };
+        await queuePanel.reconcile(guildId);
+      },
+    ],
+    [
+      'MATCH_RESOURCE_RECONCILE',
+      async (job: LeasedJob) => {
+        const { matchId } = job.payload as { matchId: string };
+        await matchResources.ensureMatchTextChannel(matchId);
+        await dashboard.refresh(matchId);
+      },
+    ],
+    [
+      'MATCH_PHASE_TIMEOUT',
+      (job: LeasedJob) => {
+        const payload = job.payload as {
+          matchId: string;
+          expectedState: string;
+          expectedVersion: number;
+          correlationId?: string;
+        };
+        const correlationId = payload.correlationId ?? `job:${job.id}`;
+        if (payload.expectedState === 'READY_CHECK')
+          return readyCheck.expire(payload.matchId, payload.expectedVersion, correlationId);
+        return phaseTimeout.expire(
+          payload.matchId,
+          payload.expectedState,
+          payload.expectedVersion,
+          correlationId,
+        );
+      },
+    ],
+    [
       'CLEANUP_MATCH',
       (job: LeasedJob) => {
         const { matchId } = job.payload as { matchId: string };
-        return cleanupJob(dependencies.prisma, cleanup, matchId);
+        return cleanupJob(dependencies.prisma, cleanup, matchResources, matchId);
       },
     ],
     [
@@ -103,13 +156,6 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
       (job: LeasedJob) => {
         const { matchId } = job.payload as { matchId: string };
         return voice.reconcileMatchVoice(matchId);
-      },
-    ],
-    [
-      'PANEL_REFRESH',
-      (job: LeasedJob) => {
-        const { matchId } = job.payload as { matchId: string };
-        return panel.refresh(matchId);
       },
     ],
     [
@@ -192,6 +238,7 @@ async function failProvisioning(
 async function cleanupJob(
   prisma: PrismaClient,
   cleanup: CleanupOrchestrator,
+  matchResources: MatchResourceService,
   matchId: string,
 ): Promise<void> {
   const match = await prisma.match.findUnique({
@@ -204,5 +251,49 @@ async function cleanupJob(
     serverId: match.dathostServerId,
     ownedServerId: match.dathostServerId,
     cleanupStatus: match.cleanupStatus as 'PENDING' | 'RUNNING' | 'RETRY' | 'FAILED',
+  });
+  const resources = await prisma.matchDiscordResource.findMany({
+    where: { matchId, createdByBot: true, state: { not: 'DELETED' } },
+    select: { id: true },
+  });
+  for (const resource of resources) await matchResources.deleteOwnedResource(resource.id);
+  await reopenV2QueueAfterCleanup(prisma, matchId);
+}
+
+/** Reopens the persistent queue only after terminal cleanup and owned-resource deletion succeed. */
+async function reopenV2QueueAfterCleanup(prisma: PrismaClient, matchId: string): Promise<void> {
+  await prisma.$transaction(async (transaction) => {
+    const match = await transaction.match.findUnique({ where: { id: matchId } });
+    if (
+      match === null ||
+      match.cleanupStatus !== 'COMPLETE' ||
+      !['FINISHED', 'CANCELED', 'FAILED'].includes(match.state)
+    )
+      return;
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${match.guildId}, 0))`;
+    const reopened = await transaction.tenManQueue.updateMany({
+      where: { guildId: match.guildId, status: 'LOCKED' },
+      data: { status: 'OPEN', version: { increment: 1 } },
+    });
+    if (reopened.count !== 1) return;
+    await transaction.job.upsert({
+      where: { idempotencyKey: `queue-panel:${match.guildId}` },
+      update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
+      create: {
+        type: 'QUEUE_PANEL_REFRESH',
+        idempotencyKey: `queue-panel:${match.guildId}`,
+        payload: { guildId: match.guildId },
+      },
+    });
+    await transaction.auditEvent.create({
+      data: {
+        matchId,
+        guildId: match.guildId,
+        eventType: 'queue_reopened_after_cleanup',
+        result: 'success',
+        correlationId: `cleanup:${matchId}`,
+        metadata: {},
+      },
+    });
   });
 }

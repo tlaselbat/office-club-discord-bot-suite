@@ -13,24 +13,17 @@ import type { PrismaClient } from '../generated/prisma/client.js';
 import type { MatchService } from '../modules/tenman/services/match-service.js';
 import type { SteamLinkService } from '../modules/tenman/services/steam-link-service.js';
 import { GuildSettingsService } from '../modules/tenman/services/guild-settings-service.js';
-import type { MatchControlService } from '../modules/tenman/services/match-control-service.js';
-import type { CredentialCipher } from '../modules/tenman/services/credential-cipher.js';
 import type { DatHostClient } from '../modules/tenman/integrations/dathost/client.js';
 import { DiagnosticsService } from '../modules/tenman/services/diagnostics-service.js';
-import { PanelService } from '../modules/tenman/services/panel-service.js';
-import { renderMatchPanel } from '../modules/tenman/bot/panel.js';
 import { commands } from '../modules/tenman/bot/commands.js';
-import { buildMatchControls, buildTeamChoiceControls } from '../modules/tenman/bot/components.js';
-import { parseCustomId } from '../modules/tenman/bot/custom-id.js';
 import { assertAuthorized, type ActorContext } from '../modules/tenman/domain/authorization.js';
 import type { Logger } from 'pino';
 import { publicMessage } from '../errors/public-error.js';
-import { parseMatchScore } from '../modules/tenman/domain/score.js';
 import {
   GuildResourceService,
   type ManagedPreview,
 } from '../modules/tenman/services/guild-resource-service.js';
-import { adminGeneration, parseAdminCustomId } from '../modules/tenman/bot/admin-custom-id.js';
+import { adminGeneration } from '../modules/tenman/bot/admin-custom-id.js';
 import { buildAdminConfirmationControls } from '../modules/tenman/bot/admin-components.js';
 import { ModuleRegistry } from '../core/modules/registry.js';
 import { createTenManModule } from '../modules/tenman/module.js';
@@ -40,17 +33,18 @@ import { createRewardsModule } from '../modules/rewards/module.js';
 import { LevelRoleService } from '../modules/rewards/services/level-role-service.js';
 import { VoiceActivityService } from '../modules/rewards/services/voice-activity-service.js';
 import { TagLoyaltyService } from '../modules/rewards/services/tag-loyalty-service.js';
-
-async function fetchAllowedProfiles(
-  prisma: PrismaClient,
-): Promise<{ key: string; label: string }[]> {
-  const profiles = await prisma.gameProfile.findMany({
-    where: { enabled: true },
-    orderBy: { key: 'asc' },
-    select: { key: true },
-  });
-  return profiles.map((profile) => ({ key: profile.key, label: profile.key }));
-}
+import { QueuePanelService } from '../modules/tenman/services/queue-panel-service.js';
+import { TenManComponentInteractionRouter } from '../modules/tenman/bot/interaction-router.js';
+import { MatchHistoryService } from '../modules/tenman/services/match-history-service.js';
+import { QueueBanService } from '../modules/tenman/services/queue-ban-service.js';
+import {
+  buildCancelMatchConfirmationControls,
+  buildRestartPhaseConfirmationControls,
+  buildRollbackConfirmationControls,
+} from '../modules/tenman/bot/match-admin-components.js';
+import { PartyService } from '../modules/tenman/services/party-service.js';
+import { MatchAdminService } from '../modules/tenman/services/match-admin-service.js';
+import { buildPlayerStatsResetConfirmationControls } from '../modules/tenman/bot/player-admin-components.js';
 
 export interface BotDependencies {
   token: string;
@@ -58,9 +52,7 @@ export interface BotDependencies {
   prisma: PrismaClient;
   matchService: MatchService;
   steamLinkService: SteamLinkService;
-  matchControlService: MatchControlService;
   dathost: DatHostClient;
-  cipher: CredentialCipher;
   componentSigningSecret: string;
   logger: Logger;
 }
@@ -170,6 +162,15 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
     client,
     dependencies.logger,
   );
+  const tenManComponentRouter = new TenManComponentInteractionRouter({
+    prisma: dependencies.prisma,
+    componentSigningSecret: dependencies.componentSigningSecret,
+    actorFor: (interaction, matchId) =>
+      createActorContext(interaction, matchId, dependencies.prisma),
+    adminActorFor: (interaction) => createGuildAdminActor(interaction, dependencies.prisma),
+    guildResourceService,
+    matchService: dependencies.matchService,
+  });
   const modules = new ModuleRegistry([
     {
       ...createTenManModule(),
@@ -182,10 +183,8 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
             guildSettingsService,
             guildResourceService,
           );
-        } else if (interaction.customId.startsWith('tma:')) {
-          await handleAdminComponent(interaction, dependencies, guildResourceService);
         } else {
-          await handleComponent(interaction, dependencies, dependencies.matchControlService);
+          await tenManComponentRouter.handle(interaction);
         }
       },
     },
@@ -257,10 +256,13 @@ async function handleCommand(
     });
     return;
   }
-  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'create') {
+  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'queue') {
     const settings = await dependencies.prisma.tenManSettings.findUnique({
       where: { guildId: interaction.guildId },
     });
+    if (settings === null || !settings.enabled) {
+      throw new Error('10man is not enabled for this server');
+    }
     const roles = interaction.member?.roles;
     const memberRoles =
       roles === undefined
@@ -269,52 +271,49 @@ async function handleCommand(
           ? [...roles.cache.keys()]
           : roles;
     if (
-      settings === null ||
       !memberRoles.some((role) =>
-        [
-          ...settings.privilegedRoleIds,
-          ...settings.moderatorRoleIds,
-          ...settings.administratorRoleIds,
-        ].includes(role),
-      )
+        [...settings.moderatorRoleIds, ...settings.administratorRoleIds].includes(role),
+      ) &&
+      !(interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false)
     ) {
-      throw new Error('Privileged role required');
+      throw new Error('Moderator role required');
     }
     if (settings.lobbyTextChannelId === null)
       throw new Error('Lobby text channel is not configured');
-    const lobbyChannel = await client.channels.fetch(settings.lobbyTextChannelId);
-    if (lobbyChannel === null || !lobbyChannel.isTextBased() || lobbyChannel.isDMBased()) {
+    const channel = await client.channels.fetch(settings.lobbyTextChannelId);
+    if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
       throw new Error('Configured lobby text channel is unavailable');
     }
-    const matchId = await dependencies.matchService.create({
-      guildId: interaction.guildId,
-      leaderDiscordUserId: interaction.user.id,
-      displayName: interaction.user.globalName ?? interaction.user.username,
-      correlationId: interaction.id,
+    await dependencies.prisma.tenManQueue.upsert({
+      where: { guildId: interaction.guildId },
+      update: {},
+      create: { guildId: interaction.guildId },
     });
-    const panelService = new PanelService(
+    await new QueuePanelService(
       dependencies.prisma,
       client,
       dependencies.componentSigningSecret,
-    );
-    try {
-      const published = await panelService.publishInitialPanel(matchId, lobbyChannel);
-      await interaction.editReply({
-        content: `10man created in <#${published.channelId}>: ${matchId}`,
-      });
-    } catch (error: unknown) {
-      await dependencies.matchService.failUnpublishedMatch(matchId, interaction.id);
-      throw error;
-    }
+    ).reconcile(interaction.guildId, channel);
+    await interaction.editReply({ content: `10man queue panel is ready in <#${channel.id}>.` });
     return;
   }
   if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'cancel') {
     const match = await dependencies.matchService.findGuildMatch(interaction.guildId);
     if (match === null) throw new Error('No active match');
     const actor = await createActorContext(interaction, match.id, dependencies.prisma);
-    await dependencies.matchService.cancel(match.id, actor, interaction.id);
+    assertAuthorized('STOP', actor, match);
     await interaction.editReply({
-      content: 'The match was canceled. Cleanup status is available in `/10man status`.',
+      content: `This cancels match ${match.id.slice(0, 8)} and starts cleanup if needed. Confirm within five minutes.`,
+      components: buildCancelMatchConfirmationControls(
+        {
+          matchId: match.id,
+          version: match.version,
+          phaseGeneration: match.phaseGeneration,
+          actorDiscordUserId: interaction.user.id,
+          expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+        },
+        dependencies.componentSigningSecret,
+      ),
     });
     return;
   }
@@ -324,59 +323,100 @@ async function handleCommand(
       await interaction.editReply({ content: 'There is no active 10man.' });
       return;
     }
-    const panel = renderMatchPanel({
-      matchId: match.id,
-      leaderMention: `<@${match.leaderDiscordUserId}>`,
-      state: match.state,
-      cleanupStatus: match.cleanupStatus,
-      map: match.selectedMap,
-      profile: match.selectedGameProfileKey,
-      readyCount: match.players.filter((player) => player.readyState === 'READY').length,
-      totalCount: match.players.length,
-      team1: match.players
-        .filter((player) => player.team === 'TEAM_1')
-        .map((player) => player.displayNameSnapshot),
-      team2: match.players
-        .filter((player) => player.team === 'TEAM_2')
-        .map((player) => player.displayNameSnapshot),
-      score: parseMatchScore(match.score),
-    });
-    const allowedProfiles = await fetchAllowedProfiles(dependencies.prisma);
     await interaction.editReply({
-      embeds: [panel],
-      components: buildMatchControls({
-        matchId: match.id,
-        version: match.version,
-        state: match.state,
-        allowedMaps: match.profile.mapAllowlist,
-        allowedProfiles,
-        secret: dependencies.componentSigningSecret,
-      }),
+      content:
+        `Active match ${match.id.slice(0, 8)}: ${match.state}. ` +
+        `Map: ${match.selectedMap ?? 'pending'}; ` +
+        `players: ${String(match.players.length)}; ` +
+        `ready: ${String(match.players.filter((player) => player.readyState === 'READY').length)}.`,
     });
     return;
   }
-  if (interaction.commandName === 'match') {
-    const subcommand = interaction.options.getSubcommand();
-    if (subcommand === 'transfer') {
-      const target = interaction.options.getUser('player', true);
-      const match = await dependencies.matchService.findGuildMatch(interaction.guildId);
-      if (match === null) throw new Error('No active match');
-      const actor = await createActorContext(interaction, match.id, dependencies.prisma);
-      await dependencies.matchService.transferLeader(match.id, target.id, actor, interaction.id);
+  if (interaction.commandName === 'player') {
+    const target = interaction.options.getUser('player') ?? interaction.user;
+    if (interaction.options.getSubcommand() === 'stats') {
+      const stats = await dependencies.prisma.playerGuildStats.findUnique({
+        where: {
+          guildId_discordUserId: { guildId: interaction.guildId, discordUserId: target.id },
+        },
+      });
+      if (stats === null) {
+        await interaction.editReply({ content: `<@${target.id}> has no match statistics yet.` });
+        return;
+      }
       await interaction.editReply({
-        content: `Leader transferred to <@${target.id}>.`,
+        content: `<@${target.id}> — rating: **${String(stats.rating)}**; record: **${String(stats.wins)}–${String(stats.losses)}**; matches: **${String(stats.matchesPlayed)}**.`,
       });
       return;
     }
-    if (subcommand === 'remove') {
+    const history = await new MatchHistoryService(dependencies.prisma).recentMatches(
+      interaction.guildId,
+      target.id,
+    );
+    await interaction.editReply({
+      content: formatRecentMatches(target.id, history),
+    });
+    return;
+  }
+  if (interaction.commandName === 'party') {
+    const partyService = new PartyService(dependencies.prisma);
+    const subcommand = interaction.options.getSubcommand();
+    if (subcommand === 'create') {
+      const partyId = await partyService.create(interaction.guildId, interaction.user.id);
+      await interaction.editReply({ content: `Party created. Party ID: \`${partyId}\`` });
+      return;
+    }
+    if (subcommand === 'invite') {
+      const partyId = interaction.options.getString('party_id', true);
       const target = interaction.options.getUser('player', true);
-      const match = await dependencies.matchService.findGuildMatch(interaction.guildId);
-      if (match === null) throw new Error('No active match');
-      const actor = await createActorContext(interaction, match.id, dependencies.prisma);
-      await dependencies.matchService.removeParticipant(match.id, target.id, actor, interaction.id);
+      const inviteId = await partyService.invite(partyId, interaction.user.id, target.id);
+      const message = `You have a 10man party invitation from <@${interaction.user.id}>. Accept it with \`/party accept invite_id:${inviteId}\` within 15 minutes.`;
+      const delivered = await target
+        .send(message)
+        .then(() => true)
+        .catch(() => false);
       await interaction.editReply({
-        content: `<@${target.id}> removed from the match.`,
+        content: delivered
+          ? `Invitation sent to <@${target.id}>.`
+          : `Invitation created for <@${target.id}>. Their DMs are unavailable; give them this invitation ID: \`${inviteId}\`.`,
       });
+      return;
+    }
+    if (subcommand === 'accept') {
+      await partyService.accept(
+        interaction.options.getString('invite_id', true),
+        interaction.user.id,
+      );
+      await interaction.editReply({ content: 'Party invitation accepted.' });
+      return;
+    }
+    const partyId = interaction.options.getString('party_id', true);
+    if (subcommand === 'leave') {
+      await partyService.leave(partyId, interaction.user.id);
+      await interaction.editReply({ content: 'You left the party.' });
+      return;
+    }
+    if (subcommand === 'kick') {
+      const target = interaction.options.getUser('player', true);
+      await partyService.kick(partyId, interaction.user.id, target.id);
+      await interaction.editReply({ content: `<@${target.id}> was removed from the party.` });
+      return;
+    }
+    if (subcommand === 'disband') {
+      await partyService.disband(partyId, interaction.user.id);
+      await interaction.editReply({ content: 'Party disbanded.' });
+      return;
+    }
+  }
+  if (interaction.commandName === 'match') {
+    const subcommand = interaction.options.getSubcommand();
+    if (subcommand === 'history') {
+      const target = interaction.options.getUser('player') ?? interaction.user;
+      const history = await new MatchHistoryService(dependencies.prisma).recentMatches(
+        interaction.guildId,
+        target.id,
+      );
+      await interaction.editReply({ content: formatRecentMatches(target.id, history) });
       return;
     }
   }
@@ -399,6 +439,9 @@ async function handleCommand(
           `Template: ${settings.dathostTemplateServerId ?? 'unset'}\n` +
           `Location: ${settings.defaultServerLocation ?? 'unset'}\n` +
           `Profile: ${settings.defaultGameProfileKey ?? 'unset'}\n` +
+          `Queue: ${String(settings.queueSize)} players\n` +
+          `Ready timeout: ${String(settings.readyTimeoutSeconds)}s; parties: ${settings.partyEnabled ? 'enabled' : 'disabled'}\n` +
+          `Selection: ${settings.teamSelectionMode} teams; ${settings.mapSelectionMode} maps\n` +
           `Managed resources: ${settings.managedResourceState}${settings.managedSetupStep === null ? '' : ` (${settings.managedSetupStep})`}`,
       });
       return;
@@ -507,6 +550,20 @@ async function handleCommand(
       const defaultServerLocation = interaction.options.getString('dathost_location') ?? undefined;
       const defaultGameProfileKey =
         interaction.options.getString('default_game_profile') ?? undefined;
+      const queueSize = interaction.options.getInteger('v2_queue_size') ?? undefined;
+      const readyTimeoutSeconds =
+        interaction.options.getInteger('v2_ready_timeout_seconds') ?? undefined;
+      const partyEnabled = interaction.options.getBoolean('party_enabled') ?? undefined;
+      const configuredTeamSelectionMode = interaction.options.getString('team_selection');
+      const teamSelectionMode =
+        configuredTeamSelectionMode === 'CAPTAINS' || configuredTeamSelectionMode === 'RANDOM'
+          ? configuredTeamSelectionMode
+          : undefined;
+      const configuredMapSelectionMode = interaction.options.getString('map_selection');
+      const mapSelectionMode =
+        configuredMapSelectionMode === 'CAPTAIN_VETO' || configuredMapSelectionMode === 'RANDOM'
+          ? configuredMapSelectionMode
+          : undefined;
       await guildSettingsService.update({
         guildId: interaction.guildId,
         actorDiscordUserId: interaction.user.id,
@@ -521,6 +578,11 @@ async function handleCommand(
         dathostTemplateServerId: interaction.options.getString('dathost_template_server_id', true),
         ...(defaultServerLocation === undefined ? {} : { defaultServerLocation }),
         ...(defaultGameProfileKey === undefined ? {} : { defaultGameProfileKey }),
+        ...(queueSize === undefined ? {} : { queueSize }),
+        ...(readyTimeoutSeconds === undefined ? {} : { readyTimeoutSeconds }),
+        ...(partyEnabled === undefined ? {} : { partyEnabled }),
+        ...(teamSelectionMode === undefined ? {} : { teamSelectionMode }),
+        ...(mapSelectionMode === undefined ? {} : { mapSelectionMode }),
       });
       await interaction.editReply({ content: '10man configuration saved.' });
       return;
@@ -536,6 +598,190 @@ async function handleCommand(
       await interaction.editReply({ content: formatDiagnosticsReport(report) });
       return;
     }
+    if (subcommand === 'panel') {
+      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
+      if (active === null) throw new Error('No active match');
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('VIEW_ADMIN', actor);
+      const match = await dependencies.prisma.match.findUnique({
+        where: { id: active.id },
+        include: { players: true, draftPicks: true, vetoActions: true, discordResources: true },
+      });
+      if (match === null) throw new Error('Match is no longer active');
+      const captains = match.players
+        .filter((player) => player.captainTeam !== null)
+        .map(
+          (player) =>
+            `${player.captainTeam === 'TEAM_1' ? 'Team 1' : 'Team 2'} <@${player.discordUserId}>`,
+        )
+        .join('; ');
+      const resources = match.discordResources
+        .map((resource) => `${resource.resourceType}: ${resource.state}`)
+        .join('; ');
+      await interaction.editReply({
+        embeds: [
+          {
+            title: `MATCH ${match.id.slice(0, 8)} — ADMIN`,
+            fields: [
+              { name: 'State', value: match.state, inline: true },
+              {
+                name: 'Players',
+                value: `${String(match.players.length)}; ready ${String(match.players.filter((player) => player.readyState === 'READY').length)}`,
+                inline: true,
+              },
+              { name: 'Map', value: match.selectedMap ?? 'Pending', inline: true },
+              { name: 'Captains', value: captains || 'Pending' },
+              {
+                name: 'Draft / veto',
+                value: `${String(match.draftPicks.length)} picks; ${String(match.vetoActions.length)} veto actions`,
+              },
+              { name: 'Resources', value: resources || 'Pending' },
+            ],
+            footer: {
+              text: `Version ${String(match.version)} · Phase generation ${String(match.phaseGeneration)}`,
+            },
+          },
+        ],
+      });
+      return;
+    }
+    if (subcommand === 'force-ready') {
+      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
+      if (active === null) throw new Error('No active match');
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('FORCE_READY', actor);
+      await new MatchAdminService(dependencies.prisma).forceReady(
+        active.id,
+        active.version,
+        interaction.user.id,
+        interaction.id,
+      );
+      await interaction.editReply({ content: 'Ready check was forced forward to team selection.' });
+      return;
+    }
+    if (subcommand === 'restart-phase') {
+      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
+      if (active === null) throw new Error('No active match');
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('RESTART_PHASE', actor);
+      if (!['READY_CHECK', 'TEAM_SELECTION', 'MAP_VETO'].includes(active.state))
+        throw new Error('The active match is not in a restartable forming phase.');
+      await interaction.editReply({
+        content: `This clears the current ${active.state.toLowerCase().replaceAll('_', ' ')} progress. Confirm within five minutes.`,
+        components: buildRestartPhaseConfirmationControls(
+          {
+            matchId: active.id,
+            version: active.version,
+            phaseGeneration: active.phaseGeneration,
+            actorDiscordUserId: interaction.user.id,
+            expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+          },
+          dependencies.componentSigningSecret,
+        ),
+      });
+      return;
+    }
+    if (subcommand === 'reset-player-stats') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('RESET_PLAYER_STATS', actor);
+      const target = interaction.options.getUser('player', true);
+      await interaction.editReply({
+        content: `This resets <@${target.id}>'s current rating and record. Match history is retained. Confirm within five minutes.`,
+        components: buildPlayerStatsResetConfirmationControls(
+          {
+            guildId: interaction.guildId,
+            targetDiscordUserId: target.id,
+            actorDiscordUserId: interaction.user.id,
+            expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+          },
+          dependencies.componentSigningSecret,
+        ),
+      });
+      return;
+    }
+    if (subcommand === 'replace-player') {
+      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
+      if (active === null) throw new Error('No active match');
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('REPLACE_PARTICIPANT', actor);
+      const outgoing = interaction.options.getUser('outgoing', true);
+      const incoming = interaction.options.getUser('incoming', true);
+      await new MatchAdminService(dependencies.prisma).replaceParticipant({
+        matchId: active.id,
+        outgoingDiscordUserId: outgoing.id,
+        incomingDiscordUserId: incoming.id,
+        expectedVersion: active.version,
+        actorDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+      });
+      await interaction.editReply({
+        content: `Replaced <@${outgoing.id}> with <@${incoming.id}>; the ready deadline was restarted.`,
+      });
+      return;
+    }
+    if (subcommand === 'rollback') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('ROLLBACK_MATCH', actor);
+      const matchId = interaction.options.getString('match_id', true);
+      const match = await dependencies.prisma.match.findUnique({ where: { id: matchId } });
+      if (
+        match === null ||
+        match.guildId !== interaction.guildId ||
+        match.resultStatus !== 'APPLIED'
+      ) {
+        throw new Error('No applied result exists for that match.');
+      }
+      await interaction.editReply({
+        content: `This reverses the rating ledger for match ${match.id.slice(0, 8)}. Confirm within five minutes.`,
+        components: buildRollbackConfirmationControls(
+          {
+            matchId: match.id,
+            version: match.version,
+            phaseGeneration: match.phaseGeneration,
+            actorDiscordUserId: interaction.user.id,
+            expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+          },
+          dependencies.componentSigningSecret,
+        ),
+      });
+      return;
+    }
+    if (subcommand === 'queue-ban') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('QUEUE_BAN', actor);
+      const target = interaction.options.getUser('player', true);
+      const reason = interaction.options.getString('reason', true);
+      const durationMinutes = interaction.options.getInteger('duration_minutes');
+      const expiresAt =
+        durationMinutes === null ? null : new Date(Date.now() + durationMinutes * 60_000);
+      await new QueueBanService(dependencies.prisma).ban(
+        interaction.guildId,
+        target.id,
+        interaction.user.id,
+        reason,
+        expiresAt,
+        interaction.id,
+      );
+      await interaction.editReply({
+        content: `<@${target.id}> has been banned from the queue${expiresAt === null ? '' : ` until <t:${String(Math.floor(expiresAt.getTime() / 1000))}:f>`}.`,
+      });
+      return;
+    }
+    if (subcommand === 'queue-unban') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('QUEUE_UNBAN', actor);
+      const target = interaction.options.getUser('player', true);
+      await new QueueBanService(dependencies.prisma).unban(
+        interaction.guildId,
+        target.id,
+        interaction.user.id,
+        interaction.id,
+      );
+      await interaction.editReply({
+        content: `<@${target.id}> has been unbanned from the queue.`,
+      });
+      return;
+    }
   }
 
   await interaction.editReply({
@@ -543,247 +789,24 @@ async function handleCommand(
   });
 }
 
-async function handleAdminComponent(
-  interaction: MessageComponentInteraction,
-  dependencies: BotDependencies,
-  guildResourceService: GuildResourceService,
-): Promise<void> {
-  if (interaction.guildId === null) throw new Error('Guild interaction required');
-  await interaction.deferUpdate();
-  const payload = parseAdminCustomId(interaction.customId, dependencies.componentSigningSecret);
-  if (
-    payload.guildId !== interaction.guildId ||
-    payload.actorDiscordUserId !== interaction.user.id
-  ) {
-    throw new Error('Administrative confirmation does not belong to this interaction');
-  }
-  const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
-  assertAuthorized(
-    payload.action === 'TC' || payload.action === 'TX' ? 'TEARDOWN_GUILD' : 'RECOVER_GUILD_SETUP',
-    adminActor,
-  );
-  if (payload.action === 'TX' || payload.action === 'RX') {
-    await interaction.editReply({ content: 'Administrative action canceled.', components: [] });
-    return;
-  }
-  const preview =
-    payload.action === 'TC'
-      ? await guildResourceService.teardownPreview(interaction.guildId)
-      : await guildResourceService.recoverPreview(interaction.guildId);
-  if (
-    preview.settingsVersion !== payload.settingsVersion ||
-    adminGeneration(preview.attemptId, preview.settingsVersion) !== payload.generation
-  ) {
-    throw new Error('Administrative confirmation is stale');
-  }
-  if (payload.action === 'TC') {
-    await guildResourceService.teardown(
-      interaction.guildId,
-      interaction.user.id,
-      interaction.id,
-      payload.settingsVersion,
-    );
-    await interaction.editReply({
-      content: 'Managed 10man channels were removed.',
-      components: [],
-    });
-  } else {
-    await guildResourceService.recoverSetup(
-      interaction.guildId,
-      interaction.user.id,
-      interaction.id,
-      payload.settingsVersion,
-    );
-    await interaction.editReply({
-      content: 'Managed setup recovery completed. You can run `/match admin setup` again.',
-      components: [],
-    });
-  }
-}
-
-async function handleComponent(
-  interaction: MessageComponentInteraction,
-  dependencies: BotDependencies,
-  matchControlService: MatchControlService,
-): Promise<void> {
-  if (interaction.guildId === null) throw new Error('Guild interaction required');
-  const payload = parseCustomId(interaction.customId, dependencies.componentSigningSecret);
-  const privateResponse = ['GET_CONNECT_INFO', 'SELECT_TEAM_PARTICIPANT'].includes(payload.action);
-  if (privateResponse) await interaction.deferReply({ ephemeral: true });
-  else await interaction.deferUpdate();
-  const match = await dependencies.matchService.findGuildMatch(interaction.guildId);
-  if (match === null || match.id !== payload.matchId) throw new Error('Match is no longer active');
-  const actor = await createActorContext(interaction, match.id, dependencies.prisma);
-  const displayName = interaction.user.globalName ?? interaction.user.username;
-  const authContext = {
-    leaderDiscordUserId: match.leaderDiscordUserId,
-    state: match.state,
-  };
-
-  if (payload.action === 'JOIN') {
-    await dependencies.matchService.join({
-      matchId: match.id,
-      discordUserId: interaction.user.id,
-      displayName,
-      correlationId: interaction.id,
-    });
-  } else if (payload.action === 'LEAVE') {
-    await dependencies.matchService.leave(match.id, actor, interaction.id);
-  } else if (payload.action === 'RANDOMIZE_TEAMS') {
-    await dependencies.matchService.randomizeTeams(
-      match.id,
-      actor,
-      payload.version,
-      interaction.id,
-    );
-  } else if (payload.action === 'LOCK_TEAMS') {
-    await dependencies.matchService.lockTeams(match.id, actor, payload.version, interaction.id);
-  } else if (payload.action === 'SELECT_MAP' && interaction.isStringSelectMenu()) {
-    const mapName = interaction.values[0];
-    if (mapName === undefined) throw new Error('Map selection is missing');
-    await dependencies.matchService.selectMap(
-      match.id,
-      mapName,
-      actor,
-      payload.version,
-      interaction.id,
-    );
-  } else if (payload.action === 'SELECT_PROFILE' && interaction.isStringSelectMenu()) {
-    const profileKey = interaction.values[0];
-    if (profileKey === undefined) throw new Error('Profile selection is missing');
-    assertAuthorized('SELECT_PROFILE', actor, authContext);
-    await dependencies.matchService.selectProfile(
-      match.id,
-      profileKey,
-      actor,
-      payload.version,
-      interaction.id,
-    );
-  } else if (payload.action === 'SELECT_TEAM_PARTICIPANT' && interaction.isUserSelectMenu()) {
-    assertAuthorized('ORGANIZE_TEAMS', actor, authContext);
-    const target = interaction.values[0];
-    if (target === undefined) throw new Error('Player selection is missing');
-    if (!match.players.some((player) => player.discordUserId === target)) {
-      throw new Error('Selected user is not a participant');
-    }
-    await interaction.editReply({
-      content: `Choose a team for <@${target}>.`,
-      components: buildTeamChoiceControls(
-        match.id,
-        payload.version,
-        target,
-        dependencies.componentSigningSecret,
-      ),
-    });
-    return;
-  } else if (payload.action === 'ASSIGN_TEAM_1' || payload.action === 'ASSIGN_TEAM_2') {
-    const target = payload.targetDiscordUserId;
-    if (target === undefined) throw new Error('Player selection is missing');
-    await dependencies.matchService.assignTeam(
-      match.id,
-      target,
-      payload.action === 'ASSIGN_TEAM_1' ? 'TEAM_1' : 'TEAM_2',
-      actor,
-      payload.version,
-      interaction.id,
-    );
-  } else if (payload.action === 'READY' || payload.action === 'UNREADY') {
-    assertAuthorized('READY', actor, authContext);
-    await dependencies.matchService.setReady(
-      match.id,
-      actor,
-      payload.action === 'READY',
-      interaction.id,
-    );
-  } else if (payload.action === 'GET_CONNECT_INFO') {
-    assertAuthorized('VIEW', actor, authContext);
-    const matchWithConnection = await dependencies.prisma.match.findUnique({
-      where: { id: match.id },
-      select: {
-        dathostIp: true,
-        dathostPort: true,
-        dathostServerId: true,
-        encryptedJoinPassword: true,
-      },
-    });
-    if (
-      matchWithConnection === null ||
-      matchWithConnection.dathostServerId === null ||
-      matchWithConnection.dathostIp === null ||
-      matchWithConnection.dathostPort === null ||
-      matchWithConnection.encryptedJoinPassword === null
-    )
-      throw new Error('Connection info is not available yet');
-    const password = dependencies.cipher.decrypt(
-      matchWithConnection.encryptedJoinPassword,
-      `join:${match.id}:${matchWithConnection.dathostServerId}`,
-    );
-    await interaction.editReply({
-      content: `\`connect ${matchWithConnection.dathostIp}:${String(matchWithConnection.dathostPort)}; password ${password}\``,
-    });
-    return;
-  } else if (payload.action === 'FORCE_START') {
-    assertAuthorized('START_MATCH', actor, authContext);
-    await matchControlService.forceStart(match.id, interaction.user.id, interaction.id);
-  } else if (payload.action === 'PAUSE') {
-    assertAuthorized('PAUSE', actor, authContext);
-    await matchControlService.pause(match.id, interaction.user.id, interaction.id);
-  } else if (payload.action === 'RESUME') {
-    assertAuthorized('RESUME', actor, authContext);
-    await matchControlService.resume(match.id, interaction.user.id, interaction.id);
-  } else if (payload.action === 'FORCE_END') {
-    assertAuthorized('STOP', actor, authContext);
-    await matchControlService.forceEnd(match.id, interaction.user.id, interaction.id);
-  } else if (payload.action === 'RESTORE_ROUND' && interaction.isStringSelectMenu()) {
-    assertAuthorized('RESTORE', actor, authContext);
-    const roundValue = interaction.values[0];
-    if (roundValue === undefined) throw new Error('Round selection is missing');
-    const round = Number.parseInt(roundValue, 10);
-    if (Number.isNaN(round)) throw new Error('Invalid round');
-    await matchControlService.restoreRound(match.id, round, interaction.user.id, interaction.id);
-  } else {
-    throw new Error('Unsupported match control');
-  }
-
-  const updated = await dependencies.matchService.findGuildMatch(interaction.guildId);
-  if (updated === null) {
-    await interaction.editReply({
-      content: 'The match is no longer active.',
-      embeds: [],
-      components: [],
-    });
-    return;
-  }
-  const updatedProfiles = await fetchAllowedProfiles(dependencies.prisma);
-  await interaction.editReply({
-    embeds: [
-      renderMatchPanel({
-        matchId: updated.id,
-        leaderMention: `<@${updated.leaderDiscordUserId}>`,
-        state: updated.state,
-        cleanupStatus: updated.cleanupStatus,
-        map: updated.selectedMap,
-        profile: updated.selectedGameProfileKey,
-        readyCount: updated.players.filter((player) => player.readyState === 'READY').length,
-        totalCount: updated.players.length,
-        team1: updated.players
-          .filter((player) => player.team === 'TEAM_1')
-          .map((player) => player.displayNameSnapshot),
-        team2: updated.players
-          .filter((player) => player.team === 'TEAM_2')
-          .map((player) => player.displayNameSnapshot),
-        score: parseMatchScore(match.score),
-      }),
-    ],
-    components: buildMatchControls({
-      matchId: updated.id,
-      version: updated.version,
-      state: updated.state,
-      allowedMaps: updated.profile.mapAllowlist,
-      allowedProfiles: updatedProfiles,
-      secret: dependencies.componentSigningSecret,
-    }),
-  });
+function formatRecentMatches(
+  discordUserId: string,
+  matches: readonly {
+    id: string;
+    selectedMap: string | null;
+    score: unknown;
+    resultStatus: string;
+    finishedAt: Date | null;
+  }[],
+): string {
+  if (matches.length === 0) return `<@${discordUserId}> has no finished matches yet.`;
+  return [
+    `Recent matches for <@${discordUserId}>:`,
+    ...matches.map(
+      (match) =>
+        `• ${match.id.slice(0, 8)} — ${match.selectedMap ?? 'map pending'} — ${match.resultStatus.toLowerCase()}${match.finishedAt === null ? '' : ` — <t:${String(Math.floor(match.finishedAt.getTime() / 1000))}:d>`}`,
+    ),
+  ].join('\n');
 }
 
 function formatManagedPreview(preview: ManagedPreview, teardown: boolean): string {
@@ -810,6 +833,23 @@ function formatDiagnosticsReport(report: {
     channelIds: string[];
     manageChannels: boolean;
     createdAt: Date | null;
+  };
+  tenMan?: {
+    queue: {
+      status: string;
+      version: number;
+      entries: number;
+      panelChannelId: string | null;
+      panelMessageId: string | null;
+    } | null;
+    formingMatch: {
+      id: string;
+      state: string;
+      phaseDeadlineAt: Date | null;
+      phaseGeneration: number;
+      participants: number;
+      ready: number;
+    } | null;
   };
 }): string {
   if (!report.configured) return 'This server is not configured. Use `/match admin configure`.';
@@ -847,6 +887,19 @@ function formatDiagnosticsReport(report: {
       `Active match: ${report.activeMatch === null ? 'none' : `${report.activeMatch.state} (cleanup: ${report.activeMatch.cleanupStatus})`}`,
     );
   }
+  if (report.tenMan !== undefined) {
+    lines.push('10man queue:');
+    lines.push(
+      report.tenMan.queue === null
+        ? '  not initialized'
+        : `  ${report.tenMan.queue.status}; entries ${String(report.tenMan.queue.entries)}; version ${String(report.tenMan.queue.version)}; panel ${report.tenMan.queue.panelMessageId === null ? 'missing' : 'persisted'}`,
+    );
+    if (report.tenMan.formingMatch !== null) {
+      lines.push(
+        `Forming match: ${report.tenMan.formingMatch.state}; ready ${String(report.tenMan.formingMatch.ready)}/${String(report.tenMan.formingMatch.participants)}; generation ${String(report.tenMan.formingMatch.phaseGeneration)}${report.tenMan.formingMatch.phaseDeadlineAt === null ? '' : `; deadline <t:${String(Math.floor(report.tenMan.formingMatch.phaseDeadlineAt.getTime() / 1000))}:R>`}`,
+      );
+    }
+  }
   return lines.join('\n');
 }
 
@@ -870,8 +923,11 @@ async function createGuildAdminActor(
   return {
     discordUserId: interaction.user.id,
     isParticipant: false,
-    isPrivilegedMember: false,
-    isModerator: false,
+    isPrivilegedMember:
+      settings !== null && memberRoles.some((role) => settings.privilegedRoleIds.includes(role)),
+    isModerator:
+      nativeAdministrator ||
+      (settings !== null && memberRoles.some((role) => settings.moderatorRoleIds.includes(role))),
     isAdministrator:
       nativeAdministrator ||
       (settings !== null &&

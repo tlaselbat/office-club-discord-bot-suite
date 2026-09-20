@@ -108,8 +108,8 @@ export class MatchZyReconciliationService {
         await transaction.job.create({
           data: {
             matchId,
-            type: 'PANEL_REFRESH',
-            idempotencyKey: `panel:${matchId}:reconciliation`,
+            type: 'MATCH_DASHBOARD_REFRESH',
+            idempotencyKey: `match-dashboard:${matchId}:reconciliation`,
             payload: { matchId },
           },
         });

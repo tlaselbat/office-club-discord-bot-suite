@@ -96,7 +96,7 @@ After retry exhaustion, the match becomes `FAILED`. If any external resource may
 
 ## Score does not update
 
-`round_end` and `map_result` events persist score and enqueue an idempotent panel refresh. Check webhook authentication, the external-event journal, the corresponding `PANEL_REFRESH` job, and Discord message permissions. Invalid legacy score JSON is rendered as unavailable rather than crashing the panel.
+`round_end` and `map_result` events persist score and enqueue an idempotent dashboard refresh. Check webhook authentication, the external-event journal, the corresponding `MATCH_DASHBOARD_REFRESH` job, and Discord message permissions. Invalid score JSON is rendered as unavailable rather than crashing the dashboard.
 
 ## Missed match end
 

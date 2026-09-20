@@ -18,6 +18,23 @@ export interface DiagnosticsReport {
     manageChannels: boolean;
     createdAt: Date | null;
   };
+  tenMan?: {
+    queue: {
+      status: string;
+      version: number;
+      entries: number;
+      panelChannelId: string | null;
+      panelMessageId: string | null;
+    } | null;
+    formingMatch: {
+      id: string;
+      state: string;
+      phaseDeadlineAt: Date | null;
+      phaseGeneration: number;
+      participants: number;
+      ready: number;
+    } | null;
+  };
 }
 
 export class DiagnosticsService {
@@ -146,6 +163,14 @@ export class DiagnosticsService {
       where: { guildId, guildSlotActive: true },
       select: { id: true, state: true, cleanupStatus: true },
     });
+    const formingMatch = await this.prisma.match.findFirst({
+      where: { guildId, guildSlotActive: true },
+      include: { players: true },
+    });
+    const queue = await this.prisma.tenManQueue.findUnique({
+      where: { guildId },
+      include: { entries: { select: { id: true } } },
+    });
 
     return {
       configured: true,
@@ -162,6 +187,30 @@ export class DiagnosticsService {
         channelIds: settings.managedChannelIds,
         manageChannels: botMember.permissions.has(PermissionFlagsBits.ManageChannels),
         createdAt: settings.managedResourcesCreatedAt,
+      },
+      tenMan: {
+        queue:
+          queue === null
+            ? null
+            : {
+                status: queue.status,
+                version: queue.version,
+                entries: queue.entries.length,
+                panelChannelId: queue.panelChannelId,
+                panelMessageId: queue.panelMessageId,
+              },
+        formingMatch:
+          formingMatch === null
+            ? null
+            : {
+                id: formingMatch.id,
+                state: formingMatch.state,
+                phaseDeadlineAt: formingMatch.phaseDeadlineAt,
+                phaseGeneration: formingMatch.phaseGeneration,
+                participants: formingMatch.players.length,
+                ready: formingMatch.players.filter((player) => player.readyState === 'READY')
+                  .length,
+              },
       },
     };
   }

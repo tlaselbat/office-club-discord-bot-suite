@@ -9,7 +9,7 @@ const participant: ActorContext = {
   isAdministrator: false,
 };
 
-const match = { leaderDiscordUserId: 'leader', state: 'TEAM_SETUP' as const };
+const match = { leaderDiscordUserId: 'leader', state: 'TEAM_SELECTION' as const };
 
 describe('authorization policy', () => {
   it('scopes leader authority to the matching leader identity', () => {
@@ -29,6 +29,14 @@ describe('authorization policy', () => {
     const moderator = { ...participant, isModerator: true };
     expect(isAuthorized('STOP', moderator, match)).toBe(true);
     expect(isAuthorized('CONFIGURE_GUILD', moderator, match)).toBe(false);
+    expect(isAuthorized('QUEUE_BAN', moderator, match)).toBe(true);
+    expect(isAuthorized('ROLLBACK_MATCH', moderator, match)).toBe(true);
+  });
+
+  it('limits new queue and ready actions to their intended actor', () => {
+    expect(isAuthorized('JOIN_QUEUE', { ...participant, isParticipant: false })).toBe(true);
+    expect(isAuthorized('LEAVE_QUEUE', participant)).toBe(true);
+    expect(isAuthorized('CAPTAIN_PICK', participant, match)).toBe(false);
   });
 
   it('allows administrators to perform every action', () => {

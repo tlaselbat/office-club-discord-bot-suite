@@ -143,7 +143,10 @@ Disable is safe during an active match because it blocks only new creation. Enab
 
 ## Missing persistent panel
 
-Panel refresh fetches the configured message and recreates it when the recorded message is gone but the channel remains available. If the channel itself is missing, reconfigure the guild, then enqueue `PANEL_REFRESH` for the match. Initial panel publication failure is compensated to `FAILED` with no active slot because no server has been provisioned.
+Queue and match-dashboard reconciliation recreate a recorded message only in a
+durably owned resource. If the resource is missing, inspect diagnostics and the
+ownership row before retrying `MATCH_DASHBOARD_REFRESH`; do not adopt a message
+or channel by name.
 
 ## Orphaned servers
 

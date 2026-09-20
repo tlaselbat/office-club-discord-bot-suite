@@ -8,15 +8,14 @@ A modular Discord server-management suite with independently configurable member
 - Member Rewards grants idempotent XP for allowlisted text and voice activity, calculates configurable levels, manages level roles, and exposes profiles and leaderboards.
 - Guild-tag loyalty tracks continuous use of the server's primary-guild identity and grants a configurable role after the required duration.
 - The OAuth-protected `/admin` panel independently configures and toggles modules and records audited manual XP adjustments.
-- A configured privileged user creates one active match per Discord guild.
-- The bot publishes a persistent panel in the configured lobby text channel.
-- Steam-verified users join up to the enabled profile's capacity.
-- The leader organizes teams through signed controls, chooses a map/profile, and locks the roster.
+- A persistent Steam-verified queue promotes atomically into one active match per Discord guild.
+- A deadline-driven ready check, captain draft, and map veto use signed, stale-safe controls.
+- The bot owns and reconciles the queue panel plus per-match text/dashboard resources.
+- Parties, queue bans, MatchZy result history, ratings, and audited rollback are durable.
 - A durable worker provisions a disposable DatHost server from a protected template.
 - The backend builds and loads authenticated MatchZy configuration.
 - Discord voice channels reconcile with backend teams.
-- Leaders and moderators use allowlisted start, pause, resume, restore, and end controls.
-- MatchZy events persist scores/results and refresh the panel.
+- MatchZy events persist scores/results and refresh the match dashboard.
 - Finish, cancellation, and provisioning failure trigger safe credential, voice, server, and guild-slot cleanup.
 - Startup recovery resumes unfinished work, while recurring reconciliation and orphan scans detect missed events and unexplained resources.
 - An owner-only web panel at `/admin` configures connected guilds, toggles creation, and runs diagnostics through Discord OAuth.
@@ -33,6 +32,9 @@ A modular Discord server-management suite with independently configurable member
 - [Operations runbook](docs/operations.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Staging acceptance checklist](docs/staging-checklist.md)
+- [10man deployment guide](docs/tenman-v2/migration.md)
+- [10man state machine](docs/tenman-v2/state-machine.md)
+- [10man admin guide](docs/tenman-v2/admin-guide.md)
 
 ## Requirements
 

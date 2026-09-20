@@ -76,14 +76,12 @@ After setup, either a native Discord administrator or a member with the configur
 - `/rewards profile [member]` — show XP, level, rank, and progress to the next configured level.
 - `/rewards leaderboard` — show the server's top reward members.
 - `/rewards tag-status [member]` — show guild-tag loyalty qualification progress.
-- `/10man create` — create a match for the guild; requires a configured privileged, moderator, or administrator role.
-- `/10man status` — show the active match as an ephemeral fresh panel.
+- `/10man queue` — create or repair the durable queue panel.
+- `/10man status` — show the active match state and ready count.
 - `/10man cancel` — cancel the active match; leader, moderator, or administrator only.
 - `/steam register` — start Steam OpenID verification.
 - `/steam status` — show the current verified SteamID64.
 - `/steam replace` — verify a replacement identity; replacement is blocked while the identity is protected by an active locked/live match.
-- `/match transfer player:<user>` — transfer leadership to a participant.
-- `/match remove player:<user>` — remove a participant before teams lock.
 - `/match admin status` — show stored configuration status.
 - `/match admin configure` — create or replace guild configuration.
 - `/match admin diagnostics` — validate channels, roles, permissions, template access, managed recovery state, and active-match status.
@@ -93,15 +91,11 @@ After setup, either a native Discord administrator or a member with the configur
 - `/match admin enable` — validate an intact configuration and re-enable new matches.
 - `/match admin teardown` — preview and, after a signed five-minute confirmation, delete only persisted bot-managed channels. Active guild slots block teardown.
 
-## Panels and controls
+## Queue and dashboard controls
 
-`/10man create` always publishes the persistent panel in the configured lobby text channel, even if the command is run elsewhere. Creation is rejected when that channel is missing or inaccessible. If Discord rejects the actual panel send after match creation, the backend compensates the match to a non-blocking failed state.
-
-The setup panel never exceeds Discord's five-row limit. Team assignment is two-step:
-
-1. The leader or moderator chooses a current participant in the panel's participant selector.
-2. The bot presents that actor with ephemeral, signed Team 1 and Team 2 buttons.
-
-Buttons and selectors are signed and version-bound. If another action changes the match first, use the refreshed persistent panel or `/10man status` rather than retrying an old component.
-
-Connect information is ephemeral and shown only to authorized participants or privileged staff. All slash-command work is acknowledged before slow database, Discord, or DatHost operations, avoiding interaction timeout banners during normal operation.
+`/10man queue` repairs the persistent queue panel in the configured lobby text
+channel. A full queue is promoted atomically into the deadline-driven ready,
+captain, draft, and veto workflow. Queue and match-dashboard controls are
+signed and version-bound; use the refreshed panel rather than retrying a stale
+component. All slash-command work is acknowledged before slow database,
+Discord, or DatHost operations.

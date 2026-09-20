@@ -22,6 +22,11 @@ export interface UpdateGuildSettingsCommand {
   defaultServerLocation?: string;
   defaultGameProfileKey?: string;
   enabled?: boolean;
+  queueSize?: number;
+  partyEnabled?: boolean;
+  readyTimeoutSeconds?: number;
+  teamSelectionMode?: 'CAPTAINS' | 'RANDOM';
+  mapSelectionMode?: 'CAPTAIN_VETO' | 'RANDOM';
   expectedVersion?: number | null;
 }
 
@@ -38,6 +43,13 @@ export class GuildSettingsService {
   ) {}
 
   public async update(command: UpdateGuildSettingsCommand): Promise<void> {
+    if (command.queueSize !== undefined && (command.queueSize < 2 || command.queueSize > 100))
+      throw new Error('V2 queue size must be between 2 and 100');
+    if (
+      command.readyTimeoutSeconds !== undefined &&
+      (command.readyTimeoutSeconds < 15 || command.readyTimeoutSeconds > 900)
+    )
+      throw new Error('V2 ready timeout must be between 15 and 900 seconds');
     const existing = await this.prisma.tenManSettings.findUnique({
       where: { guildId: command.guildId },
     });
@@ -123,6 +135,13 @@ export class GuildSettingsService {
     const profile = await this.prisma.gameProfile.findUnique({ where: { key: profileKey } });
     if (profile === null || !profile.enabled)
       throw new Error(`Game profile ${profileKey} does not exist or is disabled`);
+    const effectiveQueueSize = command.queueSize ?? existing?.queueSize ?? 10;
+    if (profile.playersPerTeam !== 5)
+      throw new Error('10man currently supports only 5v5 game profiles');
+    if (effectiveQueueSize !== profile.playersPerTeam * 2)
+      throw new Error(
+        `Queue size must be ${String(profile.playersPerTeam * 2)} for profile ${profileKey}`,
+      );
 
     await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${command.guildId}, 0))`;
@@ -160,6 +179,17 @@ export class GuildSettingsService {
           defaultServerLocation: command.defaultServerLocation ?? 'dallas',
           defaultGameProfileKey: profileKey,
           enabled: command.enabled ?? true,
+          ...(command.queueSize === undefined ? {} : { queueSize: command.queueSize }),
+          ...(command.partyEnabled === undefined ? {} : { partyEnabled: command.partyEnabled }),
+          ...(command.readyTimeoutSeconds === undefined
+            ? {}
+            : { readyTimeoutSeconds: command.readyTimeoutSeconds }),
+          ...(command.teamSelectionMode === undefined
+            ? {}
+            : { teamSelectionMode: command.teamSelectionMode }),
+          ...(command.mapSelectionMode === undefined
+            ? {}
+            : { mapSelectionMode: command.mapSelectionMode }),
         },
         update: {
           lobbyTextChannelId: command.lobbyTextChannelId,
@@ -173,6 +203,17 @@ export class GuildSettingsService {
           defaultServerLocation: command.defaultServerLocation ?? 'dallas',
           defaultGameProfileKey: profileKey,
           enabled: command.enabled ?? true,
+          ...(command.queueSize === undefined ? {} : { queueSize: command.queueSize }),
+          ...(command.partyEnabled === undefined ? {} : { partyEnabled: command.partyEnabled }),
+          ...(command.readyTimeoutSeconds === undefined
+            ? {}
+            : { readyTimeoutSeconds: command.readyTimeoutSeconds }),
+          ...(command.teamSelectionMode === undefined
+            ? {}
+            : { teamSelectionMode: command.teamSelectionMode }),
+          ...(command.mapSelectionMode === undefined
+            ? {}
+            : { mapSelectionMode: command.mapSelectionMode }),
           version: { increment: 1 },
         },
       });
@@ -187,6 +228,11 @@ export class GuildSettingsService {
             dathostTemplateServerId: command.dathostTemplateServerId,
             defaultServerLocation: command.defaultServerLocation ?? 'dallas',
             defaultGameProfileKey: profileKey,
+            queueSize: command.queueSize,
+            partyEnabled: command.partyEnabled,
+            readyTimeoutSeconds: command.readyTimeoutSeconds,
+            teamSelectionMode: command.teamSelectionMode,
+            mapSelectionMode: command.mapSelectionMode,
           },
         },
       });

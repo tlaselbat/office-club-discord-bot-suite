@@ -8,7 +8,9 @@ function createMockPrisma(profileExists = true): PrismaClient {
     gameProfile: {
       findUnique: vi
         .fn()
-        .mockResolvedValue(profileExists ? { key: 'competitive_5v5', enabled: true } : null),
+        .mockResolvedValue(
+          profileExists ? { key: 'competitive_5v5', enabled: true, playersPerTeam: 5 } : null,
+        ),
     },
     tenManSettings: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -138,6 +140,36 @@ describe('GuildSettingsService', () => {
     await expect(
       service.update({ ...baseCommand, defaultGameProfileKey: 'missing' }),
     ).rejects.toThrow('Game profile missing does not exist');
+  });
+
+  it('rejects a queue size incompatible with the game profile', async () => {
+    const prisma = createMockPrisma();
+    const client = createMockClient();
+    const service = new GuildSettingsService(
+      prisma,
+      client as unknown as ConstructorParameters<typeof GuildSettingsService>[1],
+    );
+
+    await expect(service.update({ ...baseCommand, queueSize: 8 })).rejects.toThrow(
+      'Queue size must be 10',
+    );
+  });
+
+  it('rejects a non-5v5 profile', async () => {
+    const prisma = createMockPrisma();
+    prisma.gameProfile.findUnique = vi.fn().mockResolvedValue({
+      key: 'duo',
+      enabled: true,
+      playersPerTeam: 2,
+    });
+    const service = new GuildSettingsService(
+      prisma,
+      createMockClient() as unknown as ConstructorParameters<typeof GuildSettingsService>[1],
+    );
+
+    await expect(service.update({ ...baseCommand })).rejects.toThrow(
+      '10man currently supports only 5v5',
+    );
   });
 });
 

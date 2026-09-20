@@ -45,9 +45,10 @@ Member Rewards uses an immutable signed-amount ledger plus transactionally maint
 
 Normal progression:
 
-`CREATED → OPEN → FULL → TEAM_SETUP → TEAMS_LOCKED → SERVER_PROVISIONING → SERVER_BOOTING → SERVER_READY → MATCH_LOADED → WARMUP → LIVE ↔ PAUSED → FINISHED`
+`CREATED → READY_CHECK → TEAM_SELECTION → MAP_VETO → TEAMS_LOCKED → SERVER_PROVISIONING → SERVER_BOOTING → SERVER_READY → MATCH_LOADED → WARMUP → LIVE ↔ PAUSED → FINISHED`
 
-Roster or profile changes can return `FULL` or `TEAM_SETUP` to `OPEN`. A profile change at exact capacity produces `FULL`.
+Queue promotion creates the roster atomically. Ready, captain selection, draft,
+and veto are deadline-driven durable phases rather than mutable lobby states.
 
 Terminal states are `FINISHED`, `CANCELED`, and `FAILED`. Exhausted provisioning or boot retries move the match to `FAILED`, preserve a safe failure reason, and queue cleanup when a DatHost resource may exist.
 
@@ -65,15 +66,15 @@ An ambiguous duplicate outcome requires operator review. Unknown or ambiguous ou
 
 ## Durable jobs
 
-| Job                 | Behavior                                                                                       |
-| ------------------- | ---------------------------------------------------------------------------------------------- |
-| `PROVISION_SERVER`  | Creates or reconciles a destination, duplicates/configures the template, and starts the server |
-| `POLL_SERVER_BOOT`  | Polls DatHost, persists `SERVER_READY`, loads MatchZy, then persists `MATCH_LOADED`            |
-| `VOICE_RECONCILE`   | Moves Discord participants to the voice channel matching their team                            |
-| `PANEL_REFRESH`     | Re-renders the persistent panel, including current score and controls                          |
-| `CLEANUP_MATCH`     | Revokes credentials, restores lobby voice, and deletes the owned server                        |
-| `ORPHAN_SCAN`       | Periodically reports DatHost resources that are not accounted for                              |
-| `MATCHZY_RECONCILE` | Periodically recovers missed terminal events and records stale-event observations              |
+| Job                       | Behavior                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| `PROVISION_SERVER`        | Creates or reconciles a destination, duplicates/configures the template, and starts the server |
+| `POLL_SERVER_BOOT`        | Polls DatHost, persists `SERVER_READY`, loads MatchZy, then persists `MATCH_LOADED`            |
+| `VOICE_RECONCILE`         | Moves Discord participants to the voice channel matching their team                            |
+| `MATCH_DASHBOARD_REFRESH` | Re-renders the owned match dashboard, including current score and controls                     |
+| `CLEANUP_MATCH`           | Revokes credentials, restores lobby voice, and deletes the owned server                        |
+| `ORPHAN_SCAN`             | Periodically reports DatHost resources that are not accounted for                              |
+| `MATCHZY_RECONCILE`       | Periodically recovers missed terminal events and records stale-event observations              |
 
 Handlers return either completion or a future reschedule time. Recurring jobs are reset to `PENDING` with their next `run_at`; they are not marked complete after rescheduling. Startup recovery reactivates recurring singleton jobs and resumes unfinished matches. The runner prevents overlapping `runOnce` calls and waits for in-flight work during shutdown.
 

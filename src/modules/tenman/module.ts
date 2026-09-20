@@ -7,7 +7,7 @@ export function createTenManModule(dependencies?: WorkerDependencies): SuiteModu
     key: 'tenman',
     displayName: '10man',
     commands,
-    componentPrefixes: ['tm:', 'tma:'],
+    componentPrefixes: ['tmq:', 'tmm:', 'tma:', 'tma2:', 'tps2:'],
     ...(dependencies === undefined ? {} : { jobHandlers: createJobHandlers(dependencies) }),
   };
 }

@@ -1,8 +1,8 @@
 export const matchStates = [
   'CREATED',
-  'OPEN',
-  'FULL',
-  'TEAM_SETUP',
+  'READY_CHECK',
+  'TEAM_SELECTION',
+  'MAP_VETO',
   'TEAMS_LOCKED',
   'SERVER_PROVISIONING',
   'SERVER_BOOTING',
@@ -30,10 +30,10 @@ export const cleanupStatuses = [
 export type CleanupStatus = (typeof cleanupStatuses)[number];
 
 const forwardTransitions: Readonly<Record<MatchState, readonly MatchState[]>> = {
-  CREATED: ['OPEN'],
-  OPEN: ['FULL'],
-  FULL: ['OPEN', 'TEAM_SETUP'],
-  TEAM_SETUP: ['OPEN', 'TEAMS_LOCKED'],
+  CREATED: ['READY_CHECK'],
+  READY_CHECK: ['TEAM_SELECTION'],
+  TEAM_SELECTION: ['MAP_VETO', 'TEAMS_LOCKED'],
+  MAP_VETO: ['TEAMS_LOCKED'],
   TEAMS_LOCKED: ['SERVER_PROVISIONING'],
   SERVER_PROVISIONING: ['SERVER_BOOTING'],
   SERVER_BOOTING: ['SERVER_READY'],

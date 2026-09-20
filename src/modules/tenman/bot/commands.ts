@@ -4,7 +4,9 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('10man')
     .setDescription('Manage a CS2 10man')
-    .addSubcommand((command) => command.setName('create').setDescription('Create a new 10man'))
+    .addSubcommand((command) =>
+      command.setName('queue').setDescription('Create or repair the persistent 10man queue panel'),
+    )
     .addSubcommand((command) => command.setName('status').setDescription('Show the active 10man'))
     .addSubcommand((command) =>
       command.setName('cancel').setDescription('Cancel the active 10man'),
@@ -24,21 +26,10 @@ export const commands = [
     .setDescription('Administrative match controls')
     .addSubcommand((command) =>
       command
-        .setName('transfer')
-        .setDescription('Transfer leader to a participant')
+        .setName('history')
+        .setDescription('Show recent finished matches for a player')
         .addUserOption((option) =>
-          option
-            .setName('player')
-            .setDescription('The participant to promote to leader')
-            .setRequired(true),
-        ),
-    )
-    .addSubcommand((command) =>
-      command
-        .setName('remove')
-        .setDescription('Remove a participant from the active match')
-        .addUserOption((option) =>
-          option.setName('player').setDescription('The participant to remove').setRequired(true),
+          option.setName('player').setDescription('Player to view (defaults to you)'),
         ),
     )
     .addSubcommandGroup((group) =>
@@ -50,6 +41,76 @@ export const commands = [
         )
         .addSubcommand((command) =>
           command.setName('diagnostics').setDescription('Run safe diagnostics'),
+        )
+        .addSubcommand((command) =>
+          command.setName('panel').setDescription('Show an ephemeral administrative match panel'),
+        )
+        .addSubcommand((command) =>
+          command.setName('force-ready').setDescription('Force the active V2 ready check forward'),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('restart-phase')
+            .setDescription('Request a protected restart of the active V2 forming phase'),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('reset-player-stats')
+            .setDescription("Request a protected reset of a player's V2 standings")
+            .addUserOption((option) =>
+              option
+                .setName('player')
+                .setDescription('Player whose standings to reset')
+                .setRequired(true),
+            ),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('replace-player')
+            .setDescription('Replace a participant during V2 ready check')
+            .addUserOption((option) =>
+              option.setName('outgoing').setDescription('Current participant').setRequired(true),
+            )
+            .addUserOption((option) =>
+              option.setName('incoming').setDescription('Verified replacement').setRequired(true),
+            ),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('rollback')
+            .setDescription('Request an audited rollback of an applied V2 result')
+            .addStringOption((option) =>
+              option
+                .setName('match_id')
+                .setDescription('Full UUID of the finished match')
+                .setRequired(true),
+            ),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('queue-ban')
+            .setDescription('Ban a player from the V2 queue')
+            .addUserOption((option) =>
+              option.setName('player').setDescription('Player to ban').setRequired(true),
+            )
+            .addStringOption((option) =>
+              option.setName('reason').setDescription('Reason for the queue ban').setRequired(true),
+            )
+            .addIntegerOption((option) =>
+              option
+                .setName('duration_minutes')
+                .setDescription('Optional expiry in minutes')
+                .setMinValue(1)
+                .setMaxValue(525600),
+            ),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('queue-unban')
+            .setDescription('Revoke a player V2 queue ban')
+            .addUserOption((option) =>
+              option.setName('player').setDescription('Player to unban').setRequired(true),
+            ),
         )
         .addSubcommand((command) =>
           command
@@ -155,7 +216,111 @@ export const commands = [
                 .setName('default_game_profile')
                 .setDescription('Default game profile key')
                 .setRequired(false),
+            )
+            .addIntegerOption((option) =>
+              option
+                .setName('v2_queue_size')
+                .setDescription('Queue size (must match the selected profile)')
+                .setMinValue(2)
+                .setMaxValue(100),
+            )
+            .addIntegerOption((option) =>
+              option
+                .setName('v2_ready_timeout_seconds')
+                .setDescription('Ready-check timeout in seconds')
+                .setMinValue(15)
+                .setMaxValue(900),
+            )
+            .addBooleanOption((option) =>
+              option.setName('party_enabled').setDescription('Enable party management'),
+            )
+            .addStringOption((option) =>
+              option
+                .setName('team_selection')
+                .setDescription('Team selection policy')
+                .addChoices(
+                  { name: 'Captains', value: 'CAPTAINS' },
+                  { name: 'Random teams', value: 'RANDOM' },
+                ),
+            )
+            .addStringOption((option) =>
+              option
+                .setName('map_selection')
+                .setDescription('Map selection policy')
+                .addChoices(
+                  { name: 'Captain veto', value: 'CAPTAIN_VETO' },
+                  { name: 'Random map', value: 'RANDOM' },
+                ),
             ),
+        ),
+    ),
+  new SlashCommandBuilder()
+    .setName('player')
+    .setDescription('View 10man player statistics')
+    .addSubcommand((command) =>
+      command
+        .setName('stats')
+        .setDescription('Show a player rating and record')
+        .addUserOption((option) =>
+          option.setName('player').setDescription('Player to view (defaults to you)'),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName('matches')
+        .setDescription('Show recent finished matches for a player')
+        .addUserOption((option) =>
+          option.setName('player').setDescription('Player to view (defaults to you)'),
+        ),
+    ),
+  new SlashCommandBuilder()
+    .setName('party')
+    .setDescription('Manage your V2 10man party')
+    .addSubcommand((command) => command.setName('create').setDescription('Create a party'))
+    .addSubcommand((command) =>
+      command
+        .setName('invite')
+        .setDescription('Invite a player to your party')
+        .addStringOption((option) =>
+          option.setName('party_id').setDescription('Your party UUID').setRequired(true),
+        )
+        .addUserOption((option) =>
+          option.setName('player').setDescription('Player to invite').setRequired(true),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName('accept')
+        .setDescription('Accept a party invitation')
+        .addStringOption((option) =>
+          option.setName('invite_id').setDescription('Invitation UUID').setRequired(true),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName('leave')
+        .setDescription('Leave a party')
+        .addStringOption((option) =>
+          option.setName('party_id').setDescription('Party UUID').setRequired(true),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName('kick')
+        .setDescription('Remove a player from your party')
+        .addStringOption((option) =>
+          option.setName('party_id').setDescription('Your party UUID').setRequired(true),
+        )
+        .addUserOption((option) =>
+          option.setName('player').setDescription('Player to remove').setRequired(true),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName('disband')
+        .setDescription('Disband your party')
+        .addStringOption((option) =>
+          option.setName('party_id').setDescription('Your party UUID').setRequired(true),
         ),
     ),
 ].map((command) => command.toJSON());

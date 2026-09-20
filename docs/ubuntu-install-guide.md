@@ -607,17 +607,17 @@ Confirm the link with:
 
 ## 18. Create the first test 10man
 
-A member with the configured privileged role runs:
+A Steam-linked member runs:
 
 ```text
-/10man create
+/10man queue
 ```
 
 Verify that:
 
-1. The persistent panel appears in the configured lobby text channel.
-2. Steam-linked participants can join.
-3. The leader can organize teams and select a map/profile.
+1. The persistent queue panel appears in the configured lobby text channel.
+2. Ten Steam-linked participants can join the queue.
+3. Ready check, captain draft, and map veto progress through signed controls.
 4. Voice movement uses the configured lobby and team channels.
 5. DatHost provisioning duplicates the protected template into a disposable server.
 6. MatchZy loads the generated configuration and reports events.

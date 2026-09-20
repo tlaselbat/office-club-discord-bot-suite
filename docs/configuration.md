@@ -76,13 +76,10 @@ Disabling Member Rewards preserves XP, streak history, settings, and managed rol
 
 Profiles are database records and must be seeded before guild configuration. Only profiles with `enabled = true` are offered or accepted.
 
-Profile capacity is `players_per_team × 2`. Changing an unlocked match's profile:
-
-- Rejects the change if the current roster exceeds the new capacity.
-- Sets the match to `FULL` when the roster exactly equals capacity, otherwise `OPEN`.
-- Resets team assignments to `UNASSIGNED`.
-- Keeps the selected map only if the new profile allows it.
-- Increments the match version, invalidating stale controls.
+Profile capacity is `players_per_team × 2`. The configured default profile is
+used when queue promotion creates a match; formation policy rejects unsupported
+sizes before an invalid draft can begin. Profile and map allowlists remain
+limited to Discord's 25-option control limit.
 
 Discord selectors show at most 25 maps and profiles because of Discord API limits. Keep configured allowlists and enabled-profile counts within that accessible range until pagination is added.
 

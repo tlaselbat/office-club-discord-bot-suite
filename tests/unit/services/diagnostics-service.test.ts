@@ -28,6 +28,9 @@ function createMockPrisma(overrides: object = {}): PrismaClient {
     match: {
       findFirst: vi.fn().mockResolvedValue(null),
     },
+    tenManQueue: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   } as unknown as PrismaClient;
 }
 
@@ -149,5 +152,38 @@ describe('DiagnosticsService', () => {
     const report = await service.runGuildDiagnostics('guild-1');
 
     expect(report.permissions.some((permission) => !permission.ok)).toBe(true);
+  });
+
+  it('reports V2 queue and forming match state from persistence', async () => {
+    const prisma = createMockPrisma({ v2Enabled: true });
+    prisma.tenManQueue.findUnique = vi.fn().mockResolvedValue({
+      status: 'LOCKED',
+      version: 9,
+      panelChannelId: 'text',
+      panelMessageId: 'message-1',
+      entries: [{ id: 'entry-1' }],
+    });
+    prisma.match.findFirst = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'match-1',
+        state: 'READY_CHECK',
+        phaseDeadlineAt: new Date('2026-09-17T00:00:00.000Z'),
+        phaseGeneration: 3,
+        players: [{ readyState: 'READY' }, { readyState: 'NOT_READY' }],
+      });
+    const service = new DiagnosticsService(
+      prisma,
+      createMockClient() as unknown as ConstructorParameters<typeof DiagnosticsService>[1],
+      createMockDathost(true) as unknown as ConstructorParameters<typeof DiagnosticsService>[2],
+    );
+
+    const report = await service.runGuildDiagnostics('guild-1');
+
+    expect(report.tenMan).toMatchObject({
+      queue: { status: 'LOCKED', entries: 1, version: 9 },
+      formingMatch: { state: 'READY_CHECK', ready: 1, participants: 2 },
+    });
   });
 });

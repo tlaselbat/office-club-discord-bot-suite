@@ -9,9 +9,9 @@ datasource db {
 
 enum MatchState {
   CREATED
-  OPEN
-  FULL
-  TEAM_SETUP
+  READY_CHECK
+  TEAM_SELECTION
+  MAP_VETO
   TEAMS_LOCKED
   SERVER_PROVISIONING
   SERVER_BOOTING
@@ -23,6 +23,63 @@ enum MatchState {
   FINISHED
   CANCELED
   FAILED
+}
+
+enum TenManQueueStatus {
+  OPEN
+  LOCKED
+  DISABLED
+}
+
+enum MatchDiscordResourceType {
+  MATCH_TEXT_CHANNEL
+  MATCH_DASHBOARD_MESSAGE
+}
+
+enum MatchDiscordResourceState {
+  PENDING_CREATE
+  CREATE_IN_FLIGHT
+  ACTIVE
+  PENDING_DELETE
+  DELETED
+}
+
+enum CaptainPolicy {
+  RANDOM
+  VOLUNTEER
+  HIGHEST_RATING
+  ADMIN_SELECTED
+}
+
+enum TeamSelectionMode {
+  RANDOM
+  CAPTAINS
+  BALANCED
+  ADMIN_ASSIGNED
+}
+
+enum MapSelectionMode {
+  CAPTAIN_VETO
+  RANDOM
+  ADMIN_SELECTED
+  PRESELECTED
+}
+
+enum DraftTeam {
+  TEAM_1
+  TEAM_2
+}
+
+enum VetoAction {
+  BAN
+  PICK
+  DECIDER
+}
+
+enum MatchResultStatus {
+  PENDING
+  APPLIED
+  REVERSED
 }
 
 enum CleanupStatus {
@@ -113,6 +170,10 @@ model User {
   updatedAt       DateTime        @updatedAt @map("updated_at")
   steamIdentities SteamIdentity[]
   matchPlayers    MatchPlayer[]
+  queueEntries    TenManQueueEntry[]
+  partyMemberships TenManPartyMember[]
+  partyInvitations TenManPartyInvite[]
+  playerStats     PlayerGuildStats[]
   rewardMembers   RewardMember[]
 
   @@map("users")
@@ -187,6 +248,12 @@ model TenManSettings {
   defaultServerLocation   String?  @map("default_server_location")
   defaultGameProfileKey      String?              @map("default_game_profile_key")
   enabled                    Boolean              @default(false)
+  queueSize                  Int                  @default(10) @map("queue_size")
+  partyEnabled               Boolean              @default(false) @map("party_enabled")
+  readyTimeoutSeconds        Int                  @default(90) @map("ready_timeout_seconds")
+  captainPolicy              CaptainPolicy        @default(RANDOM) @map("captain_policy")
+  teamSelectionMode          TeamSelectionMode    @default(CAPTAINS) @map("team_selection_mode")
+  mapSelectionMode           MapSelectionMode     @default(CAPTAIN_VETO) @map("map_selection_mode")
   managedResourceState       ManagedResourceState @default(NONE) @map("managed_resource_state")
   managedSetupStep           ManagedSetupStep?    @map("managed_setup_step")
   managedAttemptId           String?               @map("managed_attempt_id") @db.Uuid
@@ -197,6 +264,10 @@ model TenManSettings {
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @updatedAt @map("updated_at")
   matches                  Match[]
+  queue                    TenManQueue?
+  queueBans                TenManQueueBan[]
+  parties                  TenManParty[]
+  playerStats              PlayerGuildStats[]
   suite                    GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@map("guild_settings")
@@ -332,6 +403,8 @@ model Match {
   guildId                  String                @map("guild_id")
   leaderDiscordUserId      String                @map("leader_discord_user_id")
   state                    MatchState            @default(CREATED)
+  phaseDeadlineAt          DateTime?             @map("phase_deadline_at")
+  phaseGeneration          Int                   @default(0) @map("phase_generation")
   cleanupStatus            CleanupStatus         @default(NOT_REQUIRED) @map("cleanup_status")
   guildSlotActive          Boolean               @default(true) @map("guild_slot_active")
   selectedMap              String?               @map("selected_map")
@@ -345,9 +418,8 @@ model Match {
   matchzyConfig            Json?                 @map("matchzy_config")
   matchzyConfigHash        String?               @map("matchzy_config_hash")
   lastMatchzyEventAt       DateTime?             @map("last_matchzy_event_at")
-  discordPanelChannelId    String?               @map("discord_panel_channel_id")
-  discordPanelMessageId    String?               @map("discord_panel_message_id")
   result                   Json?
+  resultStatus             MatchResultStatus     @default(PENDING) @map("result_status")
   score                    Json?
   failureReason            String?               @map("failure_reason")
   version                  Int                   @default(0)
@@ -367,6 +439,10 @@ model Match {
   jobs                     Job[]
   demoReferences           DemoReference[]
   credentials              MatchCredential[]
+  discordResources         MatchDiscordResource[]
+  draftPicks               MatchDraftPick[]
+  vetoActions              MatchVetoAction[]
+  ratingChanges            MatchRatingChange[]
 
   @@index([guildId, state])
   @@index([state, lastMatchzyEventAt])
@@ -382,6 +458,8 @@ model MatchPlayer {
   participantRole     ParticipantRole @default(PLAYER) @map("participant_role")
   team                PlayerTeam      @default(UNASSIGNED)
   readyState          ReadyState      @default(NOT_READY) @map("ready_state")
+  captainTeam         DraftTeam?      @map("captain_team")
+  draftOrder          Int?            @map("draft_order")
   joinedAt            DateTime        @default(now()) @map("joined_at")
   match               Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
   user                User            @relation(fields: [discordUserId], references: [discordUserId])
@@ -390,6 +468,183 @@ model MatchPlayer {
   @@unique([matchId, steamId64])
   @@index([matchId, team])
   @@map("match_players")
+}
+
+model TenManQueue {
+  guildId        String            @id @map("guild_id")
+  status         TenManQueueStatus @default(OPEN)
+  version        Int               @default(0)
+  panelChannelId String?           @map("panel_channel_id")
+  panelMessageId String?           @map("panel_message_id")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  guild          TenManSettings    @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  entries        TenManQueueEntry[]
+
+  @@map("tenman_queues")
+}
+
+model TenManQueueEntry {
+  id                  String      @id @default(uuid()) @db.Uuid
+  guildId             String      @map("guild_id")
+  discordUserId       String      @map("discord_user_id")
+  steamId64           String      @map("steam_id_64")
+  displayNameSnapshot String      @map("display_name_snapshot")
+  partyId             String?     @map("party_id") @db.Uuid
+  joinedAt            DateTime    @default(now()) @map("joined_at")
+  queue               TenManQueue @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  user                User        @relation(fields: [discordUserId], references: [discordUserId])
+  party               TenManParty? @relation(fields: [partyId], references: [id], onDelete: SetNull)
+
+  @@unique([guildId, discordUserId])
+  @@unique([guildId, steamId64])
+  @@index([guildId, joinedAt])
+  @@map("tenman_queue_entries")
+}
+
+model TenManParty {
+  id        String               @id @default(uuid()) @db.Uuid
+  guildId   String               @map("guild_id")
+  leaderDiscordUserId String     @map("leader_discord_user_id")
+  createdAt DateTime             @default(now()) @map("created_at")
+  updatedAt DateTime             @updatedAt @map("updated_at")
+  guild     TenManSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  members   TenManPartyMember[]
+  invitations TenManPartyInvite[]
+  queueEntries TenManQueueEntry[]
+
+  @@index([guildId])
+  @@map("tenman_parties")
+}
+
+model TenManPartyMember {
+  partyId       String     @map("party_id") @db.Uuid
+  discordUserId String     @map("discord_user_id")
+  joinedAt      DateTime   @default(now()) @map("joined_at")
+  party         TenManParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  user          User       @relation(fields: [discordUserId], references: [discordUserId])
+
+  @@id([partyId, discordUserId])
+  @@unique([discordUserId])
+  @@map("tenman_party_members")
+}
+
+/// A durable, recipient-bound invitation.  An invitation is never authority on
+/// its own: acceptance re-checks party capacity, party enablement, queue state,
+/// and the recipient's single-party membership invariant in the same transaction.
+model TenManPartyInvite {
+  id                    String       @id @default(uuid()) @db.Uuid
+  partyId               String       @map("party_id") @db.Uuid
+  inviteeDiscordUserId  String       @map("invitee_discord_user_id")
+  inviterDiscordUserId  String       @map("inviter_discord_user_id")
+  expiresAt             DateTime     @map("expires_at")
+  acceptedAt            DateTime?    @map("accepted_at")
+  revokedAt             DateTime?    @map("revoked_at")
+  createdAt             DateTime     @default(now()) @map("created_at")
+  party                 TenManParty  @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  invitee               User         @relation(fields: [inviteeDiscordUserId], references: [discordUserId])
+
+  @@index([partyId, inviteeDiscordUserId, expiresAt])
+  @@index([inviteeDiscordUserId, expiresAt])
+  @@map("tenman_party_invites")
+}
+
+model TenManQueueBan {
+  id                  String         @id @default(uuid()) @db.Uuid
+  guildId             String         @map("guild_id")
+  discordUserId       String         @map("discord_user_id")
+  reason              String
+  actorDiscordUserId  String         @map("actor_discord_user_id")
+  expiresAt           DateTime?      @map("expires_at")
+  revokedAt           DateTime?      @map("revoked_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  guild               TenManSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@index([guildId, discordUserId, expiresAt])
+  @@map("tenman_queue_bans")
+}
+
+model MatchDiscordResource {
+  id           String                    @id @default(uuid()) @db.Uuid
+  matchId      String                    @map("match_id") @db.Uuid
+  resourceType MatchDiscordResourceType  @map("resource_type")
+  discordId    String?                   @map("discord_id")
+  createdByBot Boolean                   @default(false) @map("created_by_bot")
+  state        MatchDiscordResourceState @default(PENDING_CREATE)
+  /// Durable identity for one creation attempt. It is cleared only before Discord
+  /// creation has begun, so stale pre-I/O leases can be reclaimed safely.
+  creationAttemptId       String?   @map("creation_attempt_id")
+  creationLeaseExpiresAt  DateTime? @map("creation_lease_expires_at")
+  creationIoStartedAt     DateTime? @map("creation_io_started_at")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  deletedAt    DateTime?                 @map("deleted_at")
+  match        Match                     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, resourceType])
+  @@index([matchId, state])
+  @@map("match_discord_resources")
+}
+
+model MatchDraftPick {
+  id                    String    @id @default(uuid()) @db.Uuid
+  matchId               String    @map("match_id") @db.Uuid
+  pickNumber            Int       @map("pick_number")
+  captainDiscordUserId  String    @map("captain_discord_user_id")
+  selectedDiscordUserId String    @map("selected_discord_user_id")
+  team                  DraftTeam
+  createdAt             DateTime  @default(now()) @map("created_at")
+  match                 Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, pickNumber])
+  @@unique([matchId, selectedDiscordUserId])
+  @@map("match_draft_picks")
+}
+
+model MatchVetoAction {
+  id        String     @id @default(uuid()) @db.Uuid
+  matchId   String     @map("match_id") @db.Uuid
+  sequence  Int
+  actorTeam DraftTeam  @map("actor_team")
+  action    VetoAction
+  mapName   String     @map("map_name")
+  createdAt DateTime   @default(now()) @map("created_at")
+  match     Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, sequence])
+  @@unique([matchId, mapName])
+  @@map("match_veto_actions")
+}
+
+model PlayerGuildStats {
+  guildId       String         @map("guild_id")
+  discordUserId String         @map("discord_user_id")
+  rating        Int            @default(1000)
+  wins          Int            @default(0)
+  losses        Int            @default(0)
+  matchesPlayed Int            @default(0) @map("matches_played")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  guild         TenManSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  user          User           @relation(fields: [discordUserId], references: [discordUserId])
+
+  @@id([guildId, discordUserId])
+  @@index([guildId, rating])
+  @@map("player_guild_stats")
+}
+
+model MatchRatingChange {
+  id            String   @id @default(uuid()) @db.Uuid
+  matchId       String   @map("match_id") @db.Uuid
+  discordUserId String   @map("discord_user_id")
+  ratingBefore  Int      @map("rating_before")
+  delta         Int
+  ratingAfter   Int      @map("rating_after")
+  reversedAt    DateTime? @map("reversed_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, discordUserId])
+  @@map("match_rating_changes")
 }
 
 model MatchStateTransition {

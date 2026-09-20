@@ -9,6 +9,9 @@ function createMockPrisma(matches: object[]): PrismaClient {
     match: {
       findMany: vi.fn().mockResolvedValue(matches),
     },
+    tenManQueue: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     job: {
       upsert: jobUpsert,
       create: jobCreate,
@@ -16,6 +19,7 @@ function createMockPrisma(matches: object[]): PrismaClient {
     $transaction: vi.fn(async (callback) =>
       callback({
         match: { findMany: vi.fn().mockResolvedValue(matches) },
+        tenManQueue: { findMany: vi.fn().mockResolvedValue([]) },
         job: { upsert: jobUpsert, create: jobCreate },
       }),
     ),
@@ -77,8 +81,8 @@ describe('StartupRecovery', () => {
 
     expect(prisma.job.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { idempotencyKey: 'panel:match-3:recovery' },
-        create: expect.objectContaining({ type: 'PANEL_REFRESH' }),
+        where: { idempotencyKey: 'match-dashboard:match-3:recovery' },
+        create: expect.objectContaining({ type: 'MATCH_DASHBOARD_REFRESH' }),
       }),
     );
     expect(prisma.job.upsert).toHaveBeenCalledWith(
@@ -108,6 +112,30 @@ describe('StartupRecovery', () => {
     expect(prisma.job.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { idempotencyKey: 'matchzy-reconcile' },
+      }),
+    );
+  });
+
+  it('restores a persisted V2 draft deadline after a process restart', async () => {
+    const deadline = new Date(Date.now() + 60_000);
+    const prisma = createMockPrisma([
+      {
+        id: 'match-v2',
+        state: 'TEAM_SELECTION',
+        cleanupStatus: 'NOT_REQUIRED',
+        dathostServerId: null,
+        workflowVersion: 'V2',
+        phaseDeadlineAt: deadline,
+        version: 6,
+      },
+    ]);
+
+    await new StartupRecovery(prisma).run();
+
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idempotencyKey: 'phase-timeout:match-v2:TEAM_SELECTION:6' },
+        create: expect.objectContaining({ type: 'MATCH_PHASE_TIMEOUT', runAt: deadline }),
       }),
     );
   });

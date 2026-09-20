@@ -13,7 +13,6 @@ import { SteamLinkService } from './modules/tenman/services/steam-link-service.j
 import { MatchCredentialService } from './modules/tenman/services/match-credential-service.js';
 import { MatchZyEventService } from './modules/tenman/services/matchzy-event-service.js';
 import { StartupRecovery } from './modules/tenman/services/startup-recovery.js';
-import { MatchControlService } from './modules/tenman/services/match-control-service.js';
 import { CredentialCipher } from './modules/tenman/services/credential-cipher.js';
 import { DiagnosticsService } from './modules/tenman/services/diagnostics-service.js';
 import { GuildResourceService } from './modules/tenman/services/guild-resource-service.js';
@@ -51,16 +50,13 @@ export async function createApplication(
     email: environment.DATHOST_EMAIL,
     password: environment.DATHOST_PASSWORD,
   });
-  const matchControlService = new MatchControlService(prisma, dathost, logger);
   const discord = createDiscordClient({
     token: environment.DISCORD_TOKEN,
     clientId: environment.DISCORD_CLIENT_ID,
     prisma,
     matchService,
     steamLinkService,
-    matchControlService,
     dathost,
-    cipher,
     componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
     logger,
   });
