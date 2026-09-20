@@ -6,7 +6,6 @@ const activeMatch = {
   id: 'match-1',
   guildId: 'guild-1',
   matchzyMatchId: 42,
-  workflowVersion: 'V2',
   state: 'READY_CHECK',
   cleanupStatus: 'NOT_REQUIRED',
 };

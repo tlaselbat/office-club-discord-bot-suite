@@ -93,6 +93,6 @@ No Discord API call occurs inside a PostgreSQL transaction. Each phase persists 
 
 ## Database-owned invariants
 
-The migration `20260914223000_unique_active_guild_slot` creates the PostgreSQL partial unique index `matches_one_active_slot_per_guild`. Prisma does not model this partial index directly; do not remove it when generating later migrations.
+The initial schema migration creates the PostgreSQL partial unique index `matches_one_active_slot_per_guild`. Prisma does not model this partial index directly; do not remove it when generating later migrations.
 
 The migration intentionally fails when existing data has multiple `guild_slot_active = true` rows for one guild. Follow the preflight and remediation steps in [Operations](operations.md).

@@ -177,14 +177,14 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
   ]);
 }
 
-async function failProvisioning(
+export async function failProvisioning(
   prisma: PrismaClient,
   matchId: string,
   error: string,
 ): Promise<void> {
-  await prisma.$transaction(async (transaction) => {
+  const requiresCleanup = await prisma.$transaction(async (transaction) => {
     const match = await transaction.match.findUnique({ where: { id: matchId } });
-    if (match === null || ['FINISHED', 'CANCELED', 'FAILED'].includes(match.state)) return;
+    if (match === null || ['FINISHED', 'CANCELED', 'FAILED'].includes(match.state)) return null;
     const attempt = await transaction.provisioningAttempt.findFirst({
       where: { matchId },
       select: { id: true },
@@ -227,12 +227,16 @@ async function failProvisioning(
       update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
       create: {
         matchId,
-        type: 'PANEL_REFRESH',
+        type: 'MATCH_DASHBOARD_REFRESH',
         idempotencyKey: `panel:${matchId}:failure`,
         payload: { matchId },
       },
     });
+    return requiresCleanup;
   });
+  // No external resource exists to clean up, so this terminal failure must not
+  // leave the guild's durable queue locked behind a cleanup job that will never run.
+  if (requiresCleanup === false) await reopenQueueAfterCleanup(prisma, matchId);
 }
 
 async function cleanupJob(
@@ -257,16 +261,16 @@ async function cleanupJob(
     select: { id: true },
   });
   for (const resource of resources) await matchResources.deleteOwnedResource(resource.id);
-  await reopenV2QueueAfterCleanup(prisma, matchId);
+  await reopenQueueAfterCleanup(prisma, matchId);
 }
 
-/** Reopens the persistent queue only after terminal cleanup and owned-resource deletion succeed. */
-async function reopenV2QueueAfterCleanup(prisma: PrismaClient, matchId: string): Promise<void> {
+/** Reopens the persistent queue after cleanup, or immediately when cleanup was never required. */
+async function reopenQueueAfterCleanup(prisma: PrismaClient, matchId: string): Promise<void> {
   await prisma.$transaction(async (transaction) => {
     const match = await transaction.match.findUnique({ where: { id: matchId } });
     if (
       match === null ||
-      match.cleanupStatus !== 'COMPLETE' ||
+      !['COMPLETE', 'NOT_REQUIRED'].includes(match.cleanupStatus) ||
       !['FINISHED', 'CANCELED', 'FAILED'].includes(match.state)
     )
       return;

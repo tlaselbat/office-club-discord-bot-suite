@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
-import { V2MatchInteractionRouter } from '../../../src/modules/tenman/bot/interaction-router.js';
+import { MatchInteractionRouter } from '../../../src/modules/tenman/bot/interaction-router.js';
 import { createMatchCustomId } from '../../../src/modules/tenman/bot/match-custom-id.js';
 
 const secret = 'router-test-secret';
@@ -25,7 +25,7 @@ function router(
     match: { findUnique: vi.fn().mockResolvedValue(match) },
   } as unknown as PrismaClient;
   return {
-    router: new V2MatchInteractionRouter({
+    router: new MatchInteractionRouter({
       prisma,
       componentSigningSecret: secret,
       actorFor: vi.fn(),
@@ -34,7 +34,7 @@ function router(
   };
 }
 
-describe('V2 interaction router stale-control guard', () => {
+describe('interaction router stale-control guard', () => {
   it('does not invoke a service when a valid control carries a stale version', async () => {
     const { router: subject, prisma } = router({
       id: matchId,

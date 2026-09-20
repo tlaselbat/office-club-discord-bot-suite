@@ -4,7 +4,7 @@ import {
   parseMatchCustomId,
 } from '../../../src/modules/tenman/bot/match-custom-id.js';
 
-describe('signed V2 match component IDs', () => {
+describe('signed match component IDs', () => {
   it('binds action, match version, phase generation, and target', () => {
     const secret = 'test-secret';
     const payload = {

@@ -35,7 +35,7 @@ export function parseQueueCustomId(customId: string, secret: string): QueueCompo
 
 function sign(body: string, secret: string): string {
   return createHmac('sha256', secret)
-    .update('10man-queue-v2\0')
+    .update('10man-queue\0')
     .update(body)
     .digest('base64url')
     .slice(0, 16);

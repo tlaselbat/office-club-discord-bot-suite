@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.15.1",
+  "pnpm": {
+    "overrides": {
+      "deepmerge-ts": "8.0.2",
+      "mysql2": "3.24.4"
+    }
+  },
   "engines": {
     "node": ">=22.0.0"
   },
@@ -19,7 +25,7 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration --passWithNoTests",
-    "test:database": "vitest run tests/integration/rewards-database.test.ts",
+    "test:database": "vitest run tests/integration/rewards-database.test.ts tests/integration/tenman-schema.test.ts tests/integration/tenman-invariants.test.ts",
     "test:contract": "vitest run tests/contracts --passWithNoTests",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
@@ -35,7 +41,7 @@
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "discord.js": "14.27.0",
-    "fastify": "5.11.1",
+    "fastify": "5.12.5",
     "pg": "8.16.3",
     "pino": "9.9.5",
     "zod": "4.5.4"
@@ -44,12 +50,13 @@
     "@eslint/js": "9.35.0",
     "@types/node": "22.18.1",
     "@types/pg": "8.15.5",
+    "dotenv": "17.4.2",
     "eslint": "9.35.0",
     "prettier": "3.6.2",
     "prisma": "7.10.0",
     "tsx": "4.20.5",
     "typescript": "5.9.2",
     "typescript-eslint": "8.42.0",
-    "vitest": "3.2.4"
+    "vitest": "4.1.11"
   }
 }

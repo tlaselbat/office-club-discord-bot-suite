@@ -64,7 +64,7 @@ export function parseMatchCustomId(customId: string, secret: string): MatchCompo
 
 function sign(body: string, secret: string): string {
   return createHmac('sha256', secret)
-    .update('10man-match-v2\0')
+    .update('10man-match\0')
     .update(body)
     .digest('base64url')
     .slice(0, 16);

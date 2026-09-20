@@ -14,7 +14,7 @@ export interface ReplaceParticipantCommand {
 }
 
 /**
- * Privileged, V2-only mutations. Authorization and signed confirmation belong
+ * Privileged mutations. Authorization and signed confirmation belong
  * to the interaction boundary; this service owns the transactional state
  * checks, stale-version rejection, invalidation, and audit record.
  */
@@ -33,7 +33,7 @@ export class MatchAdminService {
         where: { id: matchId },
         include: { guild: { select: { readyTimeoutSeconds: true } }, players: true },
       });
-      assertV2State(match, 'READY_CHECK', expectedVersion);
+      assertCurrentState(match, 'READY_CHECK', expectedVersion);
       const deadline = deadlineFrom(match.guild.readyTimeoutSeconds);
       const updated = await transaction.match.updateMany({
         where: {
@@ -93,7 +93,7 @@ export class MatchAdminService {
         where: { id: command.matchId },
         include: { guild: { select: { readyTimeoutSeconds: true } }, players: true },
       });
-      assertV2State(match, 'READY_CHECK', command.expectedVersion);
+      assertCurrentState(match, 'READY_CHECK', command.expectedVersion);
       if (command.outgoingDiscordUserId === command.incomingDiscordUserId)
         throw new PublicError('REPLACEMENT_INVALID', 'Choose a different replacement player.');
       const outgoing = match.players.find(
@@ -313,7 +313,7 @@ function isFormingState(state: string): state is FormingState {
   return state === 'READY_CHECK' || state === 'TEAM_SELECTION' || state === 'MAP_VETO';
 }
 
-function assertV2State(
+function assertCurrentState(
   match: { state: string; version: number } | null,
   state: FormingState,
   expectedVersion: number,

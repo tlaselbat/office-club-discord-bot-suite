@@ -35,7 +35,7 @@ const common = {
   ],
 };
 
-describe('V2 match dashboard', () => {
+describe('match dashboard', () => {
   it('binds the active captain to a draft picker', () => {
     const result = renderMatchDashboard(
       { ...common, state: 'TEAM_SELECTION', draftPickCount: 0, vetoedMaps: [], allowedMaps: [] },

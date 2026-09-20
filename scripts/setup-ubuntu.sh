@@ -213,10 +213,10 @@ deploy_bot() {
   docker compose up -d postgres
 
   log "Applying database migrations"
-  docker compose run --rm app pnpm prisma:migrate:deploy
+  docker compose --profile tools run --rm db-tools
 
   log "Seeding game profiles"
-  docker compose run --rm app pnpm prisma:seed
+  docker compose --profile tools run --rm db-tools corepack pnpm prisma:seed
 
   log "Registering Discord slash commands"
   docker compose run --rm app node dist/register-commands.js

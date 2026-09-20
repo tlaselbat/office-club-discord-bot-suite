@@ -61,7 +61,7 @@ export class MatchZyEventService {
         });
         if (event.event === 'series_end') {
           if (match.resultStatus === 'PENDING') {
-            await applyV2Result(transaction, matchId, event);
+            await applyResult(transaction, matchId, event);
           }
           await transaction.job.upsert({
             where: { idempotencyKey: `cleanup:${matchId}` },
@@ -89,7 +89,7 @@ export class MatchZyEventService {
   }
 }
 
-async function applyV2Result(
+async function applyResult(
   transaction: Parameters<PrismaClient['$transaction']>[0] extends (arg: infer T) => unknown
     ? T
     : never,

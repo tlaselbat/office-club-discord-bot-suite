@@ -4,7 +4,7 @@ const TIMEOUT_STATES = ['TEAM_SELECTION', 'MAP_VETO'] as const;
 type TimeoutState = (typeof TIMEOUT_STATES)[number];
 
 /**
- * Applies the safe terminal outcome for a V2 phase that cannot safely be
+ * Applies the safe terminal outcome for a phase that cannot safely be
  * completed by a worker. The job payload is deliberately only a compare-and-
  * set hint: state, version and the persisted deadline are rechecked while the
  * match advisory lock is held.

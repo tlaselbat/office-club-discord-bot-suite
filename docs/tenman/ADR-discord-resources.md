@@ -2,7 +2,7 @@
 
 ## Decision
 
-Each V2 match owns a `MatchDiscordResource` record for every disposable
+Each match owns a `MatchDiscordResource` record for every disposable
 resource, initially `MATCH_TEXT_CHANNEL` and `MATCH_DASHBOARD_MESSAGE`.
 Creation intent is committed before Discord I/O; a returned Discord ID is
 persisted in a short recovery-safe transaction. The bot deletes a resource
@@ -10,7 +10,7 @@ only when an active ownership row ties that exact ID to the match and says the
 bot created it. Guild `managedChannelIds` remains reserved for shared setup
 resources.
 
-The persistent queue panel is identified on `TenManQueue`. The V2 match
+The persistent queue panel is identified on `TenManQueue`. The match
 dashboard is identified by a `MATCH_DASHBOARD_MESSAGE` resource. Both render
 from database state and can be reconciled after deletion/restart.
 

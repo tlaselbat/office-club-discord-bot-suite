@@ -116,15 +116,14 @@ describe('StartupRecovery', () => {
     );
   });
 
-  it('restores a persisted V2 draft deadline after a process restart', async () => {
+  it('restores a persisted draft deadline after a process restart', async () => {
     const deadline = new Date(Date.now() + 60_000);
     const prisma = createMockPrisma([
       {
-        id: 'match-v2',
+        id: 'match-1',
         state: 'TEAM_SELECTION',
         cleanupStatus: 'NOT_REQUIRED',
         dathostServerId: null,
-        workflowVersion: 'V2',
         phaseDeadlineAt: deadline,
         version: 6,
       },
@@ -134,7 +133,7 @@ describe('StartupRecovery', () => {
 
     expect(prisma.job.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { idempotencyKey: 'phase-timeout:match-v2:TEAM_SELECTION:6' },
+        where: { idempotencyKey: 'phase-timeout:match-1:TEAM_SELECTION:6' },
         create: expect.objectContaining({ type: 'MATCH_PHASE_TIMEOUT', runAt: deadline }),
       }),
     );

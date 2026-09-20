@@ -46,17 +46,17 @@ export const commands = [
           command.setName('panel').setDescription('Show an ephemeral administrative match panel'),
         )
         .addSubcommand((command) =>
-          command.setName('force-ready').setDescription('Force the active V2 ready check forward'),
+          command.setName('force-ready').setDescription('Force the active ready check forward'),
         )
         .addSubcommand((command) =>
           command
             .setName('restart-phase')
-            .setDescription('Request a protected restart of the active V2 forming phase'),
+            .setDescription('Request a protected restart of the active forming phase'),
         )
         .addSubcommand((command) =>
           command
             .setName('reset-player-stats')
-            .setDescription("Request a protected reset of a player's V2 standings")
+            .setDescription("Request a protected reset of a player's standings")
             .addUserOption((option) =>
               option
                 .setName('player')
@@ -67,7 +67,7 @@ export const commands = [
         .addSubcommand((command) =>
           command
             .setName('replace-player')
-            .setDescription('Replace a participant during V2 ready check')
+            .setDescription('Replace a participant during ready check')
             .addUserOption((option) =>
               option.setName('outgoing').setDescription('Current participant').setRequired(true),
             )
@@ -78,7 +78,7 @@ export const commands = [
         .addSubcommand((command) =>
           command
             .setName('rollback')
-            .setDescription('Request an audited rollback of an applied V2 result')
+            .setDescription('Request an audited rollback of an applied result')
             .addStringOption((option) =>
               option
                 .setName('match_id')
@@ -89,7 +89,7 @@ export const commands = [
         .addSubcommand((command) =>
           command
             .setName('queue-ban')
-            .setDescription('Ban a player from the V2 queue')
+            .setDescription('Ban a player from the queue')
             .addUserOption((option) =>
               option.setName('player').setDescription('Player to ban').setRequired(true),
             )
@@ -107,7 +107,7 @@ export const commands = [
         .addSubcommand((command) =>
           command
             .setName('queue-unban')
-            .setDescription('Revoke a player V2 queue ban')
+            .setDescription('Revoke a player queue ban')
             .addUserOption((option) =>
               option.setName('player').setDescription('Player to unban').setRequired(true),
             ),
@@ -219,14 +219,14 @@ export const commands = [
             )
             .addIntegerOption((option) =>
               option
-                .setName('v2_queue_size')
+                .setName('queue_size')
                 .setDescription('Queue size (must match the selected profile)')
                 .setMinValue(2)
                 .setMaxValue(100),
             )
             .addIntegerOption((option) =>
               option
-                .setName('v2_ready_timeout_seconds')
+                .setName('ready_timeout_seconds')
                 .setDescription('Ready-check timeout in seconds')
                 .setMinValue(15)
                 .setMaxValue(900),
@@ -275,7 +275,7 @@ export const commands = [
     ),
   new SlashCommandBuilder()
     .setName('party')
-    .setDescription('Manage your V2 10man party')
+    .setDescription('Manage your 10man party')
     .addSubcommand((command) => command.setName('create').setDescription('Create a party'))
     .addSubcommand((command) =>
       command

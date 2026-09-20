@@ -5,7 +5,6 @@ import { MatchAdminService } from '../../../src/modules/tenman/services/match-ad
 const baseMatch = {
   id: 'match-1',
   guildId: 'guild-1',
-  workflowVersion: 'V2',
   state: 'READY_CHECK',
   version: 4,
   guild: { readyTimeoutSeconds: 90 },
@@ -46,7 +45,7 @@ function createPrisma(match: object | null = baseMatch) {
 }
 
 describe('MatchAdminService', () => {
-  it('force-ready advances only a current V2 ready check and schedules a version-bound phase timeout', async () => {
+  it('force-ready advances a ready check and schedules a version-bound phase timeout', async () => {
     const { prisma, transaction } = createPrisma();
 
     await new MatchAdminService(prisma).forceReady('match-1', 4, 'admin', 'corr-1');

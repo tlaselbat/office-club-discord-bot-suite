@@ -364,7 +364,7 @@ Compose creates the `tenman` database and stores PostgreSQL data in the persiste
 It runs:
 
 ```bash
-docker compose run --rm app pnpm prisma:migrate:deploy
+docker compose --profile tools run --rm db-tools
 ```
 
 This applies all pending production migrations, including tables, indexes, active-guild-slot safeguards, managed-resource state, and owner-panel sessions.
@@ -376,7 +376,7 @@ If migration deployment fails, the script stops. Review the migration error befo
 It runs:
 
 ```bash
-docker compose run --rm app pnpm prisma:seed
+docker compose --profile tools run --rm db-tools corepack pnpm prisma:seed
 ```
 
 This creates or updates the built-in enabled game-profile records needed for guild configuration. Seeding is designed to be safe on reruns.
@@ -739,10 +739,10 @@ sudo docker compose logs -f postgres
 sudo docker compose restart app
 
 # Reapply pending migrations
-sudo docker compose run --rm app pnpm prisma:migrate:deploy
+sudo docker compose --profile tools run --rm db-tools
 
 # Reseed game profiles
-sudo docker compose run --rm app pnpm prisma:seed
+sudo docker compose --profile tools run --rm db-tools corepack pnpm prisma:seed
 
 # Register current Discord commands
 sudo docker compose run --rm app node dist/register-commands.js

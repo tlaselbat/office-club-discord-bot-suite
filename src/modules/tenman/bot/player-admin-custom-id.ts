@@ -71,7 +71,7 @@ export function parsePlayerAdminCustomId(
 
 function sign(body: string, secret: string): string {
   return createHmac('sha256', secret)
-    .update('10man-player-admin-v2\0')
+    .update('10man-player-admin\0')
     .update(body)
     .digest('base64url')
     .slice(0, 16);

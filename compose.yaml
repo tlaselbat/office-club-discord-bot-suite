@@ -15,7 +15,9 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   app:
-    build: .
+    build:
+      context: .
+      target: runtime
     env_file: ${ENV_FILE:-.env}
     ports:
       - '127.0.0.1:3000:3000'
@@ -23,6 +25,19 @@ services:
       postgres:
         condition: service_healthy
     restart: always
+
+  # Explicitly run this one-off service for database migrations and seeding.
+  # It retains only the development tooling that those operations require;
+  # the long-running app image stays production-pruned.
+  db-tools:
+    build:
+      context: .
+      target: db-tools
+    env_file: ${ENV_FILE:-.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [tools]
 
 volumes:
   postgres-data:

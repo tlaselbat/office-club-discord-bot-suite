@@ -14,7 +14,7 @@ const payload = {
   expiresAt: 2_000,
 };
 
-describe('signed V2 match-admin component IDs', () => {
+describe('signed match-admin component IDs', () => {
   it('round-trips all stale and actor bindings', () => {
     const customId = createMatchAdminCustomId(payload, secret);
     expect(customId.length).toBeLessThanOrEqual(100);

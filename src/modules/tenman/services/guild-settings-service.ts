@@ -44,12 +44,12 @@ export class GuildSettingsService {
 
   public async update(command: UpdateGuildSettingsCommand): Promise<void> {
     if (command.queueSize !== undefined && (command.queueSize < 2 || command.queueSize > 100))
-      throw new Error('V2 queue size must be between 2 and 100');
+      throw new Error('Queue size must be between 2 and 100');
     if (
       command.readyTimeoutSeconds !== undefined &&
       (command.readyTimeoutSeconds < 15 || command.readyTimeoutSeconds > 900)
     )
-      throw new Error('V2 ready timeout must be between 15 and 900 seconds');
+      throw new Error('Ready timeout must be between 15 and 900 seconds');
     const existing = await this.prisma.tenManSettings.findUnique({
       where: { guildId: command.guildId },
     });

@@ -4,10 +4,10 @@
 
 - [ ] Node 22 runtime verified
 - [ ] Empty PostgreSQL database is reachable through `DATABASE_URL`
-- [ ] Migrations applied with `pnpm prisma migrate deploy`
-- [ ] Profiles seeded with `pnpm prisma db seed`
+- [ ] Migrations applied with `corepack pnpm prisma:migrate:deploy`
+- [ ] Profiles seeded with `corepack pnpm prisma:seed`
 - [ ] Public HTTPS URL is reachable by Steam and the game server
-- [ ] `pnpm discord:register` succeeds and commands appear in the test guild
+- [ ] `corepack pnpm discord:register` succeeds and commands appear in the test guild
 - [ ] `/health/live` and `/health/ready` return 200
 
 ## Guild setup
@@ -44,10 +44,11 @@
 
 ## Verification
 
-- [ ] `pnpm format:check`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm lint`
-- [ ] `pnpm prisma:validate` with staging/test `DATABASE_URL`
-- [ ] `pnpm test`
-- [ ] `pnpm build`
+- [ ] `corepack pnpm format:check`
+- [ ] `corepack pnpm typecheck`
+- [ ] `corepack pnpm lint`
+- [ ] `corepack pnpm prisma:validate` with staging/test `DATABASE_URL`
+- [ ] `corepack pnpm test`
+- [ ] `TEST_DATABASE_URL` points to an isolated migrated database and `corepack pnpm test:database` passes
+- [ ] `corepack pnpm build`
 - [ ] No secrets appear in logs, Discord responses, or test artifacts

@@ -63,9 +63,11 @@ export async function createApplication(
   const guildSettingsService = new GuildSettingsService(prisma, discord);
   const guildResourceService = new GuildResourceService(prisma, discord, logger);
   const diagnosticsService = new DiagnosticsService(prisma, discord, dathost);
+  let startupComplete = false;
   const http = await createHttpServer({
     logger,
     readiness: async () => {
+      if (!startupComplete || !discord.isReady()) return false;
       try {
         await prisma.$queryRaw`SELECT 1`;
         return true;
@@ -129,6 +131,7 @@ export async function createApplication(
     discord,
     worker,
     async start() {
+      startupComplete = false;
       await prisma.$connect();
       await http.listen({ host: environment.HOST, port: environment.PORT });
       await discord.login(environment.DISCORD_TOKEN);
@@ -139,8 +142,10 @@ export async function createApplication(
       await new StartupRecovery(prisma).run();
       await modules.start();
       worker.start();
+      startupComplete = true;
     },
     async stop() {
+      startupComplete = false;
       await worker.stop();
       await modules.stop();
       await discord.destroy();

@@ -4,6 +4,7 @@ import type { SuiteModule } from '../../../../src/core/modules/types.js';
 import type { JobHandler } from '../../../../src/jobs/worker.js';
 
 const command = (name: string) => ({ name });
+const collisionHandler: JobHandler = async () => undefined;
 
 describe('ModuleRegistry', () => {
   it('composes commands and jobs', () => {
@@ -39,8 +40,8 @@ describe('ModuleRegistry', () => {
       'Duplicate component prefix',
     ],
     [
-      { key: 'one', displayName: 'One', jobHandlers: new Map([['SHARED', vi.fn()]]) },
-      { key: 'two', displayName: 'Two', jobHandlers: new Map([['SHARED', vi.fn()]]) },
+      { key: 'one', displayName: 'One', jobHandlers: new Map([['SHARED', collisionHandler]]) },
+      { key: 'two', displayName: 'Two', jobHandlers: new Map([['SHARED', collisionHandler]]) },
       'Duplicate job type',
     ],
   ] satisfies [SuiteModule, SuiteModule, string][])(

@@ -550,9 +550,9 @@ async function handleCommand(
       const defaultServerLocation = interaction.options.getString('dathost_location') ?? undefined;
       const defaultGameProfileKey =
         interaction.options.getString('default_game_profile') ?? undefined;
-      const queueSize = interaction.options.getInteger('v2_queue_size') ?? undefined;
+      const queueSize = interaction.options.getInteger('queue_size') ?? undefined;
       const readyTimeoutSeconds =
-        interaction.options.getInteger('v2_ready_timeout_seconds') ?? undefined;
+        interaction.options.getInteger('ready_timeout_seconds') ?? undefined;
       const partyEnabled = interaction.options.getBoolean('party_enabled') ?? undefined;
       const configuredTeamSelectionMode = interaction.options.getString('team_selection');
       const teamSelectionMode =

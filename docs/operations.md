@@ -31,36 +31,16 @@ If UFW is already active, the script allows OpenSSH and TCP 80/443; it does not 
 
 ## Manual deployment order
 
-Before applying the active-slot migration, run:
+This release is a fresh-database baseline: deploy it only to an empty PostgreSQL database. Do not apply its initial migration to an existing installation or manually alter `_prisma_migrations`; create and test a separate import or upgrade process first. Take and restore-test a backup before any destructive database operation.
 
-```sql
-SELECT guild_id, COUNT(*)
-FROM matches
-WHERE guild_slot_active = true
-GROUP BY guild_id
-HAVING COUNT(*) > 1;
-```
-
-If rows are returned, stop. Inspect every affected match, provisioning attempt, cleanup status, and DatHost ownership marker. Do not arbitrarily deactivate a row while an external disposable server may still exist. The migration repeats this check and intentionally aborts instead of choosing a winner.
-
-Before the suite/rewards migration, take a PostgreSQL backup and record these counts:
-
-```sql
-SELECT COUNT(*) FROM guild_settings;
-SELECT COUNT(*) FROM matches WHERE guild_slot_active = true;
-SELECT managed_resource_state, COUNT(*) FROM guild_settings GROUP BY managed_resource_state;
-```
-
-After migration, every `guild_settings.guild_id` must have one matching `suite_guilds.guild_id`; the match and managed-resource counts must be unchanged. Verify the reward ledger idempotency index, activity-receipt idempotency index, and partial active-voice-session index exist. Restore the backup rather than manually editing migration history if validation fails.
-
-For database-backed reward concurrency checks, create an isolated migrated test database and run `TEST_DATABASE_URL=postgresql://... corepack pnpm test:database`. The test creates uniquely named rows and removes them afterward. Never point `TEST_DATABASE_URL` at production.
+For database-backed rewards and 10man invariant checks, create an isolated migrated test database and run `TEST_DATABASE_URL=postgresql://... corepack pnpm test:database`. The tests create uniquely named rows and remove them afterward. Never point `TEST_DATABASE_URL` at production.
 
 Deploy with:
 
 ```bash
 corepack pnpm install --frozen-lockfile
 corepack pnpm prisma migrate deploy
-corepack pnpm prisma db seed
+corepack pnpm prisma:seed
 corepack pnpm build
 corepack pnpm discord:register
 corepack pnpm start

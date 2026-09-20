@@ -16,20 +16,20 @@ import { parseQueueCustomId } from './queue-custom-id.js';
 import { parseMatchAdminCustomId } from './match-admin-custom-id.js';
 import { parsePlayerAdminCustomId } from './player-admin-custom-id.js';
 
-export interface V2InteractionRouterOptions {
+export interface InteractionRouterOptions {
   prisma: PrismaClient;
   componentSigningSecret: string;
   actorFor: (interaction: MessageComponentInteraction, matchId: string) => Promise<ActorContext>;
 }
 
 /** Routes signed first-release match-dashboard interactions. */
-export class V2MatchInteractionRouter {
+export class MatchInteractionRouter {
   private readonly readyCheckService: ReadyCheckService;
   private readonly captainService: CaptainService;
   private readonly draftService: DraftService;
   private readonly vetoService: VetoService;
 
-  public constructor(private readonly options: V2InteractionRouterOptions) {
+  public constructor(private readonly options: InteractionRouterOptions) {
     this.readyCheckService = new ReadyCheckService(options.prisma);
     this.captainService = new CaptainService(options.prisma);
     this.draftService = new DraftService(options.prisma);
@@ -103,7 +103,7 @@ export class V2MatchInteractionRouter {
   }
 }
 
-export interface TenManComponentInteractionRouterOptions extends V2InteractionRouterOptions {
+export interface TenManComponentInteractionRouterOptions extends InteractionRouterOptions {
   guildResourceService: GuildResourceService;
   adminActorFor: (interaction: MessageComponentInteraction) => Promise<ActorContext>;
   matchService: MatchService;
@@ -111,13 +111,13 @@ export interface TenManComponentInteractionRouterOptions extends V2InteractionRo
 
 /** Owns every supported 10man component namespace. */
 export class TenManComponentInteractionRouter {
-  private readonly match: V2MatchInteractionRouter;
+  private readonly match: MatchInteractionRouter;
   private readonly queueService: QueueService;
   private readonly matchHistory: MatchHistoryService;
   private readonly matchAdmin: MatchAdminService;
 
   public constructor(private readonly options: TenManComponentInteractionRouterOptions) {
-    this.match = new V2MatchInteractionRouter(options);
+    this.match = new MatchInteractionRouter(options);
     this.queueService = new QueueService(options.prisma);
     this.matchHistory = new MatchHistoryService(options.prisma);
     this.matchAdmin = new MatchAdminService(options.prisma);

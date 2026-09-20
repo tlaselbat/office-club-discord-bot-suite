@@ -32,9 +32,9 @@ A modular Discord server-management suite with independently configurable member
 - [Operations runbook](docs/operations.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Staging acceptance checklist](docs/staging-checklist.md)
-- [10man deployment guide](docs/tenman-v2/migration.md)
-- [10man state machine](docs/tenman-v2/state-machine.md)
-- [10man admin guide](docs/tenman-v2/admin-guide.md)
+- [10man deployment guide](docs/tenman/migration.md)
+- [10man state machine](docs/tenman/state-machine.md)
+- [10man admin guide](docs/tenman/admin-guide.md)
 
 ## Requirements
 
@@ -51,8 +51,8 @@ A modular Discord server-management suite with independently configurable member
 cp .env.example .env
 # Fill in credentials and public URLs.
 corepack pnpm install
-corepack pnpm prisma migrate dev
-corepack pnpm prisma db seed
+corepack pnpm prisma:migrate:deploy
+corepack pnpm prisma:seed
 corepack pnpm discord:register
 corepack pnpm build
 corepack pnpm start
@@ -94,7 +94,19 @@ For a single Docker host:
 docker compose up --build -d
 ```
 
-Apply migrations, seed profiles, and run `corepack pnpm discord:register` as explicit deployment steps. Before applying the active-slot uniqueness migration to existing data, run the duplicate preflight in the [operations runbook](docs/operations.md).
+Apply migrations, seed profiles, and run `corepack pnpm discord:register` as explicit deployment steps. This release is an initial-schema baseline and must use a new empty database; see the [operations runbook](docs/operations.md) before designing an import for existing data.
+
+The long-running `app` image is production-pruned. For Docker deployments, use
+the separate database-tools image after PostgreSQL is healthy:
+
+```bash
+docker compose --profile tools run --rm db-tools
+docker compose --profile tools run --rm db-tools corepack pnpm prisma:seed
+```
+
+The image build uses a non-secret, build-only datasource URL solely to generate
+the Prisma client. It never receives the deployment `DATABASE_URL`; the
+database-tools service reads that value only at command runtime from `.env`.
 
 ## Important invariants
 

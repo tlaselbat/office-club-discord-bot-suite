@@ -14,7 +14,7 @@ export class CredentialCipher {
     cipher.setAAD(Buffer.from(context));
     const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
     return [
-      'v1',
+      'aesgcm',
       nonce.toString('base64url'),
       cipher.getAuthTag().toString('base64url'),
       ciphertext.toString('base64url'),
@@ -22,9 +22,9 @@ export class CredentialCipher {
   }
 
   public decrypt(value: string, context: string): string {
-    const [version, nonceValue, tagValue, ciphertextValue, extra] = value.split('.');
+    const [scheme, nonceValue, tagValue, ciphertextValue, extra] = value.split('.');
     if (
-      version !== 'v1' ||
+      scheme !== 'aesgcm' ||
       nonceValue === undefined ||
       tagValue === undefined ||
       ciphertextValue === undefined ||

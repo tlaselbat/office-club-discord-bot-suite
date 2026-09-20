@@ -109,7 +109,7 @@ function parsePayload(value: unknown): AdminComponentPayload {
 
 function sign(body: string, secret: string): string {
   return createHmac('sha256', secret)
-    .update('10man-admin-v1\0')
+    .update('10man-admin\0')
     .update(body)
     .digest('base64url')
     .slice(0, 16);

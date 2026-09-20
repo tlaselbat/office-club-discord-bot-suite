@@ -30,7 +30,6 @@ function createPrisma(match: object | null): {
 const expiredTeamSelection = {
   id: 'match-1',
   guildId: 'guild-1',
-  workflowVersion: 'V2',
   state: 'TEAM_SELECTION',
   version: 4,
   phaseDeadlineAt: new Date(Date.now() - 1000),

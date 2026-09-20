@@ -51,7 +51,7 @@ Component IDs are signed and bound to a match version. Any roster, profile, team
 
 Team assignment is two-step: select a participant, then use the ephemeral Team 1 or Team 2 buttons. If the participant leaves or the match version changes between those steps, select again.
 
-If the persistent message was deleted, enqueue `PANEL_REFRESH` or restart to trigger recovery. If its channel was deleted, reconfigure the guild first.
+If the persistent message was deleted, enqueue `MATCH_DASHBOARD_REFRESH` or restart to trigger recovery. If its channel was deleted, reconfigure the guild first.
 
 ## An interaction returns a reference ID
 
@@ -61,7 +61,7 @@ The reference is the Discord interaction ID. Search structured logs for `interac
 
 - Disabled profiles are intentionally hidden and rejected.
 - A profile cannot be selected when its capacity is below the current roster size.
-- A successful profile change recalculates `OPEN`/`FULL`, resets all team assignments, and clears a selected map that is not allowed by the new profile.
+- A successful profile change resets team-selection progress and clears a selected map that is not allowed by the new profile.
 - Refresh stale controls after any profile change.
 
 ## Voice moves do not happen

@@ -24,6 +24,9 @@ export async function createHttpServer(dependencies: HttpServerDependencies) {
     loggerInstance: dependencies.logger as FastifyBaseLogger,
     bodyLimit: 64 * 1024,
     requestIdHeader: false,
+    // The app is published only on loopback and is reached through one Caddy
+    // proxy hop. Trust that immediate hop so rate limiting uses client IPs.
+    trustProxy: (_address, hop) => hop === 0,
   });
   await app.register(cookie);
   await app.register(formbody);
@@ -40,6 +43,9 @@ export async function createHttpServer(dependencies: HttpServerDependencies) {
     const ready = await dependencies.readiness();
     return reply.code(ready ? 200 : 503).send({ status: ready ? 'ready' : 'unavailable' });
   });
+
+  // Fastify's default not-found message embeds the unredacted request URL.
+  app.setNotFoundHandler((_request, reply) => reply.code(404).send({ error: 'not_found' }));
 
   app.setErrorHandler((error: unknown, request, reply) => {
     request.log.warn(

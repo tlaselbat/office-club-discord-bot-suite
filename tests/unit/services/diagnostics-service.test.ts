@@ -154,7 +154,7 @@ describe('DiagnosticsService', () => {
     expect(report.permissions.some((permission) => !permission.ok)).toBe(true);
   });
 
-  it('reports V2 queue and forming match state from persistence', async () => {
+  it('reports queue and forming match state from persistence', async () => {
     const prisma = createMockPrisma({ v2Enabled: true });
     prisma.tenManQueue.findUnique = vi.fn().mockResolvedValue({
       status: 'LOCKED',
