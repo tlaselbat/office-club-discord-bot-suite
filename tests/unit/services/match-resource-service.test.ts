@@ -107,11 +107,48 @@ describe('MatchResourceService durable creation recovery', () => {
     );
     const { client } = createClient();
 
-    await new MatchResourceService(prisma, client as never).deleteOwnedResource('resource-1');
+    await new MatchResourceService(prisma, client as never).archiveOwnedChannel('resource-1');
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ state: 'DELETED' }) }),
     );
     expect(client.channels.fetch).not.toHaveBeenCalled();
+  });
+
+  it('archives and locks a proven bot-owned channel without deleting it', async () => {
+    const { prisma } = createPrisma([]);
+    const owned = {
+      ...resource('ACTIVE', new Date(), null),
+      discordId: 'channel-1',
+      createdByBot: true,
+    };
+    (prisma.matchDiscordResource.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(owned);
+    const edit = vi.fn().mockResolvedValue(undefined);
+    const permissionEdit = vi.fn().mockResolvedValue(undefined);
+    const deleteChannel = vi.fn().mockResolvedValue(undefined);
+    const client = {
+      channels: {
+        fetch: vi.fn().mockResolvedValue({
+          name: 'match-42',
+          guild: { roles: { everyone: { id: 'everyone' } } },
+          isTextBased: () => true,
+          edit,
+          delete: deleteChannel,
+          permissionOverwrites: { edit: permissionEdit },
+        }),
+      },
+    };
+
+    await new MatchResourceService(prisma, client as never).archiveOwnedChannel('resource-1');
+
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ name: 'archived-10man-match-42' }));
+    expect(permissionEdit).toHaveBeenCalledWith(
+      { id: 'everyone' },
+      expect.objectContaining({ ViewChannel: false, SendMessages: false }),
+    );
+    expect(deleteChannel).not.toHaveBeenCalled();
+    expect(prisma.matchDiscordResource.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ state: 'ARCHIVED' }) }),
+    );
   });
 });

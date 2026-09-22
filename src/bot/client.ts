@@ -9,7 +9,7 @@ import {
   type ChatInputCommandInteraction,
   type MessageComponentInteraction,
 } from 'discord.js';
-import type { PrismaClient } from '../generated/prisma/client.js';
+import type { PrismaClient, TenManSettings } from '../generated/prisma/client.js';
 import type { MatchService } from '../modules/tenman/services/match-service.js';
 import type { SteamLinkService } from '../modules/tenman/services/steam-link-service.js';
 import { GuildSettingsService } from '../modules/tenman/services/guild-settings-service.js';
@@ -18,7 +18,7 @@ import { DiagnosticsService } from '../modules/tenman/services/diagnostics-servi
 import { commands } from '../modules/tenman/bot/commands.js';
 import { assertAuthorized, type ActorContext } from '../modules/tenman/domain/authorization.js';
 import type { Logger } from 'pino';
-import { publicMessage } from '../errors/public-error.js';
+import { PublicError, publicMessage } from '../errors/public-error.js';
 import {
   GuildResourceService,
   type ManagedPreview,
@@ -240,6 +240,16 @@ async function handleCommand(
 ): Promise<void> {
   if (interaction.guildId === null) throw new Error('Guild command required');
   await interaction.deferReply({ ephemeral: true });
+  if (TENMAN_COMMAND_NAMES.has(interaction.commandName) && !isTenManSetupCommand(interaction)) {
+    const settings = await dependencies.prisma.tenManSettings.findUnique({
+      where: { guildId: interaction.guildId },
+    });
+    if (!isManagedTenManCommandChannel(interaction.channelId, settings))
+      throw new PublicError(
+        'TENMAN_MANAGED_CHANNEL_REQUIRED',
+        'Use 10man commands in an active bot-managed 10man channel.',
+      );
+  }
   if (
     interaction.commandName === 'steam' &&
     ['register', 'replace'].includes(interaction.options.getSubcommand())
@@ -798,6 +808,34 @@ async function handleCommand(
   });
 }
 
+const TENMAN_COMMAND_NAMES = new Set(['10man', 'steam', 'match', 'player', 'party']);
+
+export function isTenManSetupCommand(interaction: {
+  commandName: string;
+  options: { getSubcommandGroup(required?: boolean): string | null; getSubcommand(): string };
+}): boolean {
+  return (
+    interaction.commandName === 'match' &&
+    interaction.options.getSubcommandGroup(false) === 'admin' &&
+    interaction.options.getSubcommand() === 'setup'
+  );
+}
+
+/**
+ * Server-side containment for every 10man slash command except its privileged
+ * bootstrap command. Command registration alone cannot enforce channel scope.
+ */
+export function isManagedTenManCommandChannel(
+  channelId: string | null,
+  settings: Pick<TenManSettings, 'managedResourceState' | 'managedChannelIds'> | null,
+): boolean {
+  return (
+    channelId !== null &&
+    settings?.managedResourceState === 'ACTIVE' &&
+    settings.managedChannelIds.includes(channelId)
+  );
+}
+
 function formatRecentMatches(
   discordUserId: string,
   matches: readonly {
@@ -823,7 +861,7 @@ function formatManagedPreview(preview: ManagedPreview, teardown: boolean): strin
   const resources =
     ids.length === 0 ? 'No persisted resources.' : ids.map((id) => `<#${id}>`).join('\n');
   return teardown
-    ? `This permanently deletes these bot-managed Discord resources:\n${resources}\n\nConfirm within five minutes.`
+    ? `This archives and locks these bot-managed Discord resources. No channel will be deleted; a Discord administrator may remove archived resources manually:\n${resources}\n\nConfirm within five minutes.`
     : `Interrupted setup step: ${preview.setupStep ?? 'unknown'}\nPersisted resources:\n${resources}\n\nInspect Discord for any untracked resource from the interrupted step, remove it manually, then acknowledge within five minutes.`;
 }
 

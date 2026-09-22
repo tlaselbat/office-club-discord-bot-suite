@@ -257,10 +257,15 @@ async function cleanupJob(
     cleanupStatus: match.cleanupStatus as 'PENDING' | 'RUNNING' | 'RETRY' | 'FAILED',
   });
   const resources = await prisma.matchDiscordResource.findMany({
-    where: { matchId, createdByBot: true, state: { not: 'DELETED' } },
+    where: {
+      matchId,
+      createdByBot: true,
+      resourceType: 'MATCH_TEXT_CHANNEL',
+      state: { notIn: ['DELETED', 'ARCHIVED'] },
+    },
     select: { id: true },
   });
-  for (const resource of resources) await matchResources.deleteOwnedResource(resource.id);
+  for (const resource of resources) await matchResources.archiveOwnedChannel(resource.id);
   await reopenQueueAfterCleanup(prisma, matchId);
 }
 

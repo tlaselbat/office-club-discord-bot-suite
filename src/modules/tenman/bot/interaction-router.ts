@@ -301,7 +301,8 @@ export class TenManComponentInteractionRouter {
         payload.settingsVersion,
       );
       await interaction.editReply({
-        content: 'Managed 10man channels were removed.',
+        content:
+          'Managed 10man channels were archived and locked. A Discord administrator may delete them manually if desired.',
         components: [],
       });
       return;

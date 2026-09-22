@@ -59,7 +59,7 @@ describe('GuildResourceService lifecycle guards', () => {
     );
   });
 
-  it('refuses to delete manual resources', async () => {
+  it('refuses to archive manual resources', async () => {
     const { service } = createService({
       ...managedSettings,
       managedResourceState: 'NONE',
@@ -67,7 +67,43 @@ describe('GuildResourceService lifecycle guards', () => {
       managedChannelIds: [],
     });
     await expect(service.teardownPreview('123456789012345678')).rejects.toThrow(
-      'Manually configured channels are never removed',
+      'Manually configured channels are never changed',
     );
+  });
+
+  it('archives and locks tracked resources without deleting them', async () => {
+    const { service } = createService(managedSettings);
+    const edit = vi.fn().mockResolvedValue(undefined);
+    const permissionEdit = vi.fn().mockResolvedValue(undefined);
+    const deleteChannel = vi.fn().mockResolvedValue(undefined);
+    const channel = {
+      name: '10man-lobby',
+      edit,
+      delete: deleteChannel,
+      permissionOverwrites: { edit: permissionEdit },
+    };
+    const guild = {
+      roles: { everyone: { id: 'everyone' } },
+      members: { me: { permissions: { has: vi.fn().mockReturnValue(true) } } },
+      channels: { fetch: vi.fn().mockResolvedValue(channel) },
+    };
+    (service as unknown as { client: object }).client = {
+      guilds: { fetch: vi.fn().mockResolvedValue(guild) },
+    };
+
+    await (
+      service as unknown as {
+        archiveTracked: (guildId: string, actorId: string, correlationId: string) => Promise<void>;
+      }
+    ).archiveTracked('123456789012345678', '223456789012345678', 'correlation');
+
+    expect(edit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'archived-10man-10man-lobby' }),
+    );
+    expect(permissionEdit).toHaveBeenCalledWith(
+      { id: 'everyone' },
+      expect.objectContaining({ ViewChannel: false, SendMessages: false }),
+    );
+    expect(deleteChannel).not.toHaveBeenCalled();
   });
 });

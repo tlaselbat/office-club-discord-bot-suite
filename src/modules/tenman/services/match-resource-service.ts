@@ -4,6 +4,7 @@ import type { PrismaClient } from '../../../generated/prisma/client.js';
 
 /** A short lease limits abandoned work before any Discord create side effect. */
 export const MATCH_RESOURCE_CREATION_LEASE_MS = 2 * 60 * 1000;
+const ARCHIVE_PREFIX = 'archived-10man-';
 
 /**
  * Owns disposable match resources. A row is committed before Discord I/O; only
@@ -133,7 +134,7 @@ export class MatchResourceService {
         })
       ).count === 1;
     if (!activated) {
-      await this.recordAndDeleteCreatedChannel(resource.id, channel.id, channel);
+      await this.recordAndArchiveCreatedChannel(resource.id, channel.id, channel);
       throw new Error('Match ended or cleanup started while its channel was being created');
     }
     return channel.id;
@@ -201,13 +202,13 @@ export class MatchResourceService {
     });
   }
 
-  private async recordAndDeleteCreatedChannel(
+  private async recordAndArchiveCreatedChannel(
     resourceId: string,
     channelId: string,
     channel: TextChannel,
   ): Promise<void> {
-    // Persist bot ownership before attempting deletion. A crash after Discord
-    // returned leaves a retryable, proven-owned PENDING_DELETE record.
+    // Persist bot ownership before archiving. A crash after Discord returned
+    // leaves a retryable, proven-owned PENDING_DELETE record.
     await this.prisma.matchDiscordResource.update({
       where: { id: resourceId },
       data: {
@@ -217,18 +218,19 @@ export class MatchResourceService {
         creationLeaseExpiresAt: null,
       },
     });
-    await channel.delete();
+    await this.archiveChannel(channel);
     await this.prisma.matchDiscordResource.update({
       where: { id: resourceId },
-      data: { state: 'DELETED', deletedAt: new Date() },
+      data: { state: 'ARCHIVED', deletedAt: new Date() },
     });
   }
 
-  public async deleteOwnedResource(resourceId: string): Promise<void> {
+  /** Archives and locks a proven bot-owned match channel; it never deletes it. */
+  public async archiveOwnedChannel(resourceId: string): Promise<void> {
     const resource = await this.prisma.matchDiscordResource.findUnique({
       where: { id: resourceId },
     });
-    if (resource === null || resource.state === 'DELETED') return;
+    if (resource === null || resource.state === 'DELETED' || resource.state === 'ARCHIVED') return;
     if (!resource.createdByBot || resource.discordId === null) {
       if (resource.state === 'PENDING_CREATE') {
         await this.prisma.matchDiscordResource.updateMany({
@@ -255,17 +257,32 @@ export class MatchResourceService {
         return;
       }
       if (resource.state === 'PENDING_DELETE') return;
-      throw new Error('Refusing to delete an unowned match resource');
+      throw new Error('Refusing to archive an unowned match resource');
     }
     await this.prisma.matchDiscordResource.update({
       where: { id: resourceId },
       data: { state: 'PENDING_DELETE' },
     });
     const channel = await this.client.channels.fetch(resource.discordId).catch(() => null);
-    if (channel !== null && channel.isTextBased()) await (channel as TextChannel).delete();
+    if (channel !== null && channel.isTextBased())
+      await this.archiveChannel(channel as TextChannel);
     await this.prisma.matchDiscordResource.update({
       where: { id: resourceId },
-      data: { state: 'DELETED', deletedAt: new Date() },
+      data: { state: 'ARCHIVED', deletedAt: new Date() },
+    });
+  }
+
+  private async archiveChannel(channel: TextChannel): Promise<void> {
+    const name = channel.name.startsWith(ARCHIVE_PREFIX)
+      ? channel.name
+      : `${ARCHIVE_PREFIX}${channel.name}`.slice(0, 100);
+    const reason = '10Man match archive; manual deletion required';
+    await channel.edit({ name, reason });
+    await channel.permissionOverwrites.edit(channel.guild.roles.everyone, {
+      ViewChannel: false,
+      SendMessages: false,
+      Connect: false,
+      Speak: false,
     });
   }
 }

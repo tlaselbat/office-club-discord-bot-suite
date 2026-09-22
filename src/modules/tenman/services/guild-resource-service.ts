@@ -5,6 +5,7 @@ import {
   type Client,
   type Guild,
   type GuildBasedChannel,
+  type GuildChannel,
 } from 'discord.js';
 import type { Logger } from 'pino';
 import type {
@@ -51,6 +52,12 @@ const resources = [
   { step: 'TEAM1_VOICE' as const, name: 'Team 1', type: ChannelType.GuildVoice },
   { step: 'TEAM2_VOICE' as const, name: 'Team 2', type: ChannelType.GuildVoice },
 ] as const;
+
+const ARCHIVE_PREFIX = 'archived-10man-';
+
+function archivedName(name: string): string {
+  return name.startsWith(ARCHIVE_PREFIX) ? name : `${ARCHIVE_PREFIX}${name}`.slice(0, 100);
+}
 
 export class GuildResourceService {
   public constructor(
@@ -296,7 +303,7 @@ export class GuildResourceService {
         },
       });
     });
-    await this.deleteTracked(guildId, actorDiscordUserId, correlationId);
+    await this.archiveTracked(guildId, actorDiscordUserId, correlationId);
   }
 
   private async resolveSetup(
@@ -563,10 +570,11 @@ export class GuildResourceService {
   ): Promise<void> {
     const settings = await this.prisma.tenManSettings.findUnique({ where: { guildId } });
     if (settings === null || settings.managedAttemptId !== attemptId) return;
-    await this.deleteTracked(guildId, actorDiscordUserId, correlationId, preserveAmbiguity);
+    await this.archiveTracked(guildId, actorDiscordUserId, correlationId, preserveAmbiguity);
   }
 
-  private async deleteTracked(
+  /** Never delete Discord channels; final removal is an administrator action. */
+  private async archiveTracked(
     guildId: string,
     actorDiscordUserId: string,
     correlationId: string,
@@ -578,14 +586,13 @@ export class GuildResourceService {
     if (settings === null) return;
     for (const id of [...settings.managedChannelIds].reverse()) {
       const channel = await guild.channels.fetch(id).catch(() => null);
-      if (channel !== null) await channel.delete(`10Man managed cleanup by ${actorDiscordUserId}`);
+      if (channel !== null) await this.archiveChannel(channel, guild, actorDiscordUserId);
       await this.removeManagedId(guildId, id, false, actorDiscordUserId, correlationId);
     }
     settings = await this.prisma.tenManSettings.findUnique({ where: { guildId } });
     if (settings?.managedCategoryId !== null && settings?.managedCategoryId !== undefined) {
       const category = await guild.channels.fetch(settings.managedCategoryId).catch(() => null);
-      if (category !== null)
-        await category.delete(`10Man managed cleanup by ${actorDiscordUserId}`);
+      if (category !== null) await this.archiveChannel(category, guild, actorDiscordUserId);
       await this.removeManagedId(
         guildId,
         settings.managedCategoryId,
@@ -619,7 +626,7 @@ export class GuildResourceService {
         data: {
           guildId,
           actorDiscordUserId,
-          eventType: 'guild_managed_cleanup_completed',
+          eventType: 'guild_managed_archive_completed',
           result: 'success',
           correlationId,
           metadata: {},
@@ -652,7 +659,7 @@ export class GuildResourceService {
         data: {
           guildId,
           actorDiscordUserId,
-          eventType: 'guild_managed_resource_deleted',
+          eventType: 'guild_managed_resource_archived',
           result: 'success',
           correlationId,
           metadata: { resourceId },
@@ -670,7 +677,7 @@ export class GuildResourceService {
     )
       throw new PublicError(
         'NO_MANAGED_RESOURCES',
-        'No bot-managed channels are available to delete. Manually configured channels are never removed.',
+        'No bot-managed channels are available to archive. Manually configured channels are never changed.',
       );
     return settings;
   }
@@ -683,6 +690,21 @@ export class GuildResourceService {
       channelIds: settings.managedChannelIds,
       setupStep: settings.managedSetupStep,
     };
+  }
+
+  private async archiveChannel(
+    channel: GuildBasedChannel,
+    guild: Guild,
+    actorDiscordUserId: string,
+  ): Promise<void> {
+    const reason = `10Man managed archive by ${actorDiscordUserId}; manual deletion required`;
+    await channel.edit({ name: archivedName(channel.name), reason });
+    await (channel as GuildChannel).permissionOverwrites.edit(guild.roles.everyone, {
+      ViewChannel: false,
+      SendMessages: false,
+      Connect: false,
+      Speak: false,
+    });
   }
 
   private async assertNoActiveMatch(guildId: string): Promise<void> {

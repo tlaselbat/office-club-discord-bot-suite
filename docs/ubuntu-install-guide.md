@@ -105,7 +105,7 @@ In the Discord Developer Portal:
 4. Open the generated URL.
 5. Select the target Discord guild and authorize the bot.
 
-`Manage Channels` is required for `/match admin setup`, setup recovery, and managed teardown. The bot deletes only channel IDs that it has persisted as bot-owned.
+`Manage Channels` is required for `/match admin setup`, setup recovery, and managed teardown. The bot archives and locks only channel IDs that it has persisted as bot-owned; it never deletes channels.
 
 The person who performs the first guild setup must have Discord's native **Administrator** permission. A configured bot administrator role does not exist yet.
 

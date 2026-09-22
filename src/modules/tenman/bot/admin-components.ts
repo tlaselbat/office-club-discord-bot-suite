@@ -13,7 +13,7 @@ export function buildAdminConfirmationControls(
       .addComponents(
         new ButtonBuilder()
           .setCustomId(createAdminCustomId({ ...payload, action: confirmAction }, secret))
-          .setLabel(kind === 'teardown' ? 'Confirm teardown' : 'Acknowledge manual cleanup')
+          .setLabel(kind === 'teardown' ? 'Confirm archive and lock' : 'Acknowledge manual cleanup')
           .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
           .setCustomId(createAdminCustomId({ ...payload, action: cancelAction }, secret))

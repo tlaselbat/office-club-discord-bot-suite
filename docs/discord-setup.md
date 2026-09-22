@@ -89,7 +89,11 @@ After setup, either a native Discord administrator or a member with the configur
 - `/match admin recover-setup` — acknowledge/rollback an interrupted setup after inspecting any ambiguous Discord create.
 - `/match admin disable` — block new matches without affecting an existing match or deleting resources.
 - `/match admin enable` — validate an intact configuration and re-enable new matches.
-- `/match admin teardown` — preview and, after a signed five-minute confirmation, delete only persisted bot-managed channels. Active guild slots block teardown.
+- `/match admin teardown` — preview and, after a signed five-minute confirmation, archive and lock only persisted bot-managed channels. It never deletes channels; a Discord administrator may remove archived channels manually. Active guild slots block teardown.
+
+Except for the privileged `/match admin setup` bootstrap command, every 10man
+slash command must be invoked in one of the active bot-managed 10man channels.
+The bot enforces this server-side and rejects commands from unrelated channels.
 
 ## Queue and dashboard controls
 

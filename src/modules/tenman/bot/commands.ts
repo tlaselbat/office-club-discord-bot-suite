@@ -147,7 +147,7 @@ export const commands = [
           command.setName('enable').setDescription('Validate and enable this server'),
         )
         .addSubcommand((command) =>
-          command.setName('teardown').setDescription('Delete bot-managed 10man channels'),
+          command.setName('teardown').setDescription('Archive and lock bot-managed 10man channels'),
         )
         .addSubcommand((command) =>
           command

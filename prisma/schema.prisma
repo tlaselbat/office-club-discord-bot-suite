@@ -53,6 +53,7 @@ enum MatchDiscordResourceState {
   ACTIVE
   PENDING_DELETE
   DELETED
+  ARCHIVED
 }
 
 enum CaptainPolicy {

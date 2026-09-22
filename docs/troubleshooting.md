@@ -28,7 +28,7 @@
 
 Run `/match admin diagnostics`. An empty `SETTING_UP/RESERVED` state is recoverable through `/match admin recover-setup`. A `*_CREATE_IN_FLIGHT` state is ambiguous: inspect Discord and its audit log, manually remove any untracked resource from that attempt, then use the signed recovery acknowledgement. The bot never adopts or deletes same-named resources.
 
-If teardown partially fails, settings remain disabled and only unresolved managed IDs remain. Restore Manage Channels/network access and rerun `/match admin teardown`. Teardown refuses while any active match or cleanup owns the guild slot.
+If teardown partially fails, settings remain disabled and only unresolved managed IDs remain. Restore Manage Channels/network access and rerun `/match admin teardown`. Teardown archives and locks channels rather than deleting them, and refuses while any active match or cleanup owns the guild slot.
 
 Administrative confirmations expire after five minutes and require the same initiating user. Every bot instance must use the same persistent `MATCH_TOKEN_SIGNING_SECRET`.
 
