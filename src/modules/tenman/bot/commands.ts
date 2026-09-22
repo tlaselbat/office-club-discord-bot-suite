@@ -181,6 +181,12 @@ export const commands = [
                 .setRequired(true)
                 .addChannelTypes(ChannelType.GuildVoice),
             )
+            .addChannelOption((option) =>
+              option
+                .setName('results_channel')
+                .setDescription('Bot-post-only channel for retained match results')
+                .addChannelTypes(ChannelType.GuildText),
+            )
             .addRoleOption((option) =>
               option
                 .setName('privileged_role')

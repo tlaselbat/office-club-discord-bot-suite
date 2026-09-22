@@ -5,6 +5,7 @@ import type { ProvisioningOrchestrator } from '../orchestrator/provisioning.js';
 import type { DatHostClient } from '../integrations/dathost/client.js';
 import { buildMatchZyConfig } from '../integrations/matchzy/config-builder.js';
 import { renderMatchZyCommand } from '../integrations/matchzy/commands.js';
+import { assertCompetitiveBo1FiveVFive, gameProfileSchema } from '../domain/game-profile.js';
 import type { CredentialCipher } from './credential-cipher.js';
 import type { MatchCredentialService } from './match-credential-service.js';
 
@@ -165,6 +166,19 @@ export class ProvisioningService {
       throw new Error('Roster does not match profile');
     }
     if (match.selectedMap === null) throw new Error('No map selected');
+    const profile = gameProfileSchema.parse({
+      key: match.profile.key,
+      enabled: match.profile.enabled,
+      playersPerTeam: match.profile.playersPerTeam,
+      numMaps: match.profile.numMaps,
+      serverSlots: match.profile.serverSlots,
+      mapAllowlist: match.profile.mapAllowlist,
+      matchzy: {
+        ...(match.profile.matchzyOptions as object),
+        cvars: match.profile.allowedCvars,
+      },
+    });
+    assertCompetitiveBo1FiveVFive(profile);
 
     const configToken = await this.credentials.issue(
       matchId,
@@ -195,8 +209,10 @@ export class ProvisioningService {
         displayName: player.displayNameSnapshot,
         team: player.team as 'TEAM_1' | 'TEAM_2',
       })),
-      minPlayersToReady: match.profile.playersPerTeam,
-      cvars: match.profile.allowedCvars as Record<string, string>,
+      minPlayersToReady: profile.matchzy.minPlayersToReady,
+      mapSide: profile.matchzy.knifeRound ? 'knife' : profile.matchzy.mapSide,
+      ...(profile.matchzy.wingman === true ? { wingman: true } : {}),
+      cvars: profile.matchzy.cvars,
       remoteLogUrl,
       remoteLogHeaderKey: 'x-matchzy-token',
       remoteLogHeaderValue: eventToken.token,

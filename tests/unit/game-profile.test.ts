@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { gameProfileSchema } from '../../src/modules/tenman/domain/game-profile.js';
+import {
+  assertCompetitiveBo1FiveVFive,
+  gameProfileSchema,
+} from '../../src/modules/tenman/domain/game-profile.js';
 
 const profile = {
   key: 'competitive_5v5',
@@ -7,7 +10,7 @@ const profile = {
   playersPerTeam: 5,
   numMaps: 1,
   serverSlots: 11,
-  mapAllowlist: ['de_mirage'],
+  mapAllowlist: ['de_mirage', 'de_inferno'],
   matchzy: {
     minPlayersToReady: 10,
     knifeRound: true,
@@ -26,5 +29,12 @@ describe('game profile validation', () => {
     expect(gameProfileSchema.safeParse({ ...profile, mapAllowlist: ['; quit'] }).success).toBe(
       false,
     );
+  });
+
+  it('makes unsupported profiles opt-in future work rather than a live failure', () => {
+    expect(() => assertCompetitiveBo1FiveVFive(gameProfileSchema.parse(profile))).not.toThrow();
+    expect(() =>
+      assertCompetitiveBo1FiveVFive(gameProfileSchema.parse({ ...profile, numMaps: 3 })),
+    ).toThrow('BO1 5v5');
   });
 });

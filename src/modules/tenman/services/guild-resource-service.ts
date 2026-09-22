@@ -13,6 +13,7 @@ import type {
   PrismaClient,
 } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
+import { assertCompetitiveBo1FiveVFive, gameProfileSchema } from '../domain/game-profile.js';
 
 export interface ManagedSetupCommand {
   guildId: string;
@@ -334,6 +335,19 @@ export class GuildResourceService {
     });
     if (profile === null || !profile.enabled)
       throw new PublicError('PROFILE_UNAVAILABLE', 'The selected game profile is unavailable.');
+    try {
+      assertCompetitiveBo1FiveVFive(
+        gameProfileSchema.parse({
+          ...profile,
+          matchzy: { ...(profile.matchzyOptions as object), cvars: profile.allowedCvars },
+        }),
+      );
+    } catch {
+      throw new PublicError(
+        'PROFILE_UNAVAILABLE',
+        'The selected game profile is not supported by the competitive 10man release.',
+      );
+    }
     return {
       privilegedRoleIds: [privilegedRoleId],
       moderatorRoleIds: [moderatorRoleId],

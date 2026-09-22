@@ -15,11 +15,13 @@ import { parseMatchCustomId } from './match-custom-id.js';
 import { parseQueueCustomId } from './queue-custom-id.js';
 import { parseMatchAdminCustomId } from './match-admin-custom-id.js';
 import { parsePlayerAdminCustomId } from './player-admin-custom-id.js';
+import type { MatchParticipantInfoService } from '../services/match-participant-info-service.js';
 
 export interface InteractionRouterOptions {
   prisma: PrismaClient;
   componentSigningSecret: string;
   actorFor: (interaction: MessageComponentInteraction, matchId: string) => Promise<ActorContext>;
+  participantInfo: Pick<MatchParticipantInfoService, 'get'>;
 }
 
 /** Routes signed first-release match-dashboard interactions. */
@@ -58,6 +60,23 @@ export class MatchInteractionRouter {
       );
       await interaction.editReply({
         content: payload.action === 'READY' ? 'Ready confirmed.' : 'Ready status withdrawn.',
+      });
+      return;
+    }
+    if (payload.action === 'MY_MATCH_INFO') {
+      const info = await this.options.participantInfo.get(
+        match.id,
+        interaction.guildId,
+        interaction.user.id,
+      );
+      await interaction.editReply({
+        content: [
+          `**${info.team === 'TEAM_1' ? 'Team 1' : 'Team 2'}** — map: **${info.map}**`,
+          `Voice: <#${info.voiceChannelId}>`,
+          `Connect: \`${info.address}\``,
+          `Password: \`${info.password}\``,
+          'Keep these details private to match participants.',
+        ].join('\n'),
       });
       return;
     }
@@ -107,6 +126,7 @@ export interface TenManComponentInteractionRouterOptions extends InteractionRout
   guildResourceService: GuildResourceService;
   adminActorFor: (interaction: MessageComponentInteraction) => Promise<ActorContext>;
   matchService: MatchService;
+  participantInfo: MatchParticipantInfoService;
 }
 
 /** Owns every supported 10man component namespace. */

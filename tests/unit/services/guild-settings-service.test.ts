@@ -6,11 +6,24 @@ import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 function createMockPrisma(profileExists = true): PrismaClient {
   return {
     gameProfile: {
-      findUnique: vi
-        .fn()
-        .mockResolvedValue(
-          profileExists ? { key: 'competitive_5v5', enabled: true, playersPerTeam: 5 } : null,
-        ),
+      findUnique: vi.fn().mockResolvedValue(
+        profileExists
+          ? {
+              key: 'competitive_5v5',
+              enabled: true,
+              playersPerTeam: 5,
+              numMaps: 1,
+              serverSlots: 11,
+              mapAllowlist: ['de_mirage', 'de_inferno'],
+              matchzyOptions: {
+                minPlayersToReady: 10,
+                knifeRound: true,
+                mapSide: 'knife',
+              },
+              allowedCvars: {},
+            }
+          : null,
+      ),
     },
     tenManSettings: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -161,6 +174,11 @@ describe('GuildSettingsService', () => {
       key: 'duo',
       enabled: true,
       playersPerTeam: 2,
+      numMaps: 1,
+      serverSlots: 5,
+      mapAllowlist: ['de_mirage', 'de_inferno'],
+      matchzyOptions: { minPlayersToReady: 4, knifeRound: true, mapSide: 'knife' },
+      allowedCvars: {},
     });
     const service = new GuildSettingsService(
       prisma,
@@ -168,7 +186,7 @@ describe('GuildSettingsService', () => {
     );
 
     await expect(service.update({ ...baseCommand })).rejects.toThrow(
-      '10man currently supports only 5v5',
+      'selected game profile is not supported',
     );
   });
 });

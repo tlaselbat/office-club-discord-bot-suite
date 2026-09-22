@@ -49,14 +49,22 @@ export class MatchZyEventService {
             },
           });
         }
+        const scoreUpdate = event.event === 'round_end' || event.event === 'map_result';
+        const dashboardKey = `match-dashboard:${matchId}:${scoreUpdate ? 'score' : 'state'}`;
         await transaction.job.upsert({
-          where: { idempotencyKey: `match-dashboard:${matchId}:event:${journal.id}` },
-          update: {},
+          where: { idempotencyKey: dashboardKey },
+          update: {
+            status: 'PENDING',
+            runAt: scoreUpdate ? new Date(Date.now() + 5_000) : new Date(),
+            attempts: 0,
+            lastError: null,
+          },
           create: {
             matchId,
             type: 'MATCH_DASHBOARD_REFRESH',
-            idempotencyKey: `match-dashboard:${matchId}:event:${journal.id}`,
+            idempotencyKey: dashboardKey,
             payload: { matchId },
+            ...(scoreUpdate ? { runAt: new Date(Date.now() + 5_000) } : {}),
           },
         });
         if (event.event === 'series_end') {

@@ -19,6 +19,7 @@ describe('MatchZy 0.8.15 contract', () => {
       team2Name: 'Team 2',
       players,
       minPlayersToReady: 10,
+      mapSide: 'knife',
       cvars: {},
       remoteLogUrl: 'https://bot.example.com/webhooks/matchzy/id',
       remoteLogHeaderKey: 'X-MatchZy-Token',
@@ -26,6 +27,26 @@ describe('MatchZy 0.8.15 contract', () => {
     });
     expect(Object.keys(built.config.team1.players)).toHaveLength(5);
     expect(built.sha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('honors the selected profile-side and wingman settings', () => {
+    const built = buildMatchZyConfig({
+      matchId: 43,
+      mapName: 'de_inferno',
+      playersPerTeam: 2,
+      team1Name: 'Team 1',
+      team2Name: 'Team 2',
+      players: players.slice(0, 2).concat(players.slice(5, 7)),
+      minPlayersToReady: 4,
+      mapSide: 'team1_ct',
+      wingman: true,
+      cvars: {},
+      remoteLogUrl: 'https://bot.example.com/webhooks/matchzy/id',
+      remoteLogHeaderKey: 'X-MatchZy-Token',
+      remoteLogHeaderValue: 'a-secure-event-token',
+    });
+    expect(built.config.map_sides).toEqual(['team1_ct']);
+    expect(built.config.wingman).toBe(true);
   });
 
   it('parses the pinned series_end event shape', () => {

@@ -35,8 +35,13 @@ function createMatch(overrides: object = {}) {
       defaultServerLocation: 'dallas',
     },
     profile: {
+      key: 'competitive_5v5',
+      enabled: true,
       playersPerTeam: 5,
-      serverSlots: 10,
+      numMaps: 1,
+      serverSlots: 11,
+      mapAllowlist: ['de_dust2', 'de_mirage'],
+      matchzyOptions: { minPlayersToReady: 10, knifeRound: true, mapSide: 'knife' },
       allowedCvars: {},
     },
     players: Array.from({ length: 10 }, (_, index) => ({

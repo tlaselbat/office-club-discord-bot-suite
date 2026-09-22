@@ -13,6 +13,7 @@ const common = {
   teamSelectionMode: 'CAPTAINS',
   captainPolicy: 'RANDOM',
   mapSelectionMode: 'CAPTAIN_VETO',
+  score: null,
   players: [
     {
       discordUserId: '123456789012345678',
@@ -118,5 +119,51 @@ describe('match dashboard', () => {
     );
     expect(result.components).toEqual([]);
     expect((result.embeds[0] as { description: string }).description).toContain('unsupported');
+  });
+
+  it('shows the score and a signed private-info control only after the server is ready', () => {
+    const result = renderMatchDashboard(
+      {
+        ...common,
+        state: 'LIVE',
+        draftPickCount: 0,
+        vetoedMaps: [],
+        allowedMaps: [],
+        score: { team1: 10, team2: 8 },
+      },
+      secret,
+    );
+    const embed = result.embeds[0] as { fields: { name: string; value: string }[] };
+    expect(embed.fields).toContainEqual({
+      name: 'Score',
+      value: 'Team 1 10 — 8 Team 2',
+      inline: true,
+    });
+    const customId = (result.components[0] as { components: { custom_id: string }[] }).components[0]
+      ?.custom_id;
+    expect(parseMatchCustomId(customId ?? '', secret)).toMatchObject({ action: 'MY_MATCH_INFO' });
+  });
+
+  it('groups finalized rosters and bounds a Discord field with long display names', () => {
+    const result = renderMatchDashboard(
+      {
+        ...common,
+        state: 'LIVE',
+        draftPickCount: 0,
+        vetoedMaps: [],
+        allowedMaps: [],
+        players: Array.from({ length: 10 }, (_, index) => ({
+          discordUserId: String(index + 1).padStart(18, '1'),
+          displayName: 'x'.repeat(200),
+          team: index < 5 ? ('TEAM_1' as const) : ('TEAM_2' as const),
+          captainTeam: null,
+        })),
+      },
+      secret,
+    );
+    const embed = result.embeds[0] as { fields: { name: string; value: string }[] };
+    const players = embed.fields.find((field) => field.name === 'Players');
+    expect(players?.value).toContain('**Team 1**');
+    expect(players?.value.length).toBeLessThanOrEqual(1024);
   });
 });

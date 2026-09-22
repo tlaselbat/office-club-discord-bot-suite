@@ -1,5 +1,6 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
+import { assertCompetitiveBo1FiveVFive, gameProfileSchema } from '../domain/game-profile.js';
 
 export interface JoinQueueCommand {
   guildId: string;
@@ -37,13 +38,36 @@ export class QueueService {
       }
       const profile = await transaction.gameProfile.findUnique({
         where: { key: settings.defaultGameProfileKey },
-        select: { playersPerTeam: true },
+        select: {
+          key: true,
+          enabled: true,
+          playersPerTeam: true,
+          numMaps: true,
+          serverSlots: true,
+          mapAllowlist: true,
+          matchzyOptions: true,
+          allowedCvars: true,
+        },
       });
-      if (
-        profile === null ||
-        profile.playersPerTeam !== 5 ||
-        settings.queueSize !== profile.playersPerTeam * 2
-      ) {
+      if (profile === null) {
+        throw new PublicError(
+          'QUEUE_PROFILE_MISMATCH',
+          'Queue size must match the selected game profile capacity.',
+        );
+      }
+      try {
+        const parsedProfile = gameProfileSchema.parse({
+          ...profile,
+          matchzy: { ...(profile.matchzyOptions as object), cvars: profile.allowedCvars },
+        });
+        assertCompetitiveBo1FiveVFive(parsedProfile);
+      } catch {
+        throw new PublicError(
+          'QUEUE_PROFILE_MISMATCH',
+          'Queue size must match the selected game profile capacity.',
+        );
+      }
+      if (settings.queueSize !== profile.playersPerTeam * 2) {
         throw new PublicError(
           'QUEUE_PROFILE_MISMATCH',
           'Queue size must match the selected game profile capacity.',

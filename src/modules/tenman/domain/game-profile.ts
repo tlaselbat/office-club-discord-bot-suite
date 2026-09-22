@@ -29,3 +29,29 @@ export const gameProfileSchema = z
   });
 
 export type GameProfile = z.infer<typeof gameProfileSchema>;
+
+/**
+ * The first 10man release intentionally supports one competitive contract only.
+ * Keep this separate from the broad storage schema so future modes require an
+ * explicit implementation rather than silently inheriting 5v5 assumptions.
+ */
+export function assertCompetitiveBo1FiveVFive(profile: GameProfile): void {
+  if (
+    !profile.enabled ||
+    profile.key !== 'competitive_5v5' ||
+    profile.playersPerTeam !== 5 ||
+    profile.numMaps !== 1 ||
+    profile.serverSlots !== 11 ||
+    profile.mapAllowlist.length < 2
+  ) {
+    throw new Error('10man first release supports only BO1 5v5 with 11 server slots');
+  }
+  if (
+    profile.matchzy.wingman ||
+    profile.matchzy.minPlayersToReady !== 10 ||
+    !profile.matchzy.knifeRound ||
+    profile.matchzy.mapSide !== 'knife'
+  ) {
+    throw new Error('10man first release requires a 10-player competitive ready check');
+  }
+}

@@ -58,6 +58,7 @@ export async function createApplication(
     steamLinkService,
     dathost,
     componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
+    credentialCipher: cipher,
     logger,
   });
   const guildSettingsService = new GuildSettingsService(prisma, discord);

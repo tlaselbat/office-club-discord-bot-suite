@@ -112,6 +112,25 @@ describe('MatchZyEventService', () => {
     expect(prisma.matchStateTransition.create).toHaveBeenCalledTimes(1);
   });
 
+  it('coalesces score updates into one delayed dashboard job key', async () => {
+    const prisma = createMockPrisma();
+    const service = new MatchZyEventService(prisma);
+    await service.ingest(matchId, {
+      event: 'round_end',
+      matchid: 42,
+      map_number: 1,
+      round_number: 1,
+      team1: { score: 1 },
+      team2: { score: 0 },
+    } as never);
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idempotencyKey: `match-dashboard:${matchId}:score` },
+        create: expect.objectContaining({ type: 'MATCH_DASHBOARD_REFRESH' }),
+      }),
+    );
+  });
+
   it('rejects events with a mismatched match id', async () => {
     const prisma = createMockPrisma({ matchzyMatchId: 99 });
     const service = new MatchZyEventService(prisma);

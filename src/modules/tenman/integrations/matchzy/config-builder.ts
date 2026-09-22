@@ -15,6 +15,8 @@ export interface MatchZyConfigInput {
   team2Name: string;
   players: readonly MatchZyRosterPlayer[];
   minPlayersToReady: number;
+  mapSide: 'knife' | 'team1_ct' | 'team2_ct';
+  wingman?: boolean;
   cvars: Readonly<Record<string, string>>;
   remoteLogUrl: string;
   remoteLogHeaderKey: string;
@@ -41,9 +43,10 @@ export function buildMatchZyConfig(input: MatchZyConfigInput): BuiltMatchZyConfi
     team2: { name: input.team2Name, players: playerMap('TEAM_2') },
     num_maps: 1,
     maplist: [input.mapName],
-    map_sides: ['knife'],
+    map_sides: [input.mapSide],
     players_per_team: input.playersPerTeam,
     min_players_to_ready: input.minPlayersToReady,
+    ...(input.wingman === true ? { wingman: true } : {}),
     cvars: input.cvars,
     remote_log_url: input.remoteLogUrl,
     remote_log_header_key: input.remoteLogHeaderKey,

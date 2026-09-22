@@ -6,6 +6,7 @@ import {
   type Role,
 } from 'discord.js';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
+import { assertCompetitiveBo1FiveVFive, gameProfileSchema } from '../domain/game-profile.js';
 
 export interface UpdateGuildSettingsCommand {
   guildId: string;
@@ -15,6 +16,7 @@ export interface UpdateGuildSettingsCommand {
   lobbyVoiceChannelId: string;
   team1VoiceChannelId: string;
   team2VoiceChannelId: string;
+  resultsChannelId?: string;
   privilegedRoleIds: string[];
   moderatorRoleIds: string[];
   administratorRoleIds: string[];
@@ -65,11 +67,17 @@ export class GuildSettingsService {
     const lobbyVoiceChannel = await guild.channels.fetch(command.lobbyVoiceChannelId);
     const team1VoiceChannel = await guild.channels.fetch(command.team1VoiceChannelId);
     const team2VoiceChannel = await guild.channels.fetch(command.team2VoiceChannelId);
+    const resultsChannel =
+      command.resultsChannelId === undefined
+        ? null
+        : await guild.channels.fetch(command.resultsChannelId);
 
     if (lobbyTextChannel === null) throw new Error('Lobby text channel not found');
     if (lobbyVoiceChannel === null) throw new Error('Lobby voice channel not found');
     if (team1VoiceChannel === null) throw new Error('Team 1 voice channel not found');
     if (team2VoiceChannel === null) throw new Error('Team 2 voice channel not found');
+    if (command.resultsChannelId !== undefined && resultsChannel === null)
+      throw new Error('Results channel not found');
 
     if (lobbyTextChannel.type !== ChannelType.GuildText)
       throw new Error('Lobby text channel must be a text channel');
@@ -79,6 +87,8 @@ export class GuildSettingsService {
       throw new Error('Team 1 voice channel must be a voice channel');
     if (team2VoiceChannel.type !== ChannelType.GuildVoice)
       throw new Error('Team 2 voice channel must be a voice channel');
+    if (resultsChannel !== null && resultsChannel.type !== ChannelType.GuildText)
+      throw new Error('Results channel must be a text channel');
 
     this.assertPermissions(botMember, [
       {
@@ -136,8 +146,17 @@ export class GuildSettingsService {
     if (profile === null || !profile.enabled)
       throw new Error(`Game profile ${profileKey} does not exist or is disabled`);
     const effectiveQueueSize = command.queueSize ?? existing?.queueSize ?? 10;
-    if (profile.playersPerTeam !== 5)
-      throw new Error('10man currently supports only 5v5 game profiles');
+    try {
+      const parsedProfile = gameProfileSchema.parse({
+        ...profile,
+        matchzy: { ...(profile.matchzyOptions as object), cvars: profile.allowedCvars },
+      });
+      assertCompetitiveBo1FiveVFive(parsedProfile);
+    } catch {
+      throw new Error(
+        'The selected game profile is not supported by the competitive 10man release',
+      );
+    }
     if (effectiveQueueSize !== profile.playersPerTeam * 2)
       throw new Error(
         `Queue size must be ${String(profile.playersPerTeam * 2)} for profile ${profileKey}`,
@@ -172,6 +191,9 @@ export class GuildSettingsService {
           lobbyVoiceChannelId: command.lobbyVoiceChannelId,
           team1VoiceChannelId: command.team1VoiceChannelId,
           team2VoiceChannelId: command.team2VoiceChannelId,
+          ...(command.resultsChannelId === undefined
+            ? {}
+            : { resultsChannelId: command.resultsChannelId }),
           privilegedRoleIds: command.privilegedRoleIds,
           moderatorRoleIds: command.moderatorRoleIds,
           administratorRoleIds: command.administratorRoleIds,
@@ -196,6 +218,9 @@ export class GuildSettingsService {
           lobbyVoiceChannelId: command.lobbyVoiceChannelId,
           team1VoiceChannelId: command.team1VoiceChannelId,
           team2VoiceChannelId: command.team2VoiceChannelId,
+          ...(command.resultsChannelId === undefined
+            ? {}
+            : { resultsChannelId: command.resultsChannelId }),
           privilegedRoleIds: command.privilegedRoleIds,
           moderatorRoleIds: command.moderatorRoleIds,
           administratorRoleIds: command.administratorRoleIds,

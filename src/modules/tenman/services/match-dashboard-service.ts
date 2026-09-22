@@ -63,6 +63,7 @@ export class MatchDashboardService {
         teamSelectionMode: match.guild.teamSelectionMode,
         captainPolicy: match.guild.captainPolicy,
         mapSelectionMode: match.guild.mapSelectionMode,
+        score: parseScore(match.score),
       },
       this.secret,
     );
@@ -209,4 +210,12 @@ export class MatchDashboardService {
       },
     });
   }
+}
+
+function parseScore(score: unknown): { team1: number; team2: number } | null {
+  if (typeof score !== 'object' || score === null || Array.isArray(score)) return null;
+  const candidate = score as { team1?: unknown; team2?: unknown };
+  return typeof candidate.team1 === 'number' && typeof candidate.team2 === 'number'
+    ? { team1: candidate.team1, team2: candidate.team2 }
+    : null;
 }

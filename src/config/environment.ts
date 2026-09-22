@@ -45,6 +45,12 @@ const environmentSchema = z.object({
     .max(300_000)
     .default(30_000),
   MATCHZY_STALE_AFTER_MS: z.coerce.number().int().min(30_000).default(120_000),
+  R2_ACCOUNT_ID: z.string().min(1),
+  R2_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/),
+  R2_ACCESS_KEY_ID: z.string().min(1),
+  R2_SECRET_ACCESS_KEY: z.string().min(1),
+  DEMO_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
+  DEMO_COLLECTION_DEADLINE_SECONDS: z.coerce.number().int().min(60).max(7200).default(1800),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

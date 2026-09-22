@@ -45,6 +45,8 @@ import {
 import { PartyService } from '../modules/tenman/services/party-service.js';
 import { MatchAdminService } from '../modules/tenman/services/match-admin-service.js';
 import { buildPlayerStatsResetConfirmationControls } from '../modules/tenman/bot/player-admin-components.js';
+import type { CredentialCipher } from '../modules/tenman/services/credential-cipher.js';
+import { MatchParticipantInfoService } from '../modules/tenman/services/match-participant-info-service.js';
 
 export interface BotDependencies {
   token: string;
@@ -54,6 +56,7 @@ export interface BotDependencies {
   steamLinkService: SteamLinkService;
   dathost: DatHostClient;
   componentSigningSecret: string;
+  credentialCipher: CredentialCipher;
   logger: Logger;
 }
 
@@ -170,6 +173,10 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
     adminActorFor: (interaction) => createGuildAdminActor(interaction, dependencies.prisma),
     guildResourceService,
     matchService: dependencies.matchService,
+    participantInfo: new MatchParticipantInfoService(
+      dependencies.prisma,
+      dependencies.credentialCipher,
+    ),
   });
   const modules = new ModuleRegistry([
     {
@@ -544,6 +551,7 @@ async function handleCommand(
       const lobbyVoiceChannel = interaction.options.getChannel('lobby_voice_channel', true);
       const team1VoiceChannel = interaction.options.getChannel('team1_voice_channel', true);
       const team2VoiceChannel = interaction.options.getChannel('team2_voice_channel', true);
+      const resultsChannel = interaction.options.getChannel('results_channel');
       const privilegedRole = interaction.options.getRole('privileged_role', true);
       const moderatorRole = interaction.options.getRole('moderator_role', true);
       const administratorRole = interaction.options.getRole('administrator_role', true);
@@ -572,6 +580,7 @@ async function handleCommand(
         lobbyVoiceChannelId: lobbyVoiceChannel.id,
         team1VoiceChannelId: team1VoiceChannel.id,
         team2VoiceChannelId: team2VoiceChannel.id,
+        ...(resultsChannel === null ? {} : { resultsChannelId: resultsChannel.id }),
         privilegedRoleIds: [privilegedRole.id],
         moderatorRoleIds: [moderatorRole.id],
         administratorRoleIds: [administratorRole.id],

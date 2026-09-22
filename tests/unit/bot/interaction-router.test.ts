@@ -29,6 +29,7 @@ function router(
       prisma,
       componentSigningSecret: secret,
       actorFor: vi.fn(),
+      participantInfo: { get: vi.fn() },
     }),
     prisma,
   };

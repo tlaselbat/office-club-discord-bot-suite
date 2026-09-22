@@ -36,7 +36,18 @@ function createPrisma(options?: {
         readyTimeoutSeconds: 90,
       }),
     },
-    gameProfile: { findUnique: vi.fn().mockResolvedValue({ playersPerTeam: 5 }) },
+    gameProfile: {
+      findUnique: vi.fn().mockResolvedValue({
+        key: 'competitive_5v5',
+        enabled: true,
+        playersPerTeam: 5,
+        numMaps: 1,
+        serverSlots: 11,
+        mapAllowlist: ['de_mirage', 'de_inferno'],
+        matchzyOptions: { minPlayersToReady: 10, knifeRound: true, mapSide: 'knife' },
+        allowedCvars: {},
+      }),
+    },
     match: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
     tenManPartyMember: { findUnique: vi.fn().mockResolvedValue(party) },
     steamIdentity: {

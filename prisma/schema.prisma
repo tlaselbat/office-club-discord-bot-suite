@@ -34,6 +34,17 @@ enum TenManQueueStatus {
 enum MatchDiscordResourceType {
   MATCH_TEXT_CHANNEL
   MATCH_DASHBOARD_MESSAGE
+  MATCH_RESULT_RECEIPT
+}
+
+enum DemoArtifactStatus {
+  EXPECTED
+  SOURCE_READY
+  TRANSFERRING
+  STORED
+  UNAVAILABLE
+  EXPIRED
+  FAILED
 }
 
 enum MatchDiscordResourceState {
@@ -240,7 +251,8 @@ model TenManSettings {
   lobbyTextChannelId      String?  @map("lobby_text_channel_id")
   lobbyVoiceChannelId     String?  @map("lobby_voice_channel_id")
   team1VoiceChannelId     String?  @map("team1_voice_channel_id")
-  team2VoiceChannelId     String?  @map("team2_voice_channel_id")
+    team2VoiceChannelId     String?  @map("team2_voice_channel_id")
+    resultsChannelId        String?  @map("results_channel_id")
   privilegedRoleIds       String[] @map("privileged_role_ids")
   moderatorRoleIds        String[] @map("moderator_role_ids")
   administratorRoleIds    String[] @map("administrator_role_ids")
@@ -781,16 +793,26 @@ model MatchCredential {
 }
 
 model DemoReference {
-  id        String   @id @default(uuid()) @db.Uuid
-  matchId   String   @map("match_id") @db.Uuid
-  mapName   String   @map("map_name")
-  status    String
-  reference String?
-  metadata  Json
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+    id                   String             @id @default(uuid()) @db.Uuid
+    matchId              String             @map("match_id") @db.Uuid
+    mapNumber            Int                @map("map_number")
+    mapName              String             @map("map_name")
+    status               DemoArtifactStatus @default(EXPECTED)
+    sourceFilename       String?            @map("source_filename")
+    storageKey           String?            @map("storage_key")
+    byteCount            BigInt?            @map("byte_count")
+    sha256               String?
+    observedAt           DateTime?          @map("observed_at")
+    collectionDeadlineAt DateTime           @map("collection_deadline_at")
+    storedAt             DateTime?          @map("stored_at")
+    expiredAt            DateTime?          @map("expired_at")
+    failureReason        String?            @map("failure_reason")
+    retryCount           Int                @default(0) @map("retry_count")
+    createdAt            DateTime           @default(now()) @map("created_at")
+    updatedAt            DateTime           @updatedAt @map("updated_at")
+    match                Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
-  @@index([matchId, mapName])
+    @@unique([matchId, mapNumber])
+    @@index([status, collectionDeadlineAt])
   @@map("demo_references")
 }
