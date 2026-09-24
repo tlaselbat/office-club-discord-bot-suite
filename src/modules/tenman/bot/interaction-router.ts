@@ -556,11 +556,17 @@ export class TenManComponentInteractionRouter {
 
   private async handlePlayerHub(interaction: MessageComponentInteraction): Promise<void> {
     if (interaction.guildId === null) throw new Error('Guild interaction required');
-    await interaction.deferUpdate();
     const payload = parsePlayerHubCustomId(
       interaction.customId,
       this.options.componentSigningSecret,
     );
+    if (payload.actorDiscordUserId !== interaction.user.id)
+      throw new Error('Player Hub control does not belong to this interaction');
+    if (interaction.message.flags.has(MessageFlags.IsComponentsV2)) {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    } else {
+      await interaction.deferUpdate();
+    }
     if (payload.action === 'HISTORY') {
       const matches = await this.matchHistory.recentMatches(payload.guildId, interaction.user.id);
       await interaction.editReply(

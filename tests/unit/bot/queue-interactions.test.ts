@@ -7,16 +7,18 @@ import {
   parseQueueCustomId,
 } from '../../../src/modules/tenman/bot/queue-custom-id.js';
 import { createSteamAccountCustomId } from '../../../src/modules/tenman/bot/steam-account-custom-id.js';
+import { createPlayerHubCustomId } from '../../../src/modules/tenman/bot/player-hub-custom-id.js';
 
 const secret = 'queue-router-test-secret';
 const guildId = '123456789012345678';
 const userId = '223456789012345678';
 
-function interaction(customId: string) {
+function interaction(customId: string, componentsV2 = false) {
   return {
     customId,
     guildId,
     user: { id: userId, globalName: 'Player', username: 'player' },
+    message: { flags: { has: vi.fn().mockReturnValue(componentsV2) } },
     id: 'interaction-1',
     deferReply: vi.fn().mockResolvedValue(undefined),
     editReply: vi.fn().mockResolvedValue(undefined),
@@ -289,6 +291,37 @@ describe('queue component interactions', () => {
       row.toJSON().components.map((component) => component.label),
     );
     expect(labels).toEqual(['Remove Party', 'Cancel']);
+  });
+});
+
+describe('Player Hub surfaces', () => {
+  const hubCustomId = createPlayerHubCustomId(
+    { action: 'HUB', guildId, actorDiscordUserId: userId },
+    secret,
+  );
+
+  it('opens an ephemeral Player Hub from the public Components V2 queue panel', async () => {
+    const event = interaction(hubCustomId, true);
+
+    await router(prismaMock({})).handle(event as never);
+
+    expect(event.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(event.deferUpdate).not.toHaveBeenCalled();
+    expect(event.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ embeds: expect.any(Array), components: expect.any(Array) }),
+    );
+  });
+
+  it('refreshes an existing legacy Player Hub in place', async () => {
+    const event = interaction(hubCustomId);
+
+    await router(prismaMock({})).handle(event as never);
+
+    expect(event.deferUpdate).toHaveBeenCalledOnce();
+    expect(event.deferReply).not.toHaveBeenCalled();
+    expect(event.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ embeds: expect.any(Array), components: expect.any(Array) }),
+    );
   });
 });
 
