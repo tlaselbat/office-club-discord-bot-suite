@@ -5,6 +5,7 @@ import {
   EmbedBuilder,
   MessageFlags,
   type Client,
+  type InteractionReplyOptions,
   type MessageComponentInteraction,
   type ModalSubmitInteraction,
 } from 'discord.js';
@@ -90,6 +91,49 @@ export interface InteractionRouterOptions {
   participantInfo: Pick<MatchParticipantInfoService, 'get'>;
 }
 
+type EphemeralInteraction = MessageComponentInteraction | ModalSubmitInteraction;
+
+export class EphemeralReplyManager {
+  private readonly active = new Map<string, EphemeralInteraction>();
+  private readonly pending = new Map<string, Promise<void>>();
+
+  public async reply(
+    interaction: EphemeralInteraction,
+    options: InteractionReplyOptions,
+  ): Promise<void> {
+    await this.replace(interaction, () =>
+      interaction.reply({ ...options, flags: MessageFlags.Ephemeral }),
+    );
+  }
+
+  public async replace(
+    interaction: EphemeralInteraction,
+    acknowledge: () => Promise<unknown>,
+  ): Promise<void> {
+    const userId = interaction.user.id;
+    const previousOperation = this.pending.get(userId) ?? Promise.resolve();
+    const operation = previousOperation
+      .catch(() => undefined)
+      .then(async () => {
+        const previous = this.active.get(userId);
+        if (previous !== undefined && previous !== interaction) {
+          await previous.deleteReply().catch(() => undefined);
+        }
+        await acknowledge();
+        this.active.set(userId, interaction);
+        setTimeout(() => {
+          if (this.active.get(userId) === interaction) this.active.delete(userId);
+        }, 15 * 60_000).unref();
+      });
+    this.pending.set(userId, operation);
+    try {
+      await operation;
+    } finally {
+      if (this.pending.get(userId) === operation) this.pending.delete(userId);
+    }
+  }
+}
+
 /** Routes signed first-release match-dashboard interactions. */
 export class MatchInteractionRouter {
   private readonly readyCheckService: ReadyCheckService;
@@ -97,7 +141,10 @@ export class MatchInteractionRouter {
   private readonly draftService: DraftService;
   private readonly vetoService: VetoService;
 
-  public constructor(private readonly options: InteractionRouterOptions) {
+  public constructor(
+    private readonly options: InteractionRouterOptions,
+    private readonly ephemeralReplies = new EphemeralReplyManager(),
+  ) {
     this.readyCheckService = new ReadyCheckService(options.prisma);
     this.captainService = new CaptainService(options.prisma);
     this.draftService = new DraftService(options.prisma);
@@ -107,7 +154,9 @@ export class MatchInteractionRouter {
   public async handle(interaction: MessageComponentInteraction): Promise<void> {
     if (interaction.guildId === null) throw new Error('Guild interaction required');
     const payload = parseMatchCustomId(interaction.customId, this.options.componentSigningSecret);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await this.ephemeralReplies.replace(interaction, () =>
+      interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+    );
     const match = await this.options.prisma.match.findUnique({ where: { id: payload.matchId } });
     if (
       match === null ||
@@ -238,9 +287,10 @@ export class TenManComponentInteractionRouter {
   private readonly queueAlertService: QueueAlertService;
   private readonly partyService: PartyService;
   private readonly queueBanService: QueueBanService;
+  private readonly ephemeralReplies = new EphemeralReplyManager();
 
   public constructor(private readonly options: TenManComponentInteractionRouterOptions) {
-    this.match = new MatchInteractionRouter(options);
+    this.match = new MatchInteractionRouter(options, this.ephemeralReplies);
     this.queueService = new QueueService(options.prisma);
     this.queuePanelService = new QueuePanelService(
       options.prisma,
@@ -296,13 +346,13 @@ export class TenManComponentInteractionRouter {
         case 'assigned':
         case 'replaced':
         case 'already_assigned':
-          await interaction.reply({
+          await this.ephemeralReplies.reply(interaction, {
             content: buildAssignmentSuccessResponse(result.steamId64, result.displayName),
             flags: MessageFlags.Ephemeral,
           });
           return;
         case 'duplicate':
-          await interaction.reply({
+          await this.ephemeralReplies.reply(interaction, {
             flags: MessageFlags.Ephemeral,
             ...buildDuplicateAssignmentResponse(
               payload.guildId,
@@ -313,19 +363,19 @@ export class TenManComponentInteractionRouter {
           });
           return;
         case 'invalid_input':
-          await interaction.reply({
+          await this.ephemeralReplies.reply(interaction, {
             content: buildInvalidInputResponse(),
             flags: MessageFlags.Ephemeral,
           });
           return;
         case 'api_unavailable':
-          await interaction.reply({
+          await this.ephemeralReplies.reply(interaction, {
             content: buildApiUnavailableResponse(),
             flags: MessageFlags.Ephemeral,
           });
           return;
         case 'locked':
-          await interaction.reply({
+          await this.ephemeralReplies.reply(interaction, {
             content: buildLockedAssignmentResponse(result.reason),
             flags: MessageFlags.Ephemeral,
           });
@@ -346,7 +396,7 @@ export class TenManComponentInteractionRouter {
           reason,
           interaction.id,
         );
-        await interaction.reply({
+        await this.ephemeralReplies.reply(interaction, {
           content: buildResultDisputeAcknowledgedResponse(result.id),
           flags: MessageFlags.Ephemeral,
         });
@@ -367,7 +417,7 @@ export class TenManComponentInteractionRouter {
           interaction.user.id,
           interaction.id,
         );
-        await interaction.reply({
+        await this.ephemeralReplies.reply(interaction, {
           flags: MessageFlags.Ephemeral,
           content:
             payload.resolution === 'REVERSE'
@@ -406,7 +456,7 @@ export class TenManComponentInteractionRouter {
         expiresAt,
         interaction.id,
       );
-      await interaction.reply({
+      await this.ephemeralReplies.reply(interaction, {
         flags: MessageFlags.Ephemeral,
         content: `<@${payload.targetDiscordUserId}> has been banned from the queue${expiresAt === null ? '' : ` until <t:${String(Math.floor(expiresAt.getTime() / 1000))}:f>`}.`,
       });
@@ -440,14 +490,16 @@ export class TenManComponentInteractionRouter {
         payload.steamId64,
         interaction.id,
       );
-      await interaction.reply({
+      await this.ephemeralReplies.reply(interaction, {
         content: buildDisputeAcknowledgedResponse(id),
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
     if (payload.action === 'VIEW') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       const active = await this.options.steamAccountService.findActive(interaction.user.id);
       await interaction.editReply(
         buildSteamAccountStatusResponse(
@@ -491,7 +543,9 @@ export class TenManComponentInteractionRouter {
       return;
     }
     if (payload.action === 'RESOLVE' || payload.action === 'REJECT') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       const actor = await this.options.adminActorFor(interaction);
       assertAuthorized('RESOLVE_DISPUTE', actor);
       if (payload.disputeId === undefined) throw new Error('Missing dispute ID');
@@ -569,7 +623,9 @@ export class TenManComponentInteractionRouter {
     )
       throw new Error('Player Hub control does not belong to this interaction');
     if (componentsV2) {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
     } else {
       await interaction.deferUpdate();
     }
@@ -652,7 +708,10 @@ export class TenManComponentInteractionRouter {
 
     // Non-mutating controls stay usable on a stale panel.
     if (payload.action === 'HOW_IT_WORKS') {
-      await interaction.reply({ flags: MessageFlags.Ephemeral, content: howItWorksText() });
+      await this.ephemeralReplies.reply(interaction, {
+        flags: MessageFlags.Ephemeral,
+        content: howItWorksText(),
+      });
       return;
     }
     if (payload.action === 'REFRESH') {
@@ -670,7 +729,9 @@ export class TenManComponentInteractionRouter {
       return;
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await this.ephemeralReplies.replace(interaction, () =>
+      interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+    );
 
     if (payload.action === 'JOIN') {
       const result = await this.queueService.join({
@@ -917,7 +978,7 @@ export class TenManComponentInteractionRouter {
       match.version !== payload.version ||
       match.phaseGeneration !== payload.phaseGeneration
     ) {
-      await interaction.reply({
+      await this.ephemeralReplies.reply(interaction, {
         flags: MessageFlags.Ephemeral,
         content:
           "That action isn't available anymore because the match has moved to the next stage.",
@@ -1132,7 +1193,9 @@ export class TenManComponentInteractionRouter {
     const guildId = interaction.guildId ?? payload.guildId;
     if (payload.action === 'ACCEPT') {
       if (payload.inviteId === undefined) throw new Error('Missing party invitation');
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       await this.partyService.accept(payload.inviteId, interaction.user.id);
       await interaction.editReply({ content: 'Party invitation accepted. Welcome aboard.' });
       return;
