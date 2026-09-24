@@ -223,6 +223,8 @@ export interface TenManComponentInteractionRouterOptions extends InteractionRout
 
 type ComponentOrModal = MessageComponentInteraction | ModalSubmitInteraction;
 
+const PUBLIC_PANEL_ACTOR_PLACEHOLDER = '00000000000000000000';
+
 /** Owns every supported 10man component namespace. */
 export class TenManComponentInteractionRouter {
   private readonly match: MatchInteractionRouter;
@@ -560,9 +562,13 @@ export class TenManComponentInteractionRouter {
       interaction.customId,
       this.options.componentSigningSecret,
     );
-    if (payload.actorDiscordUserId !== interaction.user.id)
+    const componentsV2 = interaction.message.flags.has(MessageFlags.IsComponentsV2);
+    if (
+      payload.actorDiscordUserId !== interaction.user.id &&
+      !(componentsV2 && payload.actorDiscordUserId === PUBLIC_PANEL_ACTOR_PLACEHOLDER)
+    )
       throw new Error('Player Hub control does not belong to this interaction');
-    if (interaction.message.flags.has(MessageFlags.IsComponentsV2)) {
+    if (componentsV2) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     } else {
       await interaction.deferUpdate();

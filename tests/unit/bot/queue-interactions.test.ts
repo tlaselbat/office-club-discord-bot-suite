@@ -295,13 +295,17 @@ describe('queue component interactions', () => {
 });
 
 describe('Player Hub surfaces', () => {
-  const hubCustomId = createPlayerHubCustomId(
+  const privateHubCustomId = createPlayerHubCustomId(
     { action: 'HUB', guildId, actorDiscordUserId: userId },
+    secret,
+  );
+  const publicHubCustomId = createPlayerHubCustomId(
+    { action: 'HUB', guildId, actorDiscordUserId: '00000000000000000000' },
     secret,
   );
 
   it('opens an ephemeral Player Hub from the public Components V2 queue panel', async () => {
-    const event = interaction(hubCustomId, true);
+    const event = interaction(publicHubCustomId, true);
 
     await router(prismaMock({})).handle(event as never);
 
@@ -313,7 +317,7 @@ describe('Player Hub surfaces', () => {
   });
 
   it('refreshes an existing legacy Player Hub in place', async () => {
-    const event = interaction(hubCustomId);
+    const event = interaction(privateHubCustomId);
 
     await router(prismaMock({})).handle(event as never);
 
