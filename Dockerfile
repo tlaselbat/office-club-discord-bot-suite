@@ -12,9 +12,15 @@ RUN DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma pnpm prisma:ge
 # Production migration and seed commands need the Prisma CLI, tsx, dotenv,
 # the schema, and seed source. Keep those development-only tools in a
 # separately targeted image; the application image below remains pruned.
-FROM build AS db-tools
+FROM node:22.19.0-alpine AS db-tools
 ENV NODE_ENV=production
-RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
+WORKDIR /app
+RUN corepack enable && addgroup -S app && adduser -S app -G app
+COPY --from=build --chown=app:app /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=build --chown=app:app /app/node_modules ./node_modules
+COPY --from=build --chown=app:app /app/prisma ./prisma
+COPY --from=build --chown=app:app /app/prisma.config.ts ./prisma.config.ts
+COPY --from=build --chown=app:app /app/src/generated ./src/generated
 USER app
 CMD ["corepack", "pnpm", "prisma:migrate:deploy"]
 
