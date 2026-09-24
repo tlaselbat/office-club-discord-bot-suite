@@ -30,7 +30,7 @@ suite('10man database invariants', () => {
   const identity = (discordUserId: string, steamId64 = steamId()) => ({
     discordUserId,
     steamId64,
-    verifiedAt: new Date(),
+    assignmentSource: 'DATABASE_INVARIANT_TEST',
     provenance: 'DATABASE_INVARIANT_TEST',
   });
 
@@ -93,7 +93,7 @@ suite('10man database invariants', () => {
     ]);
   });
 
-  it('retains invalidated identity history and permits relinking', async () => {
+  it('retains invalidated identity history and permits reassignment', async () => {
     if (prisma === null) throw new Error('TEST_DATABASE_URL required');
     const data = identity(fourthUserId);
     const previous = await prisma.steamIdentity.create({ data });
