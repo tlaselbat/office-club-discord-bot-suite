@@ -81,6 +81,8 @@ export class MatchHistoryService {
         result: true,
         resultStatus: true,
         finishedAt: true,
+        version: true,
+        phaseGeneration: true,
         players: { where: { discordUserId }, select: { team: true } },
       },
     });

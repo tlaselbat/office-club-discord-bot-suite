@@ -1,5 +1,6 @@
 import {
   Client,
+  EmbedBuilder,
   Events,
   GatewayIntentBits,
   GuildMemberRoleManager,
@@ -8,8 +9,9 @@ import {
   Routes,
   type ChatInputCommandInteraction,
   type MessageComponentInteraction,
+  type ModalSubmitInteraction,
 } from 'discord.js';
-import type { PrismaClient, TenManSettings } from '../generated/prisma/client.js';
+import type { PrismaClient } from '../generated/prisma/client.js';
 import type { MatchService } from '../modules/tenman/services/match-service.js';
 import type { SteamAccountService } from '../modules/tenman/services/steam-account-service.js';
 import type { SteamProfileService } from '../modules/tenman/services/steam-profile-service.js';
@@ -24,7 +26,7 @@ import { DiagnosticsService } from '../modules/tenman/services/diagnostics-servi
 import { commands } from '../modules/tenman/bot/commands.js';
 import { assertAuthorized, type ActorContext } from '../modules/tenman/domain/authorization.js';
 import type { Logger } from 'pino';
-import { PublicError, publicMessage } from '../errors/public-error.js';
+import { publicMessage } from '../errors/public-error.js';
 import {
   GuildResourceService,
   type ManagedPreview,
@@ -44,17 +46,16 @@ import {
   TenManComponentInteractionRouter,
   buildSteamAccountStatusResponse,
 } from '../modules/tenman/bot/interaction-router.js';
-import { buildStaffDisputeList } from '../modules/tenman/bot/steam-account-components.js';
 import { MatchHistoryService } from '../modules/tenman/services/match-history-service.js';
-import { QueueBanService } from '../modules/tenman/services/queue-ban-service.js';
-import {
-  buildCancelMatchConfirmationControls,
-  buildRestartPhaseConfirmationControls,
-  buildRollbackConfirmationControls,
-} from '../modules/tenman/bot/match-admin-components.js';
 import { PartyService } from '../modules/tenman/services/party-service.js';
-import { MatchAdminService } from '../modules/tenman/services/match-admin-service.js';
-import { buildPlayerStatsResetConfirmationControls } from '../modules/tenman/bot/player-admin-components.js';
+import { buildPartyPanelResponse } from '../modules/tenman/bot/party-components.js';
+import {
+  buildAdminDisputesPanel,
+  buildAdminMatchPanel,
+  buildAdminPlayersPanel,
+  buildAdminQueuePanel,
+  buildHistoryResponse,
+} from '../modules/tenman/bot/admin-panels.js';
 import type { CredentialCipher } from '../modules/tenman/services/credential-cipher.js';
 import { MatchParticipantInfoService } from '../modules/tenman/services/match-participant-info-service.js';
 
@@ -265,238 +266,249 @@ async function handleCommand(
 ): Promise<void> {
   if (interaction.guildId === null) throw new Error('Guild command required');
   await interaction.deferReply({ ephemeral: true });
-  if (TENMAN_COMMAND_NAMES.has(interaction.commandName) && !isTenManSetupCommand(interaction)) {
-    const settings = await dependencies.prisma.tenManSettings.findUnique({
-      where: { guildId: interaction.guildId },
-    });
-    if (!isManagedTenManCommandChannel(interaction.channelId, settings))
-      throw new PublicError(
-        'TENMAN_MANAGED_CHANNEL_REQUIRED',
-        'Use 10man commands in an active bot-managed 10man channel.',
-      );
-  }
-  if (interaction.commandName === 'steam' && interaction.options.getSubcommand() === 'account') {
-    await renderSteamAccountStatus(
-      interaction,
-      dependencies.steamAccountService,
-      dependencies.componentSigningSecret,
-    );
-    return;
-  }
-  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'queue') {
-    const settings = await dependencies.prisma.tenManSettings.findUnique({
-      where: { guildId: interaction.guildId },
-    });
-    if (settings === null || !settings.enabled) {
-      throw new Error('10man is not enabled for this server');
-    }
-    const roles = interaction.member?.roles;
-    const memberRoles =
-      roles === undefined
-        ? []
-        : roles instanceof GuildMemberRoleManager
-          ? [...roles.cache.keys()]
-          : roles;
-    if (
-      !memberRoles.some((role) =>
-        [...settings.moderatorRoleIds, ...settings.administratorRoleIds].includes(role),
-      ) &&
-      !(interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false)
-    ) {
-      throw new Error('Moderator role required');
-    }
-    if (settings.lobbyTextChannelId === null)
-      throw new Error('Lobby text channel is not configured');
-    const channel = await client.channels.fetch(settings.lobbyTextChannelId);
-    if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
-      throw new Error('Configured lobby text channel is unavailable');
-    }
-    await dependencies.prisma.tenManQueue.upsert({
-      where: { guildId: interaction.guildId },
-      update: {},
-      create: { guildId: interaction.guildId },
-    });
-    await new QueuePanelService(
-      dependencies.prisma,
-      client,
-      dependencies.componentSigningSecret,
-    ).reconcile(interaction.guildId, channel);
-    await interaction.editReply({ content: `10man queue panel is ready in <#${channel.id}>.` });
-    return;
-  }
-  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'hub') {
-    const [status, queue, match] = await Promise.all([
-      new PlayerStatusService(dependencies.prisma).getStatus(
+  const subcommand = interaction.options.getSubcommand();
+
+  if (interaction.commandName === '10man') {
+    if (subcommand === 'hub') {
+      const [status, queue, match] = await Promise.all([
+        new PlayerStatusService(dependencies.prisma).getStatus(
+          interaction.guildId,
+          interaction.user.id,
+        ),
+        dependencies.prisma.tenManQueue.findUnique({ where: { guildId: interaction.guildId } }),
+        dependencies.prisma.match.findFirst({
+          where: {
+            guildId: interaction.guildId,
+            guildSlotActive: true,
+            players: { some: { discordUserId: interaction.user.id } },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+      const { embeds, components } = buildPlayerHubResponse(
+        status,
         interaction.guildId,
         interaction.user.id,
-      ),
-      dependencies.prisma.tenManQueue.findUnique({ where: { guildId: interaction.guildId } }),
-      dependencies.prisma.match.findFirst({
-        where: {
-          guildId: interaction.guildId,
-          guildSlotActive: true,
-          players: { some: { discordUserId: interaction.user.id } },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-    ]);
-    const { embeds, components } = buildPlayerHubResponse(
-      status,
-      interaction.guildId,
-      interaction.user.id,
-      queue?.version ?? 0,
-      match?.version ?? 0,
-      match?.phaseGeneration ?? 0,
-      dependencies.componentSigningSecret,
-    );
-    await interaction.editReply({ embeds, components });
-    return;
-  }
-  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'alerts') {
-    const enabled = interaction.options.getBoolean('enabled', true);
-    await new QueueAlertService(dependencies.prisma, client).setPreference(
-      interaction.guildId,
-      interaction.user.id,
-      enabled,
-    );
-    await interaction.editReply({
-      content: `Queue fill alerts ${enabled ? 'enabled' : 'disabled'}. You will ${enabled ? 'receive' : 'no longer receive'} direct-message notifications when the queue nears full.`,
-    });
-    return;
-  }
-  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'cancel') {
-    const match = await dependencies.matchService.findGuildMatch(interaction.guildId);
-    if (match === null) throw new Error('No active match');
-    const actor = await createActorContext(interaction, match.id, dependencies.prisma);
-    assertAuthorized('STOP', actor, match);
-    await interaction.editReply({
-      content: `This cancels match ${match.id.slice(0, 8)} and starts cleanup if needed. Confirm within five minutes.`,
-      components: buildCancelMatchConfirmationControls(
-        {
-          matchId: match.id,
-          version: match.version,
-          phaseGeneration: match.phaseGeneration,
-          actorDiscordUserId: interaction.user.id,
-          expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
-        },
+        queue?.version ?? 0,
+        match?.version ?? 0,
+        match?.phaseGeneration ?? 0,
         dependencies.componentSigningSecret,
-      ),
-    });
-    return;
-  }
-  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'status') {
-    const match = await dependencies.matchService.findGuildMatch(interaction.guildId);
-    if (match === null) {
-      await interaction.editReply({ content: 'There is no active 10man.' });
+      );
+      await interaction.editReply({ embeds, components });
       return;
     }
-    await interaction.editReply({
-      content:
-        `Active match ${match.id.slice(0, 8)}: ${match.state}. ` +
-        `Map: ${match.selectedMap ?? 'pending'}; ` +
-        `players: ${String(match.players.length)}; ` +
-        `ready: ${String(match.players.filter((player) => player.readyState === 'READY').length)}.`,
-    });
-    return;
-  }
-  if (interaction.commandName === 'player') {
-    const target = interaction.options.getUser('player') ?? interaction.user;
-    if (interaction.options.getSubcommand() === 'stats') {
+    if (subcommand === 'account') {
+      await renderSteamAccountStatus(
+        interaction,
+        dependencies.steamAccountService,
+        dependencies.componentSigningSecret,
+      );
+      return;
+    }
+    if (subcommand === 'history') {
+      const target = interaction.options.getUser('player') ?? interaction.user;
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      const matches = await new MatchHistoryService(dependencies.prisma).recentMatches(
+        interaction.guildId,
+        target.id,
+      );
+      await interaction.editReply(
+        buildHistoryResponse(
+          matches,
+          target.id,
+          actor.isModerator || actor.isAdministrator,
+          interaction.guildId,
+          interaction.user.id,
+          dependencies.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (subcommand === 'stats') {
+      const target = interaction.options.getUser('player') ?? interaction.user;
       const stats = await dependencies.prisma.playerGuildStats.findUnique({
         where: {
           guildId_discordUserId: { guildId: interaction.guildId, discordUserId: target.id },
         },
       });
+      const embed = new EmbedBuilder().setTitle('10man Stats').setColor(0x5865f2);
       if (stats === null) {
-        await interaction.editReply({ content: `<@${target.id}> has no match statistics yet.` });
-        return;
+        embed.setDescription(`<@${target.id}> has no match statistics yet.`);
+      } else {
+        embed.setDescription(`Statistics for <@${target.id}>.`).addFields(
+          { name: 'Rating', value: String(stats.rating), inline: true },
+          {
+            name: 'Record',
+            value: `${String(stats.wins)}W — ${String(stats.losses)}L`,
+            inline: true,
+          },
+          { name: 'Matches', value: String(stats.matchesPlayed), inline: true },
+        );
       }
-      await interaction.editReply({
-        content: `<@${target.id}> — rating: **${String(stats.rating)}**; record: **${String(stats.wins)}–${String(stats.losses)}**; matches: **${String(stats.matchesPlayed)}**.`,
-      });
+      await interaction.editReply({ embeds: [embed] });
       return;
     }
-    const history = await new MatchHistoryService(dependencies.prisma).recentMatches(
-      interaction.guildId,
-      target.id,
-    );
-    await interaction.editReply({
-      content: formatRecentMatches(target.id, history),
-    });
-    return;
-  }
-  if (interaction.commandName === 'party') {
-    const partyService = new PartyService(dependencies.prisma);
-    const subcommand = interaction.options.getSubcommand();
-    if (subcommand === 'create') {
-      const partyId = await partyService.create(interaction.guildId, interaction.user.id);
-      await interaction.editReply({ content: `Party created. Party ID: \`${partyId}\`` });
-      return;
-    }
-    if (subcommand === 'invite') {
-      const partyId = interaction.options.getString('party_id', true);
-      const target = interaction.options.getUser('player', true);
-      const inviteId = await partyService.invite(partyId, interaction.user.id, target.id);
-      const message = `You have a 10man party invitation from <@${interaction.user.id}>. Accept it with \`/party accept invite_id:${inviteId}\` within 15 minutes.`;
-      const delivered = await target
-        .send(message)
-        .then(() => true)
-        .catch(() => false);
-      await interaction.editReply({
-        content: delivered
-          ? `Invitation sent to <@${target.id}>.`
-          : `Invitation created for <@${target.id}>. Their DMs are unavailable; give them this invitation ID: \`${inviteId}\`.`,
-      });
-      return;
-    }
-    if (subcommand === 'accept') {
-      await partyService.accept(
-        interaction.options.getString('invite_id', true),
-        interaction.user.id,
+    if (subcommand === 'party') {
+      const partyService = new PartyService(dependencies.prisma);
+      const state = await partyService.getPanelState(interaction.guildId, interaction.user.id);
+      await interaction.editReply(
+        buildPartyPanelResponse(
+          state,
+          interaction.guildId,
+          interaction.user.id,
+          dependencies.componentSigningSecret,
+        ),
       );
-      await interaction.editReply({ content: 'Party invitation accepted.' });
       return;
     }
-    const partyId = interaction.options.getString('party_id', true);
-    if (subcommand === 'leave') {
-      await partyService.leave(partyId, interaction.user.id);
-      await interaction.editReply({ content: 'You left the party.' });
-      return;
-    }
-    if (subcommand === 'kick') {
-      const target = interaction.options.getUser('player', true);
-      await partyService.kick(partyId, interaction.user.id, target.id);
-      await interaction.editReply({ content: `<@${target.id}> was removed from the party.` });
-      return;
-    }
-    if (subcommand === 'disband') {
-      await partyService.disband(partyId, interaction.user.id);
-      await interaction.editReply({ content: 'Party disbanded.' });
-      return;
-    }
-  }
-  if (interaction.commandName === 'match') {
-    const subcommand = interaction.options.getSubcommand();
-    if (subcommand === 'history') {
-      const target = interaction.options.getUser('player') ?? interaction.user;
-      const history = await new MatchHistoryService(dependencies.prisma).recentMatches(
+    if (subcommand === 'alerts') {
+      const enabled = interaction.options.getBoolean('enabled', true);
+      await new QueueAlertService(dependencies.prisma, client).setPreference(
         interaction.guildId,
-        target.id,
+        interaction.user.id,
+        enabled,
       );
-      await interaction.editReply({ content: formatRecentMatches(target.id, history) });
+      await interaction.editReply({
+        content: `Queue fill alerts ${enabled ? 'enabled' : 'disabled'}. You will ${enabled ? 'receive' : 'no longer receive'} direct-message notifications when the queue nears full.`,
+      });
       return;
     }
   }
 
-  if (interaction.commandName === 'match' && interaction.options.getSubcommandGroup() === 'admin') {
-    const subcommand = interaction.options.getSubcommand();
+  if (interaction.commandName === '10man-admin') {
+    if (subcommand === 'match') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('VIEW_ADMIN', actor);
+      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
+      if (active === null) {
+        await interaction.editReply({
+          content: "There isn't a match to manage right now.",
+        });
+        return;
+      }
+      const match = await dependencies.prisma.match.findUnique({
+        where: { id: active.id },
+        include: { players: { select: { discordUserId: true } } },
+      });
+      if (match === null) throw new Error('Match is no longer active');
+      await interaction.editReply(
+        buildAdminMatchPanel(
+          match,
+          interaction.guildId,
+          interaction.user.id,
+          dependencies.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (subcommand === 'queue') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('QUEUE_BAN', actor);
+      const [queue, bans] = await Promise.all([
+        dependencies.prisma.tenManQueue.findUnique({
+          where: { guildId: interaction.guildId },
+          include: { entries: { select: { discordUserId: true } } },
+        }),
+        dependencies.prisma.tenManQueueBan.findMany({
+          where: { guildId: interaction.guildId, revokedAt: null },
+          select: { discordUserId: true, reason: true, expiresAt: true },
+          orderBy: { createdAt: 'desc' },
+          take: 25,
+        }),
+      ]);
+      await interaction.editReply(
+        buildAdminQueuePanel(
+          queue,
+          bans,
+          interaction.guildId,
+          interaction.user.id,
+          dependencies.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (subcommand === 'players') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('RESET_PLAYER_STATS', actor);
+      await interaction.editReply(
+        buildAdminPlayersPanel(
+          interaction.guildId,
+          interaction.user.id,
+          dependencies.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (subcommand === 'disputes') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('RESOLVE_DISPUTE', actor);
+      const [steamDisputes, resultDisputes] = await Promise.all([
+        new SteamAdminService(
+          dependencies.prisma,
+          dependencies.steamProfileService,
+        ).listPendingDisputes(interaction.guildId),
+        new MatchResultDisputeService(dependencies.prisma).listPending(interaction.guildId),
+      ]);
+      await interaction.editReply(
+        buildAdminDisputesPanel(
+          steamDisputes,
+          resultDisputes,
+          interaction.guildId,
+          interaction.user.id,
+          dependencies.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (subcommand === 'diagnostics') {
+      const adminActor = await createActorContext(interaction, '', dependencies.prisma);
+      assertAuthorized('DIAGNOSTICS', adminActor);
+      const report = await new DiagnosticsService(
+        dependencies.prisma,
+        client,
+        dependencies.dathost,
+      ).runGuildDiagnostics(interaction.guildId);
+      await interaction.editReply({ content: formatDiagnosticsReport(report) });
+      return;
+    }
+    if (subcommand === 'queue-panel') {
+      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('VIEW_ADMIN', actor);
+      const settings = await dependencies.prisma.tenManSettings.findUnique({
+        where: { guildId: interaction.guildId },
+      });
+      if (settings === null || !settings.enabled) {
+        throw new Error('10man is not enabled for this server');
+      }
+      if (settings.lobbyTextChannelId === null)
+        throw new Error('Lobby text channel is not configured');
+      const channel = await client.channels.fetch(settings.lobbyTextChannelId);
+      if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
+        throw new Error('Configured lobby text channel is unavailable');
+      }
+      await dependencies.prisma.tenManQueue.upsert({
+        where: { guildId: interaction.guildId },
+        update: {},
+        create: { guildId: interaction.guildId },
+      });
+      await new QueuePanelService(
+        dependencies.prisma,
+        client,
+        dependencies.componentSigningSecret,
+      ).reconcile(interaction.guildId, channel);
+      await interaction.editReply({ content: `10man queue panel is ready in <#${channel.id}>.` });
+      return;
+    }
+  }
+
+  if (interaction.commandName === '10man-config') {
     if (subcommand === 'status') {
       const settings = await dependencies.prisma.tenManSettings.findUnique({
         where: { guildId: interaction.guildId },
       });
       if (settings === null) {
         await interaction.editReply({
-          content: 'This server is not configured. Use `/match admin configure`.',
+          content: 'This server is not configured. Use `/10man-config configure`.',
         });
         return;
       }
@@ -547,7 +559,7 @@ async function handleCommand(
             }),
       });
       await interaction.editReply({
-        content: `Managed 10man channels created in <#${result.categoryId ?? ''}>. Run \`/match admin diagnostics\` to verify setup.`,
+        content: `Managed 10man channels created in <#${result.categoryId ?? ''}>. Run \`/10man-admin diagnostics\` to verify setup.`,
       });
       return;
     }
@@ -656,377 +668,11 @@ async function handleCommand(
       await interaction.editReply({ content: '10man configuration saved.' });
       return;
     }
-    if (subcommand === 'steam-disputes') {
-      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('DIAGNOSTICS', adminActor);
-      const disputes = await new SteamAdminService(
-        dependencies.prisma,
-        dependencies.steamProfileService,
-      ).listPendingDisputes(interaction.guildId);
-      await interaction.editReply(
-        buildStaffDisputeList(
-          disputes,
-          interaction.guildId,
-          interaction.user.id,
-          dependencies.componentSigningSecret,
-        ),
-      );
-      return;
-    }
-    if (subcommand === 'resolve-steam-dispute') {
-      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('RESOLVE_DISPUTE', adminActor);
-      const disputeId = interaction.options.getString('dispute_id', true);
-      const action = interaction.options.getString('action', true);
-      const reason = interaction.options.getString('reason', true);
-      if (action !== 'REJECT' && action !== 'FORCE_REPLACE' && action !== 'FORCE_REMOVE') {
-        await interaction.editReply({ content: 'Invalid resolution action.' });
-        return;
-      }
-      await new SteamAdminService(
-        dependencies.prisma,
-        dependencies.steamProfileService,
-      ).resolveDispute(disputeId, action, interaction.user.id, interaction.id, reason);
-      await interaction.editReply({ content: 'Steam assignment dispute resolved.' });
-      return;
-    }
-    if (subcommand === 'result-disputes') {
-      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('DIAGNOSTICS', adminActor);
-      const disputes = await new MatchResultDisputeService(dependencies.prisma).listPending(
-        interaction.guildId,
-      );
-      if (disputes.length === 0) {
-        await interaction.editReply({ content: 'No pending match result disputes.' });
-        return;
-      }
-      await interaction.editReply({
-        content: [
-          'Pending match result disputes:',
-          ...disputes.map(
-            (dispute) =>
-              `• \`${dispute.id.slice(0, 8)}\` — match \`${dispute.matchId.slice(0, 8)}\` — <@${dispute.discordUserId}> — ${dispute.reason.slice(0, 80)}`,
-          ),
-        ].join('\n'),
-      });
-      return;
-    }
-    if (subcommand === 'resolve-result-dispute') {
-      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('ROLLBACK_MATCH', adminActor);
-      const disputeId = interaction.options.getString('dispute_id', true);
-      const action = interaction.options.getString('action', true);
-      const reason = interaction.options.getString('reason', true);
-      if (action !== 'REJECT' && action !== 'REVERSE') {
-        await interaction.editReply({ content: 'Invalid resolution action.' });
-        return;
-      }
-      await new MatchResultDisputeService(dependencies.prisma).resolveDispute(
-        disputeId,
-        action,
-        reason,
-        interaction.user.id,
-        interaction.id,
-      );
-      await interaction.editReply({
-        content:
-          action === 'REVERSE'
-            ? 'Dispute accepted and match result reversed.'
-            : 'Dispute rejected.',
-      });
-      return;
-    }
-    if (subcommand === 'diagnostics') {
-      const adminActor = await createActorContext(interaction, '', dependencies.prisma);
-      assertAuthorized('DIAGNOSTICS', adminActor);
-      const report = await new DiagnosticsService(
-        dependencies.prisma,
-        client,
-        dependencies.dathost,
-      ).runGuildDiagnostics(interaction.guildId);
-      await interaction.editReply({ content: formatDiagnosticsReport(report) });
-      return;
-    }
-    if (subcommand === 'panel') {
-      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
-      if (active === null) throw new Error('No active match');
-      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('VIEW_ADMIN', actor);
-      const match = await dependencies.prisma.match.findUnique({
-        where: { id: active.id },
-        include: { players: true, draftPicks: true, vetoActions: true, discordResources: true },
-      });
-      if (match === null) throw new Error('Match is no longer active');
-      const captains = match.players
-        .filter((player) => player.captainTeam !== null)
-        .map(
-          (player) =>
-            `${player.captainTeam === 'TEAM_1' ? 'Team 1' : 'Team 2'} <@${player.discordUserId}>`,
-        )
-        .join('; ');
-      const resources = match.discordResources
-        .map((resource) => `${resource.resourceType}: ${resource.state}`)
-        .join('; ');
-      await interaction.editReply({
-        embeds: [
-          {
-            title: `MATCH ${match.id.slice(0, 8)} — ADMIN`,
-            fields: [
-              { name: 'State', value: match.state, inline: true },
-              {
-                name: 'Players',
-                value: `${String(match.players.length)}; ready ${String(match.players.filter((player) => player.readyState === 'READY').length)}`,
-                inline: true,
-              },
-              { name: 'Map', value: match.selectedMap ?? 'Pending', inline: true },
-              { name: 'Captains', value: captains || 'Pending' },
-              {
-                name: 'Draft / veto',
-                value: `${String(match.draftPicks.length)} picks; ${String(match.vetoActions.length)} veto actions`,
-              },
-              { name: 'Resources', value: resources || 'Pending' },
-            ],
-            footer: {
-              text: `Version ${String(match.version)} · Phase generation ${String(match.phaseGeneration)}`,
-            },
-          },
-        ],
-      });
-      return;
-    }
-    if (subcommand === 'force-ready') {
-      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
-      if (active === null) throw new Error('No active match');
-      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('FORCE_READY', actor);
-      await new MatchAdminService(dependencies.prisma).forceReady(
-        active.id,
-        active.version,
-        interaction.user.id,
-        interaction.id,
-      );
-      await interaction.editReply({ content: 'Ready check was forced forward to team selection.' });
-      return;
-    }
-    if (subcommand === 'restart-phase') {
-      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
-      if (active === null) throw new Error('No active match');
-      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('RESTART_PHASE', actor);
-      if (!['READY_CHECK', 'TEAM_SELECTION', 'MAP_VETO'].includes(active.state))
-        throw new Error('The active match is not in a restartable forming phase.');
-      await interaction.editReply({
-        content: `This clears the current ${active.state.toLowerCase().replaceAll('_', ' ')} progress. Confirm within five minutes.`,
-        components: buildRestartPhaseConfirmationControls(
-          {
-            matchId: active.id,
-            version: active.version,
-            phaseGeneration: active.phaseGeneration,
-            actorDiscordUserId: interaction.user.id,
-            expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
-          },
-          dependencies.componentSigningSecret,
-        ),
-      });
-      return;
-    }
-    if (subcommand === 'reset-player-stats') {
-      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('RESET_PLAYER_STATS', actor);
-      const target = interaction.options.getUser('player', true);
-      await interaction.editReply({
-        content: `This resets <@${target.id}>'s current rating and record. Match history is retained. Confirm within five minutes.`,
-        components: buildPlayerStatsResetConfirmationControls(
-          {
-            guildId: interaction.guildId,
-            targetDiscordUserId: target.id,
-            actorDiscordUserId: interaction.user.id,
-            expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
-          },
-          dependencies.componentSigningSecret,
-        ),
-      });
-      return;
-    }
-    if (subcommand === 'replace-player') {
-      const active = await dependencies.matchService.findGuildMatch(interaction.guildId);
-      if (active === null) throw new Error('No active match');
-      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('REPLACE_PARTICIPANT', actor);
-      const outgoing = interaction.options.getUser('outgoing', true);
-      const incoming = interaction.options.getUser('incoming', true);
-      await new MatchAdminService(dependencies.prisma).replaceParticipant({
-        matchId: active.id,
-        outgoingDiscordUserId: outgoing.id,
-        incomingDiscordUserId: incoming.id,
-        expectedVersion: active.version,
-        actorDiscordUserId: interaction.user.id,
-        correlationId: interaction.id,
-      });
-      await interaction.editReply({
-        content: `Replaced <@${outgoing.id}> with <@${incoming.id}>; the ready deadline was restarted.`,
-      });
-      return;
-    }
-    if (subcommand === 'rollback') {
-      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('ROLLBACK_MATCH', actor);
-      const matchId = interaction.options.getString('match_id', true);
-      const match = await dependencies.prisma.match.findUnique({ where: { id: matchId } });
-      if (
-        match === null ||
-        match.guildId !== interaction.guildId ||
-        match.resultStatus !== 'APPLIED'
-      ) {
-        throw new Error('No applied result exists for that match.');
-      }
-      await interaction.editReply({
-        content: `This reverses the rating ledger for match ${match.id.slice(0, 8)}. Confirm within five minutes.`,
-        components: buildRollbackConfirmationControls(
-          {
-            matchId: match.id,
-            version: match.version,
-            phaseGeneration: match.phaseGeneration,
-            actorDiscordUserId: interaction.user.id,
-            expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
-          },
-          dependencies.componentSigningSecret,
-        ),
-      });
-      return;
-    }
-    if (subcommand === 'queue-ban') {
-      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('QUEUE_BAN', actor);
-      const target = interaction.options.getUser('player', true);
-      const reason = interaction.options.getString('reason', true);
-      const durationMinutes = interaction.options.getInteger('duration_minutes');
-      const expiresAt =
-        durationMinutes === null ? null : new Date(Date.now() + durationMinutes * 60_000);
-      await new QueueBanService(dependencies.prisma).ban(
-        interaction.guildId,
-        target.id,
-        interaction.user.id,
-        reason,
-        expiresAt,
-        interaction.id,
-      );
-      await interaction.editReply({
-        content: `<@${target.id}> has been banned from the queue${expiresAt === null ? '' : ` until <t:${String(Math.floor(expiresAt.getTime() / 1000))}:f>`}.`,
-      });
-      return;
-    }
-    if (subcommand === 'queue-unban') {
-      const actor = await createGuildAdminActor(interaction, dependencies.prisma);
-      assertAuthorized('QUEUE_UNBAN', actor);
-      const target = interaction.options.getUser('player', true);
-      await new QueueBanService(dependencies.prisma).unban(
-        interaction.guildId,
-        target.id,
-        interaction.user.id,
-        interaction.id,
-      );
-      await interaction.editReply({
-        content: `<@${target.id}> has been unbanned from the queue.`,
-      });
-      return;
-    }
   }
 
   await interaction.editReply({
     content: 'This command is not available in the current state.',
   });
-}
-
-const TENMAN_COMMAND_NAMES = new Set(['10man', 'steam', 'match', 'player', 'party']);
-
-export function isTenManSetupCommand(interaction: {
-  commandName: string;
-  options: { getSubcommandGroup(required?: boolean): string | null; getSubcommand(): string };
-}): boolean {
-  return (
-    interaction.commandName === 'match' &&
-    interaction.options.getSubcommandGroup(false) === 'admin' &&
-    interaction.options.getSubcommand() === 'setup'
-  );
-}
-
-/**
- * Server-side containment for every 10man slash command except its privileged
- * bootstrap command. Command registration alone cannot enforce channel scope.
- */
-export function isManagedTenManCommandChannel(
-  channelId: string | null,
-  settings: Pick<TenManSettings, 'managedResourceState' | 'managedChannelIds'> | null,
-): boolean {
-  return (
-    channelId !== null &&
-    settings?.managedResourceState === 'ACTIVE' &&
-    settings.managedChannelIds.includes(channelId)
-  );
-}
-
-function formatRecentMatches(
-  discordUserId: string,
-  matches: readonly {
-    id: string;
-    selectedMap: string | null;
-    score: unknown;
-    result: unknown;
-    resultStatus: string;
-    finishedAt: Date | null;
-    players: { team: string }[];
-  }[],
-): string {
-  if (matches.length === 0) return `<@${discordUserId}> has no finished matches yet.`;
-  const outcomes = matches.map((match) => {
-    const userTeam = match.players[0]?.team;
-    const winner = (match.result as { winner?: { team?: string } } | null)?.winner?.team;
-    const won = winner !== undefined && userTeam === winner;
-    return { match, won };
-  });
-  const record = `${String(outcomes.filter(({ won }) => won).length)}W–${String(outcomes.filter(({ won }) => !won).length)}L`;
-  const streak = formatStreak(outcomes.map(({ won }) => won));
-  const mapRecord = new Map<string, { wins: number; losses: number }>();
-  for (const { match, won } of outcomes) {
-    const map = match.selectedMap ?? 'unknown';
-    const current = mapRecord.get(map) ?? { wins: 0, losses: 0 };
-    if (won) current.wins += 1;
-    else current.losses += 1;
-    mapRecord.set(map, current);
-  }
-  const mapRecordLine = [...mapRecord.entries()]
-    .map(([map, stats]) => `${map}: ${String(stats.wins)}–${String(stats.losses)}`)
-    .join(', ');
-  const lines = outcomes.slice(0, 5).map(({ match, won }) => {
-    const score = scoreSummary(match.score);
-    const date =
-      match.finishedAt === null
-        ? ''
-        : ` — <t:${String(Math.floor(match.finishedAt.getTime() / 1000))}:d>`;
-    return `• ${match.id.slice(0, 8)} — ${match.selectedMap ?? 'unknown'} — ${won ? 'win' : 'loss'}${score}${date}`;
-  });
-  return [
-    `Recent matches for <@${discordUserId}> (${record}, streak: ${streak}):`,
-    ...lines,
-    ...(mapRecordLine ? [`Map record: ${mapRecordLine}`] : []),
-  ].join('\n');
-}
-
-function scoreSummary(score: unknown): string {
-  const parsed = score as { team1?: number; team2?: number } | null;
-  if (parsed === null || parsed.team1 === undefined || parsed.team2 === undefined) return '';
-  return ` — ${String(parsed.team1)}:${String(parsed.team2)}`;
-}
-
-function formatStreak(outcomes: boolean[]): string {
-  if (outcomes.length === 0) return '-';
-  let streak = 0;
-  for (const won of outcomes) {
-    if (won === outcomes[0]) streak += 1;
-    else break;
-  }
-  return `${outcomes[0] ? 'W' : 'L'}${String(streak)}`;
 }
 
 function formatManagedPreview(preview: ManagedPreview, teardown: boolean): string {
@@ -1072,7 +718,7 @@ function formatDiagnosticsReport(report: {
     } | null;
   };
 }): string {
-  if (!report.configured) return 'This server is not configured. Use `/match admin configure`.';
+  if (!report.configured) return 'This server is not configured. Use `/10man-config configure`.';
   const status = (ok: boolean) => (ok ? 'OK' : 'FAIL');
   const lines = [`Configuration: ${report.enabled ? 'enabled' : 'disabled'}`];
   lines.push('Channels:');
@@ -1124,7 +770,7 @@ function formatDiagnosticsReport(report: {
 }
 
 async function createGuildAdminActor(
-  interaction: ChatInputCommandInteraction | MessageComponentInteraction,
+  interaction: ChatInputCommandInteraction | MessageComponentInteraction | ModalSubmitInteraction,
   prisma: PrismaClient,
 ): Promise<ActorContext> {
   if (interaction.guildId === null) throw new Error('Guild interaction required');

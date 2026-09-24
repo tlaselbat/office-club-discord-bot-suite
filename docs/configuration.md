@@ -56,7 +56,7 @@ The second output must decode to exactly 32 bytes. Keep all values outside sourc
 
 ## Guild settings
 
-`/match admin configure` stores:
+`/10man-config configure` stores:
 
 - Lobby text channel used for the persistent panel
 - Lobby, Team 1, and Team 2 voice channels

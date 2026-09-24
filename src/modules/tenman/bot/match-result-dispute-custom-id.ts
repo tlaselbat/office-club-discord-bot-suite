@@ -1,25 +1,39 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
+import { decodeUuid, encodeUuid } from './compact-uuid.js';
 
-const actionSchema = z.enum(['REPORT', 'MODAL']);
+const actionSchema = z.enum(['REPORT', 'MODAL', 'RES', 'RSM']);
+const resolutionSchema = z.enum(['REJECT', 'REVERSE']);
 const snowflakeSchema = z.string().regex(/^\d{17,20}$/);
-const compactUuidSchema = z.string().regex(/^[a-f0-9]{32}$/);
+const uuidishSchema = z
+  .string()
+  .transform((value) => (/^[a-f0-9]{32}$/u.test(value) ? expandMatchUuid(value) : value))
+  .pipe(z.uuid());
 
 const payloadSchema = z.object({
   action: actionSchema,
   guildId: snowflakeSchema,
   actorDiscordUserId: snowflakeSchema,
-  matchId: compactUuidSchema,
+  matchId: uuidishSchema.optional(),
+  disputeId: uuidishSchema.optional(),
+  resolution: resolutionSchema.optional(),
 });
 export type MatchResultDisputePayload = z.infer<typeof payloadSchema>;
+
+const GAP = '-';
 
 export function createResultDisputeCustomId(
   payload: MatchResultDisputePayload,
   secret: string,
 ): string {
   const parsed = payloadSchema.parse(payload);
-  const compactMatchId = parsed.matchId;
-  const body = `${parsed.action}:${parsed.guildId}:${parsed.actorDiscordUserId}:${compactMatchId}`;
+  const extras = [
+    parsed.matchId === undefined ? GAP : encodeUuid(parsed.matchId),
+    parsed.disputeId === undefined ? GAP : encodeUuid(parsed.disputeId),
+    parsed.resolution === undefined ? GAP : parsed.resolution,
+  ];
+  while (extras.length > 0 && extras[extras.length - 1] === GAP) extras.pop();
+  const body = [parsed.action, parsed.guildId, parsed.actorDiscordUserId, ...extras].join(':');
   const id = `tmd:${body}:${sign(body, secret)}`;
   if (id.length > 100)
     throw new Error('Discord result-dispute component ID exceeds 100 characters');
@@ -31,31 +45,30 @@ export function parseResultDisputeCustomId(
   secret: string,
 ): MatchResultDisputePayload {
   const parts = customId.split(':');
-  // tmd:ACTION:guildId:actor:matchId:signature
-  if (parts.length !== 6 || parts[0] !== 'tmd') {
+  const namespace = parts[0];
+  const signature = parts[parts.length - 1];
+  const bodyParts = parts.slice(1, -1);
+  if (namespace !== 'tmd' || signature === undefined || bodyParts.length < 3)
     throw new Error('Invalid result-dispute component ID');
-  }
-  const [, action, guildId, actor, compactMatchId, signature] = parts;
-  if (
-    action === undefined ||
-    guildId === undefined ||
-    actor === undefined ||
-    compactMatchId === undefined ||
-    signature === undefined
-  ) {
-    throw new Error('Invalid result-dispute component ID');
-  }
-  const body = `${action}:${guildId}:${actor}:${compactMatchId}`;
+  const body = bodyParts.join(':');
   const expected = Buffer.from(sign(body, secret));
   const received = Buffer.from(signature);
   if (expected.length !== received.length || !timingSafeEqual(expected, received))
     throw new Error('Invalid result-dispute component signature');
-
+  const [action, guildId, actor, encodedMatchId, encodedDisputeId, resolution] = bodyParts;
+  if (action === undefined || guildId === undefined || actor === undefined)
+    throw new Error('Invalid result-dispute component ID');
   return payloadSchema.parse({
     action,
     guildId,
     actorDiscordUserId: actor,
-    matchId: compactMatchId,
+    ...(encodedMatchId === undefined || encodedMatchId === GAP
+      ? {}
+      : { matchId: decodeUuid(encodedMatchId) }),
+    ...(encodedDisputeId === undefined || encodedDisputeId === GAP
+      ? {}
+      : { disputeId: decodeUuid(encodedDisputeId) }),
+    ...(resolution === undefined || resolution === GAP ? {} : { resolution }),
   });
 }
 

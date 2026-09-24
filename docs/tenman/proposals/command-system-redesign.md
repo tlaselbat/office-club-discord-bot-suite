@@ -1,13 +1,25 @@
 # 10man Slash-Command Redesign Proposal
 
-> **Status: PROPOSAL — NOT IMPLEMENTED.**
+> **Status: IMPLEMENTED — ARCHIVED.**
 >
-> Current command implementation: `src/modules/tenman/bot/commands.ts`
-> (registers `/10man`, `/steam`, `/match`, `/player`, `/party`).
+> The implemented, authoritative command tree is documented in
+> `docs/tenman/commands.md`. This file is retained as design history only.
 >
-> This document describes a proposed future command architecture and must not
-> be treated as current behavior. Command migration is separate, deferred
-> feature work. If the redesign is abandoned, delete this file.
+> Implemented deviations from this proposal:
+>
+> - Discord does not allow a bare top-level command to coexist with
+>   subcommands, so the hub entry point is `/10man hub` rather than a bare
+>   `/10man`.
+> - Staff operations are split into two sibling top-level commands,
+>   `/10man-admin` (match/queue/players/disputes/diagnostics/queue-panel) and
+>   `/10man-config` (status/setup/configure/enable/disable/teardown/
+>   recover-setup), because a command cannot mix subcommands and
+>   subcommand-groups under one root.
+> - No compatibility aliases are retained: `/steam`, `/match`, `/player`, and
+>   `/party` were removed outright per this proposal's no-duplicate-namespaces
+>   rule. Global command propagation removes them from clients.
+> - The managed-channel invocation gate was removed entirely; every command is
+>   ephemeral and authorizes at execution time.
 
 ## Goals
 

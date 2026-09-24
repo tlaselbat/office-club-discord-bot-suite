@@ -13,8 +13,14 @@ const base = {
   action: 'REPORT' as const,
   guildId: '12345678901234567',
   actorDiscordUserId: '98765432109876543',
-  matchId: compactMatchUuid(matchId),
+  matchId,
 };
+
+it('accepts the legacy compact-uuid matchId form', () => {
+  const compact = { ...base, matchId: compactMatchUuid(matchId) };
+  const parsed = parseResultDisputeCustomId(createResultDisputeCustomId(compact, secret), secret);
+  expect(parsed.matchId).toBe(matchId);
+});
 
 describe('match-result-dispute custom id', () => {
   it('round-trips a report payload', () => {

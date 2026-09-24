@@ -2,15 +2,16 @@
 
 ## Configure the guild
 
-`/match admin setup` is the only 10man slash-command bootstrap exception and
-requires administrative authorization. After setup, invoke all other 10man
-commands only in an active bot-managed 10man channel; commands from unrelated
-channels are rejected.
+`/10man-config setup` is the bootstrap command and requires administrative
+authorization (configured administrator role or native Discord Administrator).
+All 10man commands may be invoked from any guild channel; authorization is
+enforced server-side at execution time.
 
-Run `/match admin configure` after its normal channel, role, and template
+Run `/10man-config configure` after its normal channel, role, and template
 checks pass. Configure a queue size equal to twice the selected profile's
 `playersPerTeam` (10 for `competitive_5v5`) and a ready timeout between 15 and
-900 seconds. `/10man queue` creates or repairs the persistent queue panel.
+900 seconds. `/10man-admin queue-panel` creates or repairs the persistent queue
+panel.
 
 The implemented formation workflow supports 5v5 profiles, random captains,
 captain drafting or random teams, and captain veto or random maps. Unsupported
@@ -18,11 +19,22 @@ policy values are rejected before a queue can form an invalid match.
 
 ## Operations
 
-Cancellation, phase restart, result rollback, player-stat reset, queue clearing,
+Staff entry points:
+
+- `/10man-admin match` — active-match panel: force ready, restart phase,
+  replace participant (two-step user picks), and stop match.
+- `/10man-admin queue` — queue moderation: ban and unban via user pickers; bans
+  collect reason/duration in a modal.
+- `/10man-admin players` — stats reset via user picker.
+- `/10man-admin disputes` — pending result and Steam-assignment disputes with
+  resolve/reject controls.
+- `/10man-admin diagnostics` — safe diagnostics.
+
+Players use `/10man hub` for everything else, including leader match
+cancellation. Cancellation, phase restart, result rollback, player-stat reset,
 and resource teardown require an actor-bound, expiring signed confirmation.
-Use `/10man status` and `/match admin diagnostics` before and after a worker
-restart. Queue bans are durable and audited; use `/match admin queue-ban` and
-`/match admin queue-unban`.
+Use `/10man hub` and `/10man-admin diagnostics` before and after a worker
+restart. Queue bans are durable and audited.
 
 The bot never deletes Discord channels. It archives and locks proven bot-owned
 match channels, leaving final removal to a Discord administrator. Treat

@@ -58,7 +58,7 @@ corepack pnpm build
 corepack pnpm start
 ```
 
-Slash command registration is explicit; normal application startup does not modify Discord global commands. A native Discord administrator can bootstrap manually with `/match admin configure` or create a managed `10Man` category and channels with `/match admin setup`. Managed resources can be soft-disabled, validated and re-enabled, recovered after interrupted setup, or removed with a signed `/match admin teardown` confirmation.
+Slash command registration is explicit; normal application startup does not modify Discord global commands. A native Discord administrator can bootstrap manually with `/10man-config configure` or create a managed `10Man` category and channels with `/10man-config setup`. Managed resources can be soft-disabled, validated and re-enabled, recovered after interrupted setup, or removed with a signed `/10man-config teardown` confirmation.
 
 ## Verification
 

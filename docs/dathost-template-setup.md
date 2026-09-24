@@ -67,7 +67,7 @@ DATHOST_TEMPLATE_SERVER_ID=protected-template-server-id
 PUBLIC_BASE_URL=https://10man.example.com
 ```
 
-Use `/match admin configure` to select that same template and a valid DatHost location for each guild. Then use `/match admin diagnostics` before creating a real match. The bot checks template accessibility there without mutating it.
+Use `/10man-config configure` to select that same template and a valid DatHost location for each guild. Then use `/10man-admin diagnostics` before creating a real match. The bot checks template accessibility there without mutating it.
 
 ## What the worker changes on every duplicate
 

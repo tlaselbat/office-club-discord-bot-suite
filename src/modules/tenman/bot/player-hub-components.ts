@@ -3,7 +3,8 @@ import { buildSteamAccountButton } from './steam-account-components.js';
 import { createPlayerHubCustomId } from './player-hub-custom-id.js';
 import { createQueueCustomId } from './queue-custom-id.js';
 import { createMatchCustomId } from './match-custom-id.js';
-import { compactMatchUuid, createResultDisputeCustomId } from './match-result-dispute-custom-id.js';
+import { createPartyCustomId } from './party-custom-id.js';
+import { createResultDisputeCustomId } from './match-result-dispute-custom-id.js';
 import type { PlayerStatus } from '../services/player-status-service.js';
 
 export function buildPlayerHubResponse(
@@ -16,6 +17,7 @@ export function buildPlayerHubResponse(
   secret: string,
 ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
   const base = new EmbedBuilder().setTitle('Your 10man Status').setColor(0x5865f2);
+  const nav = navRow(guildId, discordUserId, secret);
 
   switch (status.kind) {
     case 'NEW_PLAYER':
@@ -36,6 +38,7 @@ export function buildPlayerHubResponse(
             howItWorksButton(guildId, discordUserId, queueVersion, secret),
             refreshButton(guildId, discordUserId, secret),
           ),
+          nav,
         ],
       };
 
@@ -69,6 +72,7 @@ export function buildPlayerHubResponse(
             howItWorksButton(guildId, discordUserId, queueVersion, secret),
             refreshButton(guildId, discordUserId, secret),
           ),
+          nav,
         ],
       };
 
@@ -102,6 +106,7 @@ export function buildPlayerHubResponse(
             howItWorksButton(guildId, discordUserId, queueVersion, secret),
             refreshButton(guildId, discordUserId, secret),
           ),
+          nav,
         ],
       };
 
@@ -146,6 +151,7 @@ export function buildPlayerHubResponse(
           new ActionRowBuilder<ButtonBuilder>().addComponents(
             refreshButton(guildId, discordUserId, secret),
           ),
+          nav,
         ],
       };
 
@@ -175,10 +181,25 @@ export function buildPlayerHubResponse(
               )
               .setLabel('My Match Info')
               .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId(
+                createMatchCustomId(
+                  {
+                    action: 'CANCEL',
+                    matchId: status.matchId,
+                    version: matchVersion,
+                    phaseGeneration: matchPhaseGeneration,
+                  },
+                  secret,
+                ),
+              )
+              .setLabel('Cancel Match…')
+              .setStyle(ButtonStyle.Danger),
           ),
           new ActionRowBuilder<ButtonBuilder>().addComponents(
             refreshButton(guildId, discordUserId, secret),
           ),
+          nav,
         ],
       };
 
@@ -200,7 +221,7 @@ export function buildPlayerHubResponse(
                   action: 'REPORT',
                   guildId,
                   actorDiscordUserId: discordUserId,
-                  matchId: compactMatchUuid(status.matchId),
+                  matchId: status.matchId,
                 },
                 secret,
               ),
@@ -216,10 +237,36 @@ export function buildPlayerHubResponse(
           new ActionRowBuilder<ButtonBuilder>().addComponents(
             refreshButton(guildId, discordUserId, secret),
           ),
+          nav,
         ],
       };
     }
   }
+}
+
+function navRow(
+  guildId: string,
+  actorDiscordUserId: string,
+  secret: string,
+): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(createPartyCustomId({ action: 'PANEL', guildId, actorDiscordUserId }, secret))
+      .setLabel('My Party')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(
+        createPlayerHubCustomId({ action: 'HISTORY', guildId, actorDiscordUserId }, secret),
+      )
+      .setLabel('History')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(
+        createPlayerHubCustomId({ action: 'STATS', guildId, actorDiscordUserId }, secret),
+      )
+      .setLabel('Stats')
+      .setStyle(ButtonStyle.Secondary),
+  );
 }
 
 function howItWorksButton(

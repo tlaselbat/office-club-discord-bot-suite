@@ -178,7 +178,7 @@ export class GuildResourceService {
     ) {
       throw new PublicError(
         'ENABLE_REQUIRES_SETUP',
-        'Managed channels are not configured. Run `/match admin setup`.',
+        'Managed channels are not configured. Run `/10man-config setup`.',
       );
     }
     await this.validateExisting(settings);
@@ -212,7 +212,7 @@ export class GuildResourceService {
     if (settings.managedResourceState === 'SETTING_UP') {
       throw new PublicError(
         'SETUP_IN_PROGRESS',
-        'Managed setup recovery is required. Run `/match admin recover-setup`.',
+        'Managed setup recovery is required. Run `/10man-config recover-setup`.',
       );
     }
     await this.assertNoActiveMatch(guildId);

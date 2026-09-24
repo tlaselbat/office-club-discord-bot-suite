@@ -244,7 +244,7 @@ verify_deployment() {
   for attempt in $(seq 1 30); do
     if curl -fsS "https://${DOMAIN}/health/ready" >/dev/null; then
       printf '\n10Man bot deployment is ready at https://%s\n' "${DOMAIN}"
-      printf 'Next: run /match admin setup in Discord.\n'
+      printf 'Next: run /10man-config setup in Discord.\n'
       return
     fi
     sleep 2

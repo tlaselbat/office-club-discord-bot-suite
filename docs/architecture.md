@@ -80,7 +80,7 @@ Handlers return either completion or a future reschedule time. Recurring jobs ar
 
 ## Managed guild resources
 
-Managed setup persists a guild attempt and an explicit create-in-flight step before each Discord API request. The transaction commits before Discord is awaited; the returned ID is persisted in a new short version-checked transaction. Accepted-but-unpersisted creates remain explicitly ambiguous and are never adopted or deleted by name. `/match admin recover-setup` requires operator inspection/manual cleanup and signed acknowledgement.
+Managed setup persists a guild attempt and an explicit create-in-flight step before each Discord API request. The transaction commits before Discord is awaited; the returned ID is persisted in a new short version-checked transaction. Accepted-but-unpersisted creates remain explicitly ambiguous and are never adopted or deleted by name. `/10man-config recover-setup` requires operator inspection/manual cleanup and signed acknowledgement.
 
 Managed teardown is actor/guild/version/generation-bound, expires after five minutes, refuses active guild slots, clears functional IDs only after archiving and locking tracked resources, and never deletes Discord channels. Partial work remains disabled and retryable. Manual channels have no managed ownership and cannot be changed through teardown. `managedResourcesCreatedAt` exists only while active ownership exists; audits retain lifecycle history.
 

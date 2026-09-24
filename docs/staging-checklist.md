@@ -14,7 +14,7 @@
 
 - [ ] Bot has required Guilds, Members, Messages, and Voice States intents
 - [ ] Bot has permissions to manage configured channels, messages, and voice
-- [ ] `/match admin configure`, `/match admin setup`, and diagnostics succeed
+- [ ] `/10man-config configure`, `/10man-config setup`, and `/10man-admin diagnostics` succeed
 - [ ] Setup creates only the managed category and expected children
 - [ ] Teardown rejects an active or cleanup-held match and never removes manual channels
 - [ ] Administrative confirmations reject another actor, expiration, and stale generation

@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
 const schema = z.object({
-  action: z.enum(['RS', 'RC']),
+  action: z.enum(['RS', 'RC', 'SEL']),
   guildId: z.string().regex(/^\d{17,20}$/),
   targetDiscordUserId: z.string().regex(/^\d{17,20}$/),
   actorDiscordUserId: z.string().regex(/^\d{17,20}$/),

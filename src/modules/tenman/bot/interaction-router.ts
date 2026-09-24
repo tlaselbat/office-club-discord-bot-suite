@@ -1,4 +1,9 @@
-import type { Client, MessageComponentInteraction, ModalSubmitInteraction } from 'discord.js';
+import {
+  EmbedBuilder,
+  type Client,
+  type MessageComponentInteraction,
+  type ModalSubmitInteraction,
+} from 'discord.js';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import type { MatchService } from '../services/match-service.js';
 import { assertAuthorized, type ActorContext } from '../domain/authorization.js';
@@ -21,6 +26,9 @@ import { adminGeneration, parseAdminCustomId } from './admin-custom-id.js';
 import { parseMatchCustomId } from './match-custom-id.js';
 import { parseQueueCustomId } from './queue-custom-id.js';
 import { parseMatchAdminCustomId } from './match-admin-custom-id.js';
+import { parseMatchOpsCustomId } from './match-ops-custom-id.js';
+import { createQueueAdminCustomId, parseQueueAdminCustomId } from './queue-admin-custom-id.js';
+import { parsePartyCustomId } from './party-custom-id.js';
 import { parsePlayerAdminCustomId } from './player-admin-custom-id.js';
 import { parsePlayerHubCustomId, createPlayerHubCustomId } from './player-hub-custom-id.js';
 import {
@@ -30,9 +38,25 @@ import {
 import {
   parseResultDisputeCustomId,
   createResultDisputeCustomId,
-  expandMatchUuid,
 } from './match-result-dispute-custom-id.js';
 import { buildPlayerHubResponse } from './player-hub-components.js';
+import { buildPartyInviteAcceptRows, buildPartyPanelResponse } from './party-components.js';
+import {
+  buildAdminMatchPanel,
+  buildAdminQueuePanel,
+  buildHistoryResponse,
+  buildQueueBanModal,
+  buildReplaceIncomingSelect,
+  buildResultResolutionModal,
+} from './admin-panels.js';
+import {
+  buildCancelMatchConfirmationControls,
+  buildRestartPhaseConfirmationControls,
+  buildRollbackConfirmationControls,
+} from './match-admin-components.js';
+import { buildPlayerStatsResetConfirmationControls } from './player-admin-components.js';
+import { PartyService } from '../services/party-service.js';
+import { QueueBanService } from '../services/queue-ban-service.js';
 import {
   buildResultDisputeModal,
   buildResultDisputeAcknowledgedResponse,
@@ -122,6 +146,27 @@ export class MatchInteractionRouter {
       await interaction.editReply({ content: 'Captains selected.' });
       return;
     }
+    if (payload.action === 'CANCEL') {
+      const actor = await this.options.actorFor(interaction, match.id);
+      assertAuthorized('STOP', actor, {
+        leaderDiscordUserId: match.leaderDiscordUserId,
+        state: match.state,
+      });
+      await interaction.editReply({
+        content: `This cancels match ${match.id.slice(0, 8)} and starts cleanup if needed. Confirm within five minutes.`,
+        components: buildCancelMatchConfirmationControls(
+          {
+            matchId: match.id,
+            version: match.version,
+            phaseGeneration: match.phaseGeneration,
+            actorDiscordUserId: interaction.user.id,
+            expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+          },
+          this.options.componentSigningSecret,
+        ),
+      });
+      return;
+    }
     if (payload.targetDiscordUserId !== interaction.user.id)
       throw new Error('This control is assigned to another player');
     if (payload.action === 'DRAFT_PICK' && interaction.isStringSelectMenu()) {
@@ -157,7 +202,9 @@ export class MatchInteractionRouter {
 export interface TenManComponentInteractionRouterOptions extends InteractionRouterOptions {
   discord: Client;
   guildResourceService: GuildResourceService;
-  adminActorFor: (interaction: MessageComponentInteraction) => Promise<ActorContext>;
+  adminActorFor: (
+    interaction: MessageComponentInteraction | ModalSubmitInteraction,
+  ) => Promise<ActorContext>;
   matchService: MatchService;
   steamAccountService: SteamAccountService;
   steamProfileService: SteamProfileService;
@@ -177,6 +224,8 @@ export class TenManComponentInteractionRouter {
   private readonly steamAdminService: SteamAdminService;
   private readonly resultDisputeService: MatchResultDisputeService;
   private readonly queueAlertService: QueueAlertService;
+  private readonly partyService: PartyService;
+  private readonly queueBanService: QueueBanService;
 
   public constructor(private readonly options: TenManComponentInteractionRouterOptions) {
     this.match = new MatchInteractionRouter(options);
@@ -192,6 +241,8 @@ export class TenManComponentInteractionRouter {
     this.steamAdminService = new SteamAdminService(options.prisma, options.steamProfileService);
     this.resultDisputeService = new MatchResultDisputeService(options.prisma);
     this.queueAlertService = new QueueAlertService(options.prisma, options.discord);
+    this.partyService = new PartyService(options.prisma);
+    this.queueBanService = new QueueBanService(options.prisma);
   }
 
   public async handle(interaction: ComponentOrModal): Promise<void> {
@@ -200,6 +251,9 @@ export class TenManComponentInteractionRouter {
 
     if (interaction.customId.startsWith('tps2:')) return this.handlePlayerAdmin(interaction);
     if (interaction.customId.startsWith('tma2:')) return this.handleMatchAdmin(interaction);
+    if (interaction.customId.startsWith('tmo:')) return this.handleMatchOps(interaction);
+    if (interaction.customId.startsWith('tqb:')) return this.handleQueueAdmin(interaction);
+    if (interaction.customId.startsWith('tpy:')) return this.handleParty(interaction);
     if (interaction.customId.startsWith('tmm:')) return this.match.handle(interaction);
     if (interaction.customId.startsWith('tmq:')) return this.handleQueue(interaction);
     if (interaction.customId.startsWith('tmp:')) return this.handlePlayerHub(interaction);
@@ -265,17 +319,78 @@ export class TenManComponentInteractionRouter {
         interaction.customId,
         this.options.componentSigningSecret,
       );
-      if (payload.action !== 'MODAL') throw new Error('Unsupported modal namespace');
-      const reason = interaction.fields.getTextInputValue('dispute_reason');
-      const result = await this.resultDisputeService.createDispute(
-        expandMatchUuid(payload.matchId),
+      if (payload.action === 'MODAL') {
+        if (payload.matchId === undefined) throw new Error('Missing match reference');
+        const reason = interaction.fields.getTextInputValue('dispute_reason');
+        const result = await this.resultDisputeService.createDispute(
+          payload.matchId,
+          interaction.user.id,
+          reason,
+          interaction.id,
+        );
+        await interaction.reply({
+          content: buildResultDisputeAcknowledgedResponse(result.id),
+          ephemeral: true,
+        });
+        return;
+      }
+      if (payload.action === 'RSM') {
+        if (payload.actorDiscordUserId !== interaction.user.id)
+          throw new Error('Administrative confirmation does not belong to this interaction');
+        if (payload.disputeId === undefined || payload.resolution === undefined)
+          throw new Error('Missing dispute resolution fields');
+        const actor = await this.options.adminActorFor(interaction);
+        assertAuthorized('RESOLVE_DISPUTE', actor);
+        const reason = interaction.fields.getTextInputValue('resolution_reason');
+        await this.resultDisputeService.resolveDispute(
+          payload.disputeId,
+          payload.resolution,
+          reason,
+          interaction.user.id,
+          interaction.id,
+        );
+        await interaction.reply({
+          ephemeral: true,
+          content:
+            payload.resolution === 'REVERSE'
+              ? 'Dispute accepted and match result reversed.'
+              : 'Dispute rejected.',
+        });
+        return;
+      }
+      throw new Error('Unsupported modal namespace');
+    }
+    if (interaction.customId.startsWith('tqb:')) {
+      const payload = parseQueueAdminCustomId(
+        interaction.customId,
+        this.options.componentSigningSecret,
+      );
+      if (payload.action !== 'BAN_MODAL' || payload.targetDiscordUserId === undefined)
+        throw new Error('Unsupported modal namespace');
+      if (payload.actorDiscordUserId !== interaction.user.id)
+        throw new Error('Administrative confirmation does not belong to this interaction');
+      const actor = await this.options.adminActorFor(interaction);
+      assertAuthorized('QUEUE_BAN', actor);
+      const reason = interaction.fields.getTextInputValue('ban_reason');
+      const durationInput = interaction.fields.getTextInputValue('ban_duration_minutes').trim();
+      let expiresAt: Date | null = null;
+      if (durationInput !== '') {
+        const minutes = Number.parseInt(durationInput, 10);
+        if (!Number.isInteger(minutes) || minutes < 1 || minutes > 525600)
+          throw new Error('Ban duration must be a whole number of minutes.');
+        expiresAt = new Date(Date.now() + minutes * 60_000);
+      }
+      await this.queueBanService.ban(
+        payload.guildId,
+        payload.targetDiscordUserId,
         interaction.user.id,
         reason,
+        expiresAt,
         interaction.id,
       );
       await interaction.reply({
-        content: buildResultDisputeAcknowledgedResponse(result.id),
         ephemeral: true,
+        content: `<@${payload.targetDiscordUserId}> has been banned from the queue${expiresAt === null ? '' : ` until <t:${String(Math.floor(expiresAt.getTime() / 1000))}:f>`}.`,
       });
       return;
     }
@@ -311,6 +426,50 @@ export class TenManComponentInteractionRouter {
         content: buildDisputeAcknowledgedResponse(id),
         ephemeral: true,
       });
+      return;
+    }
+    if (payload.action === 'VIEW') {
+      await interaction.deferReply({ ephemeral: true });
+      const active = await this.options.steamAccountService.findActive(interaction.user.id);
+      await interaction.editReply(
+        buildSteamAccountStatusResponse(
+          active,
+          payload.guildId,
+          interaction.user.id,
+          this.options.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (payload.action === 'REMOVE') {
+      await interaction.deferUpdate();
+      const result = await this.options.steamAccountService.remove({
+        discordUserId: interaction.user.id,
+        guildId: payload.guildId,
+        correlationId: interaction.id,
+        actorDiscordUserId: interaction.user.id,
+      });
+      switch (result.status) {
+        case 'removed':
+          await interaction.editReply({
+            content:
+              'Your Steam account assignment was removed. Assign a new account before joining the queue.',
+            components: [],
+          });
+          return;
+        case 'no_assignment':
+          await interaction.editReply({
+            content: 'You do not have an assigned Steam account.',
+            components: [],
+          });
+          return;
+        case 'locked':
+          await interaction.editReply({
+            content: buildLockedAssignmentResponse(result.reason),
+            components: [],
+          });
+          return;
+      }
       return;
     }
     if (payload.action === 'RESOLVE' || payload.action === 'REJECT') {
@@ -355,6 +514,27 @@ export class TenManComponentInteractionRouter {
       await interaction.showModal(buildResultDisputeModal(modalCustomId));
       return;
     }
+    if (payload.action === 'RES') {
+      if (payload.actorDiscordUserId !== interaction.user.id)
+        throw new Error('Administrative confirmation does not belong to this interaction');
+      if (payload.disputeId === undefined || payload.resolution === undefined)
+        throw new Error('Missing dispute resolution fields');
+      const actor = await this.options.adminActorFor(interaction);
+      assertAuthorized('RESOLVE_DISPUTE', actor);
+      const modalCustomId = createResultDisputeCustomId(
+        {
+          action: 'RSM',
+          guildId: payload.guildId,
+          actorDiscordUserId: interaction.user.id,
+          matchId: payload.matchId,
+          disputeId: payload.disputeId,
+          resolution: payload.resolution,
+        },
+        this.options.componentSigningSecret,
+      );
+      await interaction.showModal(buildResultResolutionModal(modalCustomId, payload.resolution));
+      return;
+    }
     throw new Error('Unsupported result-dispute control');
   }
 
@@ -365,6 +545,46 @@ export class TenManComponentInteractionRouter {
       interaction.customId,
       this.options.componentSigningSecret,
     );
+    if (payload.action === 'HISTORY') {
+      const matches = await this.matchHistory.recentMatches(payload.guildId, interaction.user.id);
+      await interaction.editReply(
+        buildHistoryResponse(
+          matches,
+          interaction.user.id,
+          false,
+          payload.guildId,
+          interaction.user.id,
+          this.options.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (payload.action === 'STATS') {
+      const stats = await this.options.prisma.playerGuildStats.findUnique({
+        where: {
+          guildId_discordUserId: {
+            guildId: payload.guildId,
+            discordUserId: interaction.user.id,
+          },
+        },
+      });
+      const embed = new EmbedBuilder().setTitle('10man Stats').setColor(0x5865f2);
+      if (stats === null) {
+        embed.setDescription('You have no match statistics yet.');
+      } else {
+        embed.setDescription('Your 10man record on this server.').addFields(
+          { name: 'Rating', value: String(stats.rating), inline: true },
+          {
+            name: 'Record',
+            value: `${String(stats.wins)}W — ${String(stats.losses)}L`,
+            inline: true,
+          },
+          { name: 'Matches', value: String(stats.matchesPlayed), inline: true },
+        );
+      }
+      await interaction.editReply({ embeds: [embed] });
+      return;
+    }
     await this.renderPlayerHub(interaction, payload.guildId);
   }
 
@@ -517,6 +737,316 @@ export class TenManComponentInteractionRouter {
     }
   }
 
+  private async handleMatchOps(interaction: MessageComponentInteraction): Promise<void> {
+    if (interaction.guildId === null) throw new Error('Guild interaction required');
+    const payload = parseMatchOpsCustomId(
+      interaction.customId,
+      this.options.componentSigningSecret,
+    );
+    if (payload.actorDiscordUserId !== interaction.user.id)
+      throw new Error('Administrative control does not belong to this interaction');
+    const match = await this.options.prisma.match.findUnique({
+      where: { id: payload.matchId },
+      include: { players: { select: { discordUserId: true } } },
+    });
+    if (
+      match === null ||
+      match.guildId !== interaction.guildId ||
+      match.version !== payload.version ||
+      match.phaseGeneration !== payload.phaseGeneration
+    ) {
+      await interaction.reply({
+        ephemeral: true,
+        content:
+          "That action isn't available anymore because the match has moved to the next stage.",
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 2,
+                style: 2,
+                custom_id: createPlayerHubCustomId(
+                  {
+                    action: 'HUB',
+                    guildId: interaction.guildId,
+                    actorDiscordUserId: interaction.user.id,
+                  },
+                  this.options.componentSigningSecret,
+                ),
+                label: 'Refresh My 10man',
+              },
+            ],
+          },
+        ],
+      });
+      return;
+    }
+    const confirm = (kind: 'restart' | 'cancel' | 'rollback') => ({
+      content:
+        kind === 'restart'
+          ? 'This clears the current forming-phase progress. Confirm within five minutes.'
+          : kind === 'cancel'
+            ? `This cancels match ${match.id.slice(0, 8)} and starts cleanup if needed. Confirm within five minutes.`
+            : `This reverses the rating ledger for match ${match.id.slice(0, 8)}. Confirm within five minutes.`,
+      components: (kind === 'restart'
+        ? buildRestartPhaseConfirmationControls
+        : kind === 'cancel'
+          ? buildCancelMatchConfirmationControls
+          : buildRollbackConfirmationControls)(
+        {
+          matchId: match.id,
+          version: match.version,
+          phaseGeneration: match.phaseGeneration,
+          actorDiscordUserId: interaction.user.id,
+          expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+        },
+        this.options.componentSigningSecret,
+      ),
+    });
+    if (payload.action === 'RF') {
+      await interaction.deferUpdate();
+      await interaction.editReply(
+        buildAdminMatchPanel(
+          match,
+          interaction.guildId,
+          interaction.user.id,
+          this.options.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (payload.action === 'RP' || payload.action === 'ST') {
+      const actor = await this.options.adminActorFor(interaction);
+      assertAuthorized(payload.action === 'RP' ? 'RESTART_PHASE' : 'STOP', actor, {
+        leaderDiscordUserId: match.leaderDiscordUserId,
+        state: match.state,
+      });
+      await interaction.update(confirm(payload.action === 'RP' ? 'restart' : 'cancel'));
+      return;
+    }
+    if (payload.action === 'RB') {
+      const actor = await this.options.adminActorFor(interaction);
+      assertAuthorized('ROLLBACK_MATCH', actor);
+      await interaction.reply({ ephemeral: true, ...confirm('rollback') });
+      return;
+    }
+    if (payload.action === 'FR') {
+      const actor = await this.options.adminActorFor(interaction);
+      assertAuthorized('FORCE_READY', actor);
+      await interaction.deferUpdate();
+      await this.matchAdmin.forceReady(
+        match.id,
+        payload.version,
+        interaction.user.id,
+        interaction.id,
+      );
+      await interaction.editReply(
+        buildAdminMatchPanel(
+          {
+            ...match,
+            state: 'TEAM_SELECTION',
+            version: match.version + 1,
+            phaseGeneration: match.phaseGeneration + 1,
+          },
+          interaction.guildId,
+          interaction.user.id,
+          this.options.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (payload.action === 'RO') {
+      const actor = await this.options.adminActorFor(interaction);
+      assertAuthorized('REPLACE_PARTICIPANT', actor);
+      if (!interaction.isUserSelectMenu()) throw new Error('Player selection is missing');
+      const outgoing = interaction.values[0];
+      if (outgoing === undefined) throw new Error('Player selection is missing');
+      await interaction.update(
+        buildReplaceIncomingSelect(
+          match,
+          interaction.guildId,
+          interaction.user.id,
+          outgoing,
+          this.options.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    const actor = await this.options.adminActorFor(interaction);
+    assertAuthorized('REPLACE_PARTICIPANT', actor);
+    if (!interaction.isUserSelectMenu()) throw new Error('Player selection is missing');
+    if (payload.targetDiscordUserId === undefined)
+      throw new Error('Outgoing participant selection is missing');
+    const incoming = interaction.values[0];
+    if (incoming === undefined) throw new Error('Player selection is missing');
+    await interaction.deferUpdate();
+    await this.matchAdmin.replaceParticipant({
+      matchId: match.id,
+      outgoingDiscordUserId: payload.targetDiscordUserId,
+      incomingDiscordUserId: incoming,
+      expectedVersion: payload.version,
+      actorDiscordUserId: interaction.user.id,
+      correlationId: interaction.id,
+    });
+    await interaction.editReply({
+      content: `Replaced <@${payload.targetDiscordUserId}> with <@${incoming}>; the ready deadline was restarted.`,
+      components: [],
+      embeds: [],
+    });
+  }
+
+  private async handleQueueAdmin(interaction: MessageComponentInteraction): Promise<void> {
+    if (interaction.guildId === null) throw new Error('Guild interaction required');
+    const payload = parseQueueAdminCustomId(
+      interaction.customId,
+      this.options.componentSigningSecret,
+    );
+    if (payload.guildId !== interaction.guildId)
+      throw new Error('Queue control does not belong to this guild');
+    if (payload.actorDiscordUserId !== interaction.user.id)
+      throw new Error('Administrative control does not belong to this interaction');
+    const actor = await this.options.adminActorFor(interaction);
+    if (payload.action === 'BAN_SELECT') {
+      assertAuthorized('QUEUE_BAN', actor);
+      if (!interaction.isUserSelectMenu()) throw new Error('Player selection is missing');
+      const target = interaction.values[0];
+      if (target === undefined) throw new Error('Player selection is missing');
+      const modalCustomId = createQueueAdminCustomId(
+        {
+          action: 'BAN_MODAL',
+          guildId: payload.guildId,
+          actorDiscordUserId: interaction.user.id,
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+          targetDiscordUserId: target,
+        },
+        this.options.componentSigningSecret,
+      );
+      await interaction.showModal(buildQueueBanModal(modalCustomId));
+      return;
+    }
+    if (payload.action === 'UNBAN') {
+      assertAuthorized('QUEUE_UNBAN', actor);
+      if (!interaction.isUserSelectMenu()) throw new Error('Player selection is missing');
+      const target = interaction.values[0];
+      if (target === undefined) throw new Error('Player selection is missing');
+      await interaction.deferUpdate();
+      await this.queueBanService.unban(
+        payload.guildId,
+        target,
+        interaction.user.id,
+        interaction.id,
+      );
+      const [queue, bans] = await Promise.all([
+        this.options.prisma.tenManQueue.findUnique({
+          where: { guildId: payload.guildId },
+          include: { entries: { select: { discordUserId: true } } },
+        }),
+        this.options.prisma.tenManQueueBan.findMany({
+          where: { guildId: payload.guildId, revokedAt: null },
+          select: { discordUserId: true, reason: true, expiresAt: true },
+          orderBy: { createdAt: 'desc' },
+          take: 25,
+        }),
+      ]);
+      await interaction.editReply(
+        buildAdminQueuePanel(
+          queue,
+          bans,
+          payload.guildId,
+          interaction.user.id,
+          this.options.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    throw new Error('Unsupported queue administration control');
+  }
+
+  private async handleParty(interaction: MessageComponentInteraction): Promise<void> {
+    const payload = parsePartyCustomId(interaction.customId, this.options.componentSigningSecret);
+    if (payload.actorDiscordUserId !== interaction.user.id)
+      throw new Error('Party control does not belong to this interaction');
+    const guildId = interaction.guildId ?? payload.guildId;
+    if (payload.action === 'ACCEPT') {
+      if (payload.inviteId === undefined) throw new Error('Missing party invitation');
+      await interaction.deferReply({ ephemeral: true });
+      await this.partyService.accept(payload.inviteId, interaction.user.id);
+      await interaction.editReply({ content: 'Party invitation accepted. Welcome aboard.' });
+      return;
+    }
+    if (interaction.guildId === null) throw new Error('Guild interaction required');
+    if (payload.action === 'INVITE' || payload.action === 'KICK') {
+      if (payload.partyId === undefined) throw new Error('Missing party reference');
+      if (!interaction.isUserSelectMenu()) throw new Error('Player selection is missing');
+      const target = interaction.values[0];
+      if (target === undefined) throw new Error('Player selection is missing');
+      await interaction.deferUpdate();
+      if (payload.action === 'INVITE') {
+        const inviteId = await this.partyService.invite(
+          payload.partyId,
+          interaction.user.id,
+          target,
+        );
+        const invitee = await this.options.discord.users.fetch(target).catch(() => null);
+        const delivered =
+          invitee === null
+            ? false
+            : await invitee
+                .send({
+                  content: `<@${interaction.user.id}> invited you to their 10man party. Accept within 15 minutes.`,
+                  components: buildPartyInviteAcceptRows(
+                    guildId,
+                    target,
+                    [{ id: inviteId }],
+                    this.options.componentSigningSecret,
+                  ),
+                })
+                .then(() => true)
+                .catch(() => false);
+        await interaction.followUp({
+          ephemeral: true,
+          content: delivered
+            ? `Invitation sent to <@${target}>.`
+            : `Invitation created for <@${target}>. Their DMs are unavailable; they can accept it from their **/10man party** panel.`,
+        });
+      } else {
+        await this.partyService.kick(payload.partyId, interaction.user.id, target);
+        await interaction.followUp({
+          ephemeral: true,
+          content: `<@${target}> was removed from the party.`,
+        });
+      }
+      await this.renderPartyPanel(interaction, guildId);
+      return;
+    }
+    await interaction.deferUpdate();
+    if (payload.action === 'CREATE') {
+      await this.partyService.create(guildId, interaction.user.id);
+    } else if (payload.action === 'LEAVE' || payload.action === 'DISBAND') {
+      if (payload.partyId === undefined) throw new Error('Missing party reference');
+      if (payload.action === 'LEAVE')
+        await this.partyService.leave(payload.partyId, interaction.user.id);
+      else await this.partyService.disband(payload.partyId, interaction.user.id);
+    }
+    await this.renderPartyPanel(interaction, guildId);
+  }
+
+  private async renderPartyPanel(
+    interaction: MessageComponentInteraction,
+    guildId: string,
+  ): Promise<void> {
+    const state = await this.partyService.getPanelState(guildId, interaction.user.id);
+    await interaction.editReply(
+      buildPartyPanelResponse(
+        state,
+        guildId,
+        interaction.user.id,
+        this.options.componentSigningSecret,
+      ),
+    );
+  }
+
   private async renderStaleRefresh(
     interaction: MessageComponentInteraction,
     guildId: string,
@@ -582,7 +1112,7 @@ export class TenManComponentInteractionRouter {
         interaction.id,
       );
       await interaction.editReply({
-        content: 'Match canceled. Cleanup status is available in `/10man status`.',
+        content: 'Match canceled. Cleanup status is available in `/10man hub`.',
         components: [],
       });
       return;
@@ -615,6 +1145,24 @@ export class TenManComponentInteractionRouter {
       throw new Error('Administrative confirmation does not belong to this interaction');
     const actor = await this.options.adminActorFor(interaction);
     assertAuthorized('RESET_PLAYER_STATS', actor);
+    if (payload.action === 'SEL') {
+      if (!interaction.isUserSelectMenu()) throw new Error('Player selection is missing');
+      const target = interaction.values[0];
+      if (target === undefined) throw new Error('Player selection is missing');
+      await interaction.editReply({
+        content: `This resets <@${target}>'s current rating and record. Match history is retained. Confirm within five minutes.`,
+        components: buildPlayerStatsResetConfirmationControls(
+          {
+            guildId: payload.guildId,
+            targetDiscordUserId: target,
+            actorDiscordUserId: interaction.user.id,
+            expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+          },
+          this.options.componentSigningSecret,
+        ),
+      });
+      return;
+    }
     if (payload.action === 'RC') {
       await interaction.editReply({ content: 'Statistics reset canceled.', components: [] });
       return;
@@ -676,7 +1224,7 @@ export class TenManComponentInteractionRouter {
       payload.settingsVersion,
     );
     await interaction.editReply({
-      content: 'Managed setup recovery completed. You can run `/match admin setup` again.',
+      content: 'Managed setup recovery completed. You can run `/10man-config setup` again.',
       components: [],
     });
   }
@@ -701,16 +1249,34 @@ export function buildSteamAccountStatusResponse(
   guildId: string,
   actorDiscordUserId: string,
   secret: string,
-): { content: string; components: ReturnType<typeof buildSteamAccountButton> } {
+): {
+  content: string;
+  components: { type: 1; components: object[] }[];
+} {
+  const assignButton = {
+    type: 2,
+    style: 1,
+    custom_id: createSteamAccountCustomId({ action: 'OPEN', guildId, actorDiscordUserId }, secret),
+    label: active === null ? 'Assign Steam Account' : 'Change Steam Account',
+  };
   if (active === null) {
     return {
       content: [
         'You do not have an assigned Steam account.',
         'Assign the Steam account you intend to use for 10man matches.',
       ].join('\n'),
-      components: buildSteamAccountButton(guildId, actorDiscordUserId, secret),
+      components: [{ type: 1, components: [assignButton] }],
     };
   }
+  const removeButton = {
+    type: 2,
+    style: 4,
+    custom_id: createSteamAccountCustomId(
+      { action: 'REMOVE', guildId, actorDiscordUserId },
+      secret,
+    ),
+    label: 'Remove Assignment',
+  };
   return {
     content: [
       'Assigned Steam account:',
@@ -719,6 +1285,6 @@ export function buildSteamAccountStatusResponse(
       '',
       'This association is used for roster building only. It does not verify Steam ownership.',
     ].join('\n'),
-    components: buildSteamAccountButton(guildId, actorDiscordUserId, secret),
+    components: [{ type: 1, components: [assignButton, removeButton] }],
   };
 }

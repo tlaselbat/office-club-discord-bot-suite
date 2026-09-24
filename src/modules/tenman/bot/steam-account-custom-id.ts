@@ -1,7 +1,16 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
-const actionSchema = z.enum(['OPEN', 'MODAL', 'REVIEW', 'OTHER', 'RESOLVE', 'REJECT']);
+const actionSchema = z.enum([
+  'OPEN',
+  'MODAL',
+  'VIEW',
+  'REMOVE',
+  'REVIEW',
+  'OTHER',
+  'RESOLVE',
+  'REJECT',
+]);
 const snowflakeSchema = z.string().regex(/^\d{17,20}$/);
 const uuidSchema = z.uuid();
 

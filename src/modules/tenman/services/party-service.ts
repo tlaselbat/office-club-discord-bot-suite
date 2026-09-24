@@ -186,13 +186,61 @@ export class PartyService {
     });
   }
 
-  /** Compatibility alias for older callers; it now follows invite semantics. */
-  public async addMember(
-    partyId: string,
-    actorDiscordUserId: string,
+  /** Read model for the party panel: current party plus pending invitations. */
+  public async getPanelState(
+    guildId: string,
     discordUserId: string,
-  ): Promise<void> {
-    await this.invite(partyId, actorDiscordUserId, discordUserId);
+  ): Promise<{
+    enabled: boolean;
+    party: {
+      id: string;
+      leaderDiscordUserId: string;
+      members: Array<{ discordUserId: string }>;
+    } | null;
+    pendingInvites: Array<{
+      id: string;
+      partyId: string;
+      inviterDiscordUserId: string;
+      expiresAt: Date;
+    }>;
+  }> {
+    const [settings, membership, invites] = await Promise.all([
+      this.prisma.tenManSettings.findUnique({
+        where: { guildId },
+        select: { partyEnabled: true },
+      }),
+      this.prisma.tenManPartyMember.findUnique({
+        where: { discordUserId },
+        include: {
+          party: { include: { members: { select: { discordUserId: true } } } },
+        },
+      }),
+      this.prisma.tenManPartyInvite.findMany({
+        where: {
+          inviteeDiscordUserId: discordUserId,
+          acceptedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+          party: { guildId },
+        },
+        select: { id: true, partyId: true, inviterDiscordUserId: true, expiresAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    const party =
+      membership === null || membership.party.guildId !== guildId ? null : membership.party;
+    return {
+      enabled: settings?.partyEnabled ?? false,
+      party:
+        party === null
+          ? null
+          : {
+              id: party.id,
+              leaderDiscordUserId: party.leaderDiscordUserId,
+              members: party.members,
+            },
+      pendingInvites: invites,
+    };
   }
 }
 

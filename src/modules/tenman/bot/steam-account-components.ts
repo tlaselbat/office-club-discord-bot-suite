@@ -18,7 +18,7 @@ export function buildSteamAccountButton(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(
-          createSteamAccountCustomId({ action: 'OPEN', guildId, actorDiscordUserId }, secret),
+          createSteamAccountCustomId({ action: 'VIEW', guildId, actorDiscordUserId }, secret),
         )
         .setLabel('Steam Account')
         .setStyle(ButtonStyle.Secondary),
@@ -118,69 +118,6 @@ export function buildApiUnavailableResponse(): string {
     'Steam profile information is temporarily unavailable for that vanity URL.',
     'You can enter a numeric SteamID64, Steam2, Steam3, or profile URL instead.',
   ].join('\n');
-}
-
-export function buildNoAssignmentResponse(): string {
-  return 'You do not have an assigned Steam account.';
-}
-
-export function buildStaffDisputeList(
-  disputes: {
-    id: string;
-    discordUserId: string;
-    steamId64: string;
-    createdAt: Date;
-  }[],
-  guildId: string,
-  actorDiscordUserId: string,
-  secret: string,
-): { content: string; components: ActionRowBuilder<ButtonBuilder>[] } {
-  if (disputes.length === 0)
-    return { content: 'No pending Steam assignment disputes.', components: [] };
-  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-  for (const dispute of disputes) {
-    rows.push(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(
-            createSteamAccountCustomId(
-              {
-                action: 'RESOLVE',
-                guildId,
-                actorDiscordUserId,
-                disputeId: dispute.id,
-              },
-              secret,
-            ),
-          )
-          .setLabel('Resolve')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(
-            createSteamAccountCustomId(
-              {
-                action: 'REJECT',
-                guildId,
-                actorDiscordUserId,
-                disputeId: dispute.id,
-              },
-              secret,
-            ),
-          )
-          .setLabel('Reject')
-          .setStyle(ButtonStyle.Secondary),
-      ),
-    );
-  }
-  return {
-    content: `Pending Steam assignment disputes:\n${disputes
-      .map(
-        (dispute) =>
-          `• <@${dispute.discordUserId}> — \`${dispute.steamId64}\` — <t:${String(Math.floor(dispute.createdAt.getTime() / 1000))}:R>`,
-      )
-      .join('\n')}`,
-    components: rows,
-  };
 }
 
 export function buildDisputeAcknowledgedResponse(reportId: string): string {
