@@ -23,7 +23,9 @@ describe('match command tree', () => {
 
   it('exposes the player-facing subcommands', () => {
     const match = commands.find((command) => command.name === 'match');
-    const direct = match?.options?.filter((option) => option.type === ApplicationCommandOptionType.Subcommand);
+    const direct = match?.options?.filter(
+      (option) => option.type === ApplicationCommandOptionType.Subcommand,
+    );
     expect(direct?.map((option) => option.name)).toEqual([
       'center',
       'account',

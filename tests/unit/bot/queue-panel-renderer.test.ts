@@ -105,7 +105,7 @@ describe('queue panel renderer (Components V2)', () => {
       ComponentType.ActionRow,
     ]);
     expect(top[0]?.accent_color).toBe(0x5865f2);
-    expect(top[1]?.accent_color).toBe(0x5865f2);
+    expect(top[1]?.accent_color).toBeUndefined();
 
     expect(payload.files).toHaveLength(1);
     expect(payload.files[0]?.name).toBe('office-club-cs2-10man-thumbnail-512.png');
@@ -128,12 +128,15 @@ describe('queue panel renderer (Components V2)', () => {
     const summaryText = textDisplays(summary(payload))
       .map((display) => display.content)
       .join('\n');
-    expect(summaryText).toContain('# Match Queue');
-    expect(summaryText).toContain('Private 5v5 CS2 matchmaking.');
-    expect(summaryText).toContain('## 1 / 10 players');
-    expect(summaryText).toContain('Waiting for **9 more players**');
+    expect(summaryText).toContain('## Match Queue');
+    expect(summaryText).toContain('-# Private 5v5 CS2 matchmaking.');
+    expect(summaryText).toContain('**1 / 10 players**');
+    expect(summaryText).toContain('-# Waiting for 9 more players');
     expect(summaryText).toContain('**Next**');
-    expect(summaryText).toContain('Ready Check → Teams → Map → Server → Match');
+    expect(summaryText).toContain('Ready Check when the queue reaches 10');
+    expect(summaryText).not.toContain('Ready Check → Teams → Map → Server → Match');
+    expect(summaryText.match(/(^|\n)#{1,6}\s/g)).toHaveLength(1);
+    expect(summaryText).not.toContain('Waiting for **');
   });
 
   it('renders the roster in a separate container', () => {
@@ -144,8 +147,10 @@ describe('queue panel renderer (Components V2)', () => {
     const rosterText = textDisplays(roster(payload))
       .map((display) => display.content)
       .join('\n');
-    expect(rosterText).toContain('## Players in Queue · 1');
+    expect(rosterText).toContain('**Queued Players · 1**');
+    expect(rosterText).not.toMatch(/(^|\n)#{1,6}\s/);
     expect(rosterText).toContain('`01` tablet.');
+    expect(rosterText).not.toContain('[tablet.]');
   });
 
   it('does not render a redundant Needed section', () => {
@@ -155,9 +160,9 @@ describe('queue panel renderer (Components V2)', () => {
 
   it('renders an empty queue', () => {
     const payload = renderQueuePanel(view(), secret);
-    expect(allText(payload)).toContain('## 0 / 10 players');
-    expect(allText(payload)).toContain('Waiting for **10 more players**');
-    expect(allText(payload)).toContain('No players queued.');
+    expect(allText(payload)).toContain('**0 / 10 players**');
+    expect(allText(payload)).toContain('-# Waiting for 10 more players');
+    expect(allText(payload)).toContain('-# No players queued.');
   });
 
   it('uses singular wording when one player is needed', () => {
@@ -168,21 +173,22 @@ describe('queue panel renderer (Components V2)', () => {
       }),
       secret,
     );
-    expect(allText(payload)).toContain('Waiting for **1 more player**');
+    expect(allText(payload)).toContain('-# Waiting for 1 more player');
   });
 
   it('marks a full queue as starting the ready check', () => {
     const names = Array.from({ length: 10 }, (_, i) => `player-${String(i)}`);
     const payload = renderQueuePanel(view({ queueCount: 10, playerDisplayNames: names }), secret);
-    expect(allText(payload)).toContain('## 10 / 10 players');
-    expect(allText(payload)).toContain('Ready check starting');
+    expect(allText(payload)).toContain('**10 / 10 players**');
+    expect(allText(payload)).toContain('-# Ready check starting');
     expect(allText(payload)).toContain('`10` player-9');
   });
 
   it('honors a configured capacity instead of hardcoding ten', () => {
     const payload = renderQueuePanel(view({ queueCapacity: 6, queueCount: 4 }), secret);
-    expect(allText(payload)).toContain('## 4 / 6 players');
-    expect(allText(payload)).toContain('Waiting for **2 more players**');
+    expect(allText(payload)).toContain('**4 / 6 players**');
+    expect(allText(payload)).toContain('-# Waiting for 2 more players');
+    expect(allText(payload)).toContain('Ready Check when the queue reaches 6');
   });
 
   it('renders the locked queue with plain-language status and no join control', () => {
@@ -197,8 +203,8 @@ describe('queue panel renderer (Components V2)', () => {
       ComponentType.ActionRow,
     ]);
     const text = allText(payload);
-    expect(text).toContain('## Match in progress');
-    expect(text).toContain('The queue will reopen when the match finishes.');
+    expect(text).toContain('**Match in progress**');
+    expect(text).toContain('-# The queue will reopen when the match finishes.');
     expect(text).not.toContain('SERVER_PROVISIONING');
     const labels = buttonLabels(payload);
     expect(labels).not.toContain('Join Queue');
@@ -212,8 +218,8 @@ describe('queue panel renderer (Components V2)', () => {
       view({ queueOpen: false, activeMatchState: 'FINISHED' }),
       secret,
     );
-    expect(allText(payload)).toContain('## Queue reopening');
-    expect(allText(payload)).toContain('Cleanup is finishing before the next queue opens.');
+    expect(allText(payload)).toContain('**Queue reopening**');
+    expect(allText(payload)).toContain('-# Cleanup is finishing before the next queue opens.');
   });
 
   it('orders roster entries and truncates long names within component limits', () => {

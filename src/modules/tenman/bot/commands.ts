@@ -41,7 +41,7 @@ export const commands = [
             .setDescription('Whether to receive direct-message queue alerts')
             .setRequired(true),
         ),
-  )
+    )
     .addSubcommandGroup((group) =>
       group
         .setName('admin')
@@ -59,14 +59,16 @@ export const commands = [
           command.setName('disputes').setDescription('Review pending result and account disputes'),
         )
         .addSubcommand((command) =>
-          command.setName('diagnostics').setDescription('Run safe Office Club Competitive diagnostics'),
+          command
+            .setName('diagnostics')
+            .setDescription('Run safe Office Club Competitive diagnostics'),
         )
         .addSubcommand((command) =>
           command
             .setName('queue-panel')
             .setDescription('Create or repair the persistent Match Queue panel'),
         ),
-  )
+    )
     .addSubcommandGroup((group) =>
       group
         .setName('config')
@@ -90,7 +92,9 @@ export const commands = [
               option.setName('administrator_role').setDescription('Role for bot administration'),
             )
             .addStringOption((option) =>
-              option.setName('dathost_template_server_id').setDescription('DatHost template server ID'),
+              option
+                .setName('dathost_template_server_id')
+                .setDescription('DatHost template server ID'),
             )
             .addStringOption((option) =>
               option.setName('dathost_location').setDescription('DatHost server location'),
@@ -221,9 +225,7 @@ export const commands = [
             .setDescription('Archive and lock bot-managed competitive channels'),
         )
         .addSubcommand((command) =>
-          command
-            .setName('recover-setup')
-            .setDescription('Recover interrupted managed setup'),
+          command.setName('recover-setup').setDescription('Recover interrupted managed setup'),
         ),
     ),
 ].map((command) => command.toJSON());

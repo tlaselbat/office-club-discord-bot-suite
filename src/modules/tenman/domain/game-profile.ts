@@ -44,7 +44,9 @@ export function assertCompetitiveBo1FiveVFive(profile: GameProfile): void {
     profile.serverSlots !== 11 ||
     profile.mapAllowlist.length < 2
   ) {
-    throw new Error('Office Club Competitive first release supports only BO1 5v5 with 11 server slots');
+    throw new Error(
+      'Office Club Competitive first release supports only BO1 5v5 with 11 server slots',
+    );
   }
   if (
     profile.matchzy.wingman ||
@@ -52,6 +54,8 @@ export function assertCompetitiveBo1FiveVFive(profile: GameProfile): void {
     !profile.matchzy.knifeRound ||
     profile.matchzy.mapSide !== 'knife'
   ) {
-    throw new Error('Office Club Competitive first release requires a 10-player competitive ready check');
+    throw new Error(
+      'Office Club Competitive first release requires a 10-player competitive ready check',
+    );
   }
 }

@@ -153,9 +153,7 @@ export class GuildSettingsService {
       });
       assertCompetitiveBo1FiveVFive(parsedProfile);
     } catch {
-      throw new Error(
-        'The selected game profile is not supported by the competitive release',
-      );
+      throw new Error('The selected game profile is not supported by the competitive release');
     }
     if (effectiveQueueSize !== profile.playersPerTeam * 2)
       throw new Error(

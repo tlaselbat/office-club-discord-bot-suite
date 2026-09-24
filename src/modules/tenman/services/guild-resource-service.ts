@@ -178,7 +178,7 @@ export class GuildResourceService {
     ) {
       throw new PublicError(
         'ENABLE_REQUIRES_SETUP',
-        'Managed channels are not configured. Run `/match config setup`.'
+        'Managed channels are not configured. Run `/match config setup`.',
       );
     }
     await this.validateExisting(settings);
@@ -212,7 +212,7 @@ export class GuildResourceService {
     if (settings.managedResourceState === 'SETTING_UP') {
       throw new PublicError(
         'SETUP_IN_PROGRESS',
-        'Managed setup recovery is required. Run `/match config recover-setup`.'
+        'Managed setup recovery is required. Run `/match config recover-setup`.',
       );
     }
     await this.assertNoActiveMatch(guildId);
@@ -352,7 +352,7 @@ export class GuildResourceService {
     } catch {
       throw new PublicError(
         'PROFILE_UNAVAILABLE',
-        'The selected game profile is not supported by the competitive release.'
+        'The selected game profile is not supported by the competitive release.',
       );
     }
     return {

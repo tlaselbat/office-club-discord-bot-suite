@@ -52,7 +52,13 @@ describe('Match Center personal interface', () => {
     expect(embed(response).fields?.map((field) => field.value)).toContain('4 / 10 players');
     const all = buttons(response);
     expect(labels(response)).toEqual(
-      expect.arrayContaining(['Join Queue', 'Steam Account', 'How It Works', 'Refresh', 'Match History']),
+      expect.arrayContaining([
+        'Join Queue',
+        'Steam Account',
+        'How It Works',
+        'Refresh',
+        'Match History',
+      ]),
     );
     const join = all.find((button) => button.label === 'Join Queue');
     expect(parseQueueCustomId(join?.customId ?? '', secret)).toEqual({

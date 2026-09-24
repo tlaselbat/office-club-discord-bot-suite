@@ -14,7 +14,7 @@ Create a CS2 server in the DatHost control panel with these durable settings:
 
 | Setting             | Template value                                  | Why                                                                                                   |
 | ------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Name                | `Office Club Competitive — MatchZy template`      | Clearly identifies the protected source.                                                              |
+| Name                | `Office Club Competitive — MatchZy template`    | Clearly identifies the protected source.                                                              |
 | Game                | CS2                                             | Required by the service.                                                                              |
 | Slots               | `11`                                            | 5v5 plus one GOTV slot; the worker also applies the selected profile's slot count to every duplicate. |
 | Game mode           | `custom`                                        | Prevents a stock public mode from defining the match. MatchZy owns the actual series rules.           |

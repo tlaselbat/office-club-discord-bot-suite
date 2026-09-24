@@ -27,14 +27,14 @@ hiding these commands would lock out legitimate staff.
 
 ## Player commands
 
-| Command                   | Result                                                                     |
-| ------------------------- | -------------------------------------------------------------------------- |
+| Command                   | Result                                                                      |
+| ------------------------- | --------------------------------------------------------------------------- |
 | `/match center`           | Match Center: queue status, ready check, active match, team, history, stats |
-| `/match account`          | Steam account panel: assign, review, change, remove, dispute               |
-| `/match history [player]` | Recent finished matches; staff also see rollback controls                  |
-| `/match stats [player]`   | Rating and record                                                          |
-| `/match team`             | Team Status panel: create, invite, accept, leave, kick, disband          |
-| `/match alerts <enabled>` | Opt in/out of Match Queue fill DM alerts                                   |
+| `/match account`          | Steam account panel: assign, review, change, remove, dispute                |
+| `/match history [player]` | Recent finished matches; staff also see rollback controls                   |
+| `/match stats [player]`   | Rating and record                                                           |
+| `/match team`             | Team Status panel: create, invite, accept, leave, kick, disband             |
+| `/match alerts <enabled>` | Opt in/out of Match Queue fill DM alerts                                    |
 
 ## Staff commands (`/match admin`)
 

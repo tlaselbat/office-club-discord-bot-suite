@@ -15,7 +15,6 @@ import { playersNeededLabel } from './presentation.js';
 const ACCENT_COLOR = 0x5865f2;
 const TEXT_DISPLAY_LIMIT = 4000;
 const NAME_LIMIT = 48;
-const LIFECYCLE = 'Ready Check → Teams → Map → Server → Match';
 const THUMBNAIL_FILE_NAME = 'office-club-cs2-10man-thumbnail-512.png';
 const THUMBNAIL_ASSET_PATH = resolve(process.cwd(), 'assets', 'tenman', THUMBNAIL_FILE_NAME);
 
@@ -72,8 +71,8 @@ function buildThumbnailAttachment(): AttachmentBuilder {
 function buildHeaderSection(): SectionBuilder {
   return new SectionBuilder()
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('# Match Queue'),
-      new TextDisplayBuilder().setContent('Private 5v5 CS2 matchmaking.'),
+      new TextDisplayBuilder().setContent('## Match Queue'),
+      new TextDisplayBuilder().setContent('-# Private 5v5 CS2 matchmaking.'),
     )
     .setThumbnailAccessory(new ThumbnailBuilder().setURL(`attachment://${THUMBNAIL_FILE_NAME}`));
 }
@@ -82,30 +81,27 @@ function buildSummaryContainer(view: QueuePanelView): ContainerBuilder {
   const playersNeeded = Math.max(0, view.queueCapacity - view.queueCount);
   const queueMetric =
     view.queueCount >= view.queueCapacity
-      ? `## ${String(view.queueCount)} / ${String(view.queueCapacity)} players\nReady check starting`
-      : `## ${String(view.queueCount)} / ${String(view.queueCapacity)} players\nWaiting for **${playersNeededLabel(playersNeeded)}**`;
+      ? `**${String(view.queueCount)} / ${String(view.queueCapacity)} players**\n-# Ready check starting`
+      : `**${String(view.queueCount)} / ${String(view.queueCapacity)} players**\n-# Waiting for ${playersNeededLabel(playersNeeded)}`;
 
   return new ContainerBuilder()
     .setAccentColor(ACCENT_COLOR)
     .addSectionComponents(buildHeaderSection())
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(queueMetric),
-      new TextDisplayBuilder().setContent(`**Next**\n${LIFECYCLE}`),
+      new TextDisplayBuilder().setContent(
+        `**Next**\nReady Check when the queue reaches ${String(view.queueCapacity)}`,
+      ),
     );
 }
 
 function buildRosterContainer(view: QueuePanelView): ContainerBuilder {
-  const heading =
-    view.queueCount === 0
-      ? '## Players in Queue'
-      : `## Players in Queue · ${String(view.queueCount)}`;
+  const heading = `**Queued Players · ${String(view.queueCount)}**`;
 
-  return new ContainerBuilder()
-    .setAccentColor(ACCENT_COLOR)
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(heading),
-      new TextDisplayBuilder().setContent(formatRoster(view.playerDisplayNames)),
-    );
+  return new ContainerBuilder().addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(heading),
+    new TextDisplayBuilder().setContent(formatRoster(view.playerDisplayNames)),
+  );
 }
 
 function buildLockedSummaryContainer(view: QueuePanelView): ContainerBuilder {
@@ -114,24 +110,24 @@ function buildLockedSummaryContainer(view: QueuePanelView): ContainerBuilder {
   let subtext: string;
 
   if (phase === null || phase === undefined) {
-    heading = '## Queue unavailable';
+    heading = '**Queue unavailable**';
     subtext = 'A match is currently being formed.';
   } else if (phase === 'FINISHED' || phase === 'CANCELED' || phase === 'FAILED') {
-    heading = '## Queue reopening';
+    heading = '**Queue reopening**';
     subtext = 'Cleanup is finishing before the next queue opens.';
   } else {
-    heading = '## Match in progress';
+    heading = '**Match in progress**';
     subtext = 'The queue will reopen when the match finishes.';
   }
 
   return new ContainerBuilder()
     .setAccentColor(ACCENT_COLOR)
     .addSectionComponents(buildHeaderSection())
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`${heading}\n${subtext}`));
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`${heading}\n-# ${subtext}`));
 }
 
 function formatRoster(names: string[]): string {
-  if (names.length === 0) return 'No players queued.';
+  if (names.length === 0) return '-# No players queued.';
   const lines: string[] = [];
   let used = 0;
   for (const [index, raw] of names.entries()) {

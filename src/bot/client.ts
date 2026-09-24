@@ -587,7 +587,9 @@ async function handleCommand(
         interaction.id,
       );
       await interaction.editReply({
-        content: changed ? 'New competitive match creation is disabled.' : 'This server is already disabled.',
+        content: changed
+          ? 'New competitive match creation is disabled.'
+          : 'This server is already disabled.',
       });
       return;
     }
@@ -600,7 +602,9 @@ async function handleCommand(
         interaction.id,
       );
       await interaction.editReply({
-        content: changed ? 'Competitive match creation is enabled.' : 'This server is already enabled.',
+        content: changed
+          ? 'Competitive match creation is enabled.'
+          : 'This server is already enabled.',
       });
       return;
     }
