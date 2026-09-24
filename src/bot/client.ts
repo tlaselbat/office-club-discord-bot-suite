@@ -44,6 +44,7 @@ import { VoiceActivityService } from '../modules/rewards/services/voice-activity
 import { TagLoyaltyService } from '../modules/rewards/services/tag-loyalty-service.js';
 import { QueuePanelService } from '../modules/tenman/services/queue-panel-service.js';
 import {
+  EphemeralReplyManager,
   TenManComponentInteractionRouter,
   buildSteamAccountStatusResponse,
 } from '../modules/tenman/bot/interaction-router.js';
@@ -178,22 +179,26 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
     client,
     dependencies.logger,
   );
-  const tenManComponentRouter = new TenManComponentInteractionRouter({
-    prisma: dependencies.prisma,
-    componentSigningSecret: dependencies.componentSigningSecret,
-    actorFor: (interaction, matchId) =>
-      createActorContext(interaction, matchId, dependencies.prisma),
-    adminActorFor: (interaction) => createGuildAdminActor(interaction, dependencies.prisma),
-    guildResourceService,
-    matchService: dependencies.matchService,
-    steamAccountService: dependencies.steamAccountService,
-    steamProfileService: dependencies.steamProfileService,
-    discord: client,
-    participantInfo: new MatchParticipantInfoService(
-      dependencies.prisma,
-      dependencies.credentialCipher,
-    ),
-  });
+  const ephemeralReplies = new EphemeralReplyManager();
+  const tenManComponentRouter = new TenManComponentInteractionRouter(
+    {
+      prisma: dependencies.prisma,
+      componentSigningSecret: dependencies.componentSigningSecret,
+      actorFor: (interaction, matchId) =>
+        createActorContext(interaction, matchId, dependencies.prisma),
+      adminActorFor: (interaction) => createGuildAdminActor(interaction, dependencies.prisma),
+      guildResourceService,
+      matchService: dependencies.matchService,
+      steamAccountService: dependencies.steamAccountService,
+      steamProfileService: dependencies.steamProfileService,
+      discord: client,
+      participantInfo: new MatchParticipantInfoService(
+        dependencies.prisma,
+        dependencies.credentialCipher,
+      ),
+    },
+    ephemeralReplies,
+  );
   const modules = new ModuleRegistry([
     {
       ...createTenManModule(),
@@ -205,6 +210,7 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
             client,
             guildSettingsService,
             guildResourceService,
+            ephemeralReplies,
           );
         } else {
           await tenManComponentRouter.handle(interaction);
@@ -226,10 +232,7 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
       return;
     const operation = modules.dispatch(interaction).then(async (handled) => {
       if (!handled)
-        await interaction.reply({
-          content: 'Unknown module interaction.',
-          flags: MessageFlags.Ephemeral,
-        });
+        await ephemeralReplies.reply(interaction, { content: 'Unknown module interaction.' });
     });
     void operation.catch(async (error: unknown) => {
       dependencies.logger.error(
@@ -244,8 +247,8 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
       );
       const content = publicMessage(error, interaction.id);
       if (interaction.isModalSubmit()) {
-        await interaction
-          .reply({ content, flags: MessageFlags.Ephemeral, components: [] })
+        await ephemeralReplies
+          .reply(interaction, { content, components: [] })
           .catch(() => undefined);
         return;
       }
@@ -256,7 +259,7 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
           .followUp({ content, flags: MessageFlags.Ephemeral })
           .catch(() => undefined);
       } else {
-        await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => undefined);
+        await ephemeralReplies.reply(interaction, { content }).catch(() => undefined);
       }
     });
   });
@@ -269,9 +272,12 @@ async function handleCommand(
   client: Client,
   guildSettingsService: GuildSettingsService,
   guildResourceService: GuildResourceService,
+  ephemeralReplies: EphemeralReplyManager,
 ): Promise<void> {
   if (interaction.guildId === null) throw new Error('Guild command required');
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await ephemeralReplies.replace(interaction, () =>
+    interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+  );
   const subcommand = interaction.options.getSubcommand();
 
   if (interaction.commandName === '10man') {

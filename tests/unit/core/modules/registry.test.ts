@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ModuleRegistry } from '../../../../src/core/modules/registry.js';
 import type { SuiteModule } from '../../../../src/core/modules/types.js';
 import type { JobHandler } from '../../../../src/jobs/worker.js';
+import { createTenManModule } from '../../../../src/modules/tenman/module.js';
 
 const command = (name: string) => ({ name });
 const collisionHandler: JobHandler = async () => undefined;
@@ -77,6 +78,18 @@ describe('ModuleRegistry', () => {
     expect(broad).not.toHaveBeenCalled();
     expect(specific).toHaveBeenCalledTimes(2);
   });
+
+  it.each(['tmo:', 'tqb:', 'tpy:'])(
+    'dispatches the %s 10man component namespace',
+    async (prefix) => {
+      const handleInteraction = vi.fn().mockResolvedValue(undefined);
+      const registry = new ModuleRegistry([{ ...createTenManModule(), handleInteraction }]);
+      const component = { isChatInputCommand: () => false, customId: `${prefix}signed-payload` };
+
+      await expect(registry.dispatch(component as never)).resolves.toBe(true);
+      expect(handleInteraction).toHaveBeenCalledOnce();
+    },
+  );
 
   it('starts in registration order and stops in reverse order', async () => {
     const calls: string[] = [];

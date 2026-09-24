@@ -4,6 +4,7 @@ import {
   ButtonStyle,
   EmbedBuilder,
   MessageFlags,
+  type ChatInputCommandInteraction,
   type Client,
   type InteractionReplyOptions,
   type MessageComponentInteraction,
@@ -91,7 +92,10 @@ export interface InteractionRouterOptions {
   participantInfo: Pick<MatchParticipantInfoService, 'get'>;
 }
 
-type EphemeralInteraction = MessageComponentInteraction | ModalSubmitInteraction;
+type EphemeralInteraction =
+  | ChatInputCommandInteraction
+  | MessageComponentInteraction
+  | ModalSubmitInteraction;
 
 export class EphemeralReplyManager {
   private readonly active = new Map<string, EphemeralInteraction>();
@@ -287,10 +291,11 @@ export class TenManComponentInteractionRouter {
   private readonly queueAlertService: QueueAlertService;
   private readonly partyService: PartyService;
   private readonly queueBanService: QueueBanService;
-  private readonly ephemeralReplies = new EphemeralReplyManager();
-
-  public constructor(private readonly options: TenManComponentInteractionRouterOptions) {
-    this.match = new MatchInteractionRouter(options, this.ephemeralReplies);
+  public constructor(
+    private readonly options: TenManComponentInteractionRouterOptions,
+    private readonly ephemeralReplies = new EphemeralReplyManager(),
+  ) {
+    this.match = new MatchInteractionRouter(options, ephemeralReplies);
     this.queueService = new QueueService(options.prisma);
     this.queuePanelService = new QueuePanelService(
       options.prisma,
