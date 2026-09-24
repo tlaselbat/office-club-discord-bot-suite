@@ -111,13 +111,30 @@ describe('queue panel renderer (Components V2)', () => {
     expect(payload.files[0]?.name).toBe('office-club-cs2-10man-thumbnail-512.png');
   });
 
-  it('renders the header as a Section with a native Thumbnail accessory', () => {
-    const payload = renderQueuePanel(view(), secret);
+  it('limits the thumbnail Section to the header and renders status at container width', () => {
+    const payload = renderQueuePanel(view({ queueCount: 1 }), secret);
     const summaryContainer = summary(payload);
-    expect(summaryContainer.components?.[0]?.type).toBe(ComponentType.Section);
-    const accessory = summaryContainer.components?.[0]?.accessory;
-    expect(accessory?.type).toBe(ComponentType.Thumbnail);
-    expect(accessory?.media?.url).toBe('attachment://office-club-cs2-10man-thumbnail-512.png');
+    expect(summaryContainer.components?.map((component) => component.type)).toEqual([
+      ComponentType.Section,
+      ComponentType.TextDisplay,
+      ComponentType.TextDisplay,
+    ]);
+
+    const header = summaryContainer.components?.[0];
+    expect(header?.components?.map((component) => component.content)).toEqual([
+      '## Match Queue',
+      '-# Private 5v5 CS2 matchmaking.',
+    ]);
+    expect(header?.accessory?.type).toBe(ComponentType.Thumbnail);
+    expect(header?.accessory?.media?.url).toBe(
+      'attachment://office-club-cs2-10man-thumbnail-512.png',
+    );
+    expect(summaryContainer.components?.[1]?.content).toBe(
+      '**1 / 10 players**\n-# Waiting for 9 more players',
+    );
+    expect(summaryContainer.components?.[2]?.content).toBe(
+      '**Next**\nReady Check when the queue reaches 10',
+    );
   });
 
   it('renders the open queue hierarchy in the summary container', () => {
