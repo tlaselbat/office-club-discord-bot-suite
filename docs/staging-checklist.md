@@ -22,7 +22,7 @@
 ## Queue and formation
 
 - [ ] `/10man queue` creates or repairs one durable queue panel
-- [ ] Ten Steam-verified test users join; duplicate user and Steam identity are rejected
+- [ ] Ten Steam-assigned test users join; duplicate user and Steam identity are rejected or disputed
 - [ ] Concurrent final joins create exactly one `READY_CHECK` match and timeout job
 - [ ] Ready interactions reject stale components; deadline cancellation returns players safely
 - [ ] Restart recreates the current forming-phase timeout job

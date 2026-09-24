@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MatchZyEventService } from '../../../src/modules/tenman/services/matchzy-event-service.js';
+import type { MatchArtifactService } from '../../../src/modules/tenman/services/match-artifact-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
 const matchId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
@@ -62,6 +63,7 @@ function createMockPrisma(matchOverrides: object = {}): PrismaClient {
       update: vi.fn().mockResolvedValue(undefined),
     },
     matchStateTransition: { create: vi.fn().mockResolvedValue(undefined) },
+    demoReference: { upsert: vi.fn().mockResolvedValue(undefined) },
     job: { upsert: vi.fn().mockResolvedValue(undefined) },
   } as unknown as PrismaClient;
   return prisma;
@@ -79,10 +81,19 @@ function seriesEndEvent() {
   };
 }
 
+function createMockArtifacts(): MatchArtifactService {
+  return {
+    processDemoUploadEnded: vi.fn().mockResolvedValue(undefined),
+    recordExpected: vi.fn().mockResolvedValue(undefined),
+    collectArtifacts: vi.fn().mockResolvedValue(undefined),
+    ensureArtifactsTerminal: vi.fn().mockResolvedValue(true),
+  } as unknown as MatchArtifactService;
+}
+
 describe('MatchZyEventService', () => {
   it('processes a series_end event and enqueues cleanup', async () => {
     const prisma = createMockPrisma();
-    const service = new MatchZyEventService(prisma);
+    const service = new MatchZyEventService(prisma, createMockArtifacts(), 1800);
 
     const result = await service.ingest(matchId, seriesEndEvent() as never);
 
@@ -103,7 +114,7 @@ describe('MatchZyEventService', () => {
 
   it('deduplicates identical series_end events', async () => {
     const prisma = createMockPrisma();
-    const service = new MatchZyEventService(prisma);
+    const service = new MatchZyEventService(prisma, createMockArtifacts(), 1800);
 
     await service.ingest(matchId, seriesEndEvent() as never);
     const result = await service.ingest(matchId, seriesEndEvent() as never);
@@ -114,7 +125,7 @@ describe('MatchZyEventService', () => {
 
   it('coalesces score updates into one delayed dashboard job key', async () => {
     const prisma = createMockPrisma();
-    const service = new MatchZyEventService(prisma);
+    const service = new MatchZyEventService(prisma, createMockArtifacts(), 1800);
     await service.ingest(matchId, {
       event: 'round_end',
       matchid: 42,
@@ -133,7 +144,7 @@ describe('MatchZyEventService', () => {
 
   it('rejects events with a mismatched match id', async () => {
     const prisma = createMockPrisma({ matchzyMatchId: 99 });
-    const service = new MatchZyEventService(prisma);
+    const service = new MatchZyEventService(prisma, createMockArtifacts(), 1800);
 
     await expect(service.ingest(matchId, seriesEndEvent() as never)).rejects.toThrow(
       'MatchZy match ID mismatch',

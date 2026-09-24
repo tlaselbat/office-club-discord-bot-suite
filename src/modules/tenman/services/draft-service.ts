@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
 import { schedulePhaseTimeout } from './phase-timeout-job.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 import { assertSupportedFormationPolicy } from './formation-policy.js';
 
 const draftOrder = [
@@ -103,15 +104,11 @@ export class DraftService {
           deadline,
           correlationId,
         );
-      await transaction.job.upsert({
-        where: { idempotencyKey: `match-dashboard:${matchId}` },
-        update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-        create: {
-          matchId,
-          type: 'MATCH_DASHBOARD_REFRESH',
-          idempotencyKey: `match-dashboard:${matchId}`,
-          payload: { matchId },
-        },
+      await scheduleJob(transaction, {
+        type: 'MATCH_DASHBOARD_REFRESH',
+        idempotencyKey: `match-dashboard:${matchId}`,
+        matchId,
+        payload: { matchId },
       });
       if (isComplete)
         await transaction.matchStateTransition.create({
@@ -134,15 +131,11 @@ export class DraftService {
         },
       });
       if (isComplete && randomMap) {
-        await transaction.job.upsert({
-          where: { idempotencyKey: `provision:${matchId}` },
-          update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-          create: {
-            matchId,
-            type: 'PROVISION_SERVER',
-            idempotencyKey: `provision:${matchId}`,
-            payload: { matchId },
-          },
+        await scheduleJob(transaction, {
+          type: 'PROVISION_SERVER',
+          idempotencyKey: `provision:${matchId}`,
+          matchId,
+          payload: { matchId },
         });
       }
     });

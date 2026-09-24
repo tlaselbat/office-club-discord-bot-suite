@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
 import { schedulePhaseTimeout } from './phase-timeout-job.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 type FormingState = 'READY_CHECK' | 'TEAM_SELECTION' | 'MAP_VETO';
 
@@ -83,7 +84,7 @@ export class MatchAdminService {
 
   /**
    * A substitution is safe only before teams/draft/veto history exists. The
-   * incoming player must already have an active verified identity; admins do
+   * incoming player must already have an active assigned Steam account; admins do
    * not get to bypass identity integrity by using this control.
    */
   public async replaceParticipant(command: ReplaceParticipantCommand): Promise<void> {
@@ -110,7 +111,7 @@ export class MatchAdminService {
       const [identity, user, ban] = await Promise.all([
         transaction.steamIdentity.findFirst({
           where: { discordUserId: command.incomingDiscordUserId, invalidatedAt: null },
-          orderBy: { verifiedAt: 'desc' },
+          orderBy: { assignedAt: 'desc' },
         }),
         transaction.user.findUnique({ where: { discordUserId: command.incomingDiscordUserId } }),
         transaction.tenManQueueBan.findFirst({
@@ -125,7 +126,7 @@ export class MatchAdminService {
       if (identity === null || user === null)
         throw new PublicError(
           'STEAM_REQUIRED',
-          'The replacement player needs a verified Steam account.',
+          'The replacement player needs an assigned Steam account.',
         );
       if (ban !== null)
         throw new PublicError('QUEUE_BANNED', 'The replacement player is banned from this queue.');
@@ -337,35 +338,27 @@ async function scheduleReadyTimeout(
   deadline: Date,
   correlationId: string,
 ): Promise<void> {
-  await transaction.job.upsert({
-    where: { idempotencyKey: `phase-timeout:${matchId}:READY_CHECK:${String(expectedVersion)}` },
-    update: { status: 'PENDING', runAt: deadline, attempts: 0, lastError: null },
-    create: {
+  await scheduleJob(transaction, {
+    type: 'MATCH_PHASE_TIMEOUT',
+    idempotencyKey: `phase-timeout:${matchId}:READY_CHECK:${String(expectedVersion)}`,
+    matchId,
+    runAt: deadline,
+    payload: {
       matchId,
-      type: 'MATCH_PHASE_TIMEOUT',
-      idempotencyKey: `phase-timeout:${matchId}:READY_CHECK:${String(expectedVersion)}`,
-      runAt: deadline,
-      payload: {
-        matchId,
-        expectedState: 'READY_CHECK',
-        expectedVersion,
-        deadline: deadline.toISOString(),
-        correlationId,
-      },
+      expectedState: 'READY_CHECK',
+      expectedVersion,
+      deadline: deadline.toISOString(),
+      correlationId,
     },
   });
 }
 
 async function dashboardRefresh(transaction: Transaction, matchId: string): Promise<void> {
-  await transaction.job.upsert({
-    where: { idempotencyKey: `match-dashboard:${matchId}` },
-    update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-    create: {
-      matchId,
-      type: 'MATCH_DASHBOARD_REFRESH',
-      idempotencyKey: `match-dashboard:${matchId}`,
-      payload: { matchId },
-    },
+  await scheduleJob(transaction, {
+    type: 'MATCH_DASHBOARD_REFRESH',
+    idempotencyKey: `match-dashboard:${matchId}`,
+    matchId,
+    payload: { matchId },
   });
 }
 

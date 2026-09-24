@@ -1,5 +1,6 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { assertAuthorized, type ActorContext } from '../domain/authorization.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 /** Queue formation is owned by QueueService; this service owns active-match operations only. */
 export class MatchService {
@@ -24,15 +25,11 @@ export class MatchService {
       await transaction.matchStateTransition.create({
         data: { matchId, fromState: match.state, toState: 'CANCELED', source: 'DISCORD_CANCEL' },
       });
-      await transaction.job.upsert({
-        where: { idempotencyKey: `cleanup:${matchId}` },
-        update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-        create: {
-          matchId,
-          type: 'CLEANUP_MATCH',
-          idempotencyKey: `cleanup:${matchId}`,
-          payload: { matchId },
-        },
+      await scheduleJob(transaction, {
+        type: 'CLEANUP_MATCH',
+        idempotencyKey: `cleanup:${matchId}`,
+        matchId,
+        payload: { matchId },
       });
       await transaction.auditEvent.create({
         data: {

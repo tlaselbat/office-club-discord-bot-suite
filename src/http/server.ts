@@ -5,7 +5,6 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyBaseLogger } from 'fastify';
 import type { Logger } from 'pino';
 import { registerAdminRoutes, type AdminRoutesDependencies } from './routes/admin.js';
-import { registerSteamRoutes, type SteamRoutesDependencies } from '../modules/tenman/http/steam.js';
 import {
   registerMatchZyRoutes,
   type MatchZyRoutesDependencies,
@@ -14,7 +13,6 @@ import {
 export interface HttpServerDependencies {
   logger: Logger;
   readiness: () => Promise<boolean>;
-  steam?: SteamRoutesDependencies;
   matchzy?: MatchZyRoutesDependencies;
   admin?: AdminRoutesDependencies;
 }
@@ -33,7 +31,6 @@ export async function createHttpServer(dependencies: HttpServerDependencies) {
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
   if (dependencies.admin !== undefined) registerAdminRoutes(app, dependencies.admin);
-  if (dependencies.steam !== undefined) registerSteamRoutes(app, dependencies.steam);
   if (dependencies.matchzy !== undefined) registerMatchZyRoutes(app, dependencies.matchzy);
 
   app.get('/health/live', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, () => ({

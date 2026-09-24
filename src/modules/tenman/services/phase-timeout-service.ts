@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 const TIMEOUT_STATES = ['TEAM_SELECTION', 'MAP_VETO'] as const;
 type TimeoutState = (typeof TIMEOUT_STATES)[number];
@@ -74,25 +75,17 @@ export class PhaseTimeoutService {
           source: `${expectedState}_TIMEOUT`,
         },
       });
-      await transaction.job.upsert({
-        where: { idempotencyKey: `cleanup:${matchId}` },
-        update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-        create: {
-          matchId,
-          type: 'CLEANUP_MATCH',
-          idempotencyKey: `cleanup:${matchId}`,
-          payload: { matchId },
-        },
+      await scheduleJob(transaction, {
+        type: 'CLEANUP_MATCH',
+        idempotencyKey: `cleanup:${matchId}`,
+        matchId,
+        payload: { matchId },
       });
-      await transaction.job.upsert({
-        where: { idempotencyKey: `match-dashboard:${matchId}` },
-        update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-        create: {
-          matchId,
-          type: 'MATCH_DASHBOARD_REFRESH',
-          idempotencyKey: `match-dashboard:${matchId}`,
-          payload: { matchId },
-        },
+      await scheduleJob(transaction, {
+        type: 'MATCH_DASHBOARD_REFRESH',
+        idempotencyKey: `match-dashboard:${matchId}`,
+        matchId,
+        payload: { matchId },
       });
       await transaction.auditEvent.create({
         data: {

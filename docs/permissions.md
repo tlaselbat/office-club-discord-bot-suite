@@ -6,7 +6,7 @@ The bot uses configured Discord role IDs for normal authorization. Discord's nat
 
 | Identity                     | Purpose                                                                                                         |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Participant                  | Joined the active match with a verified Steam identity                                                          |
+| Participant                  | Joined the active match with an assigned Steam identity                                                         |
 | Leader                       | Participant identified by `leaderDiscordUserId`                                                                 |
 | Privileged member            | Configured role allowed to create matches and view active details                                               |
 | Moderator                    | Configured role with leader controls, participant management, transfer, and diagnostics                         |
@@ -31,7 +31,7 @@ The bot uses configured Discord role IDs for normal authorization. Discord's nat
 | Setup/recover/disable/enable/teardown        | no          | no     | no         | no                                  | configured or native admin |
 | Run diagnostics                              | no          | no     | no         | yes                                 | yes                        |
 
-Joining also requires an active verified Steam identity and available profile capacity. Team controls remain server-authorized even though Discord user selectors can display users outside the match.
+Joining also requires an assigned Steam identity (self-reported, not ownership-verified) and available profile capacity. Team controls remain server-authorized even though Discord user selectors can display users outside the match.
 
 ## Bot channel permissions
 

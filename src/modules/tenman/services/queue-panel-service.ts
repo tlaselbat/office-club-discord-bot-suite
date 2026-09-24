@@ -1,6 +1,6 @@
 import type { Client, TextBasedChannel, TextChannel } from 'discord.js';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
-import { buildQueueControls } from '../bot/queue-components.js';
+import { buildLockedQueueControls, buildQueueControls } from '../bot/queue-components.js';
 
 /** Renders the singleton guild queue without inferring state from Discord. */
 export class QueuePanelService {
@@ -48,28 +48,53 @@ export class QueuePanelService {
     size: number,
   ) {
     const locked = queue.status !== 'OPEN';
+    const playersNeeded = Math.max(0, size - queue.entries.length);
     const names =
       queue.entries
         .map((entry, index) => `${String(index + 1)}. ${entry.displayNameSnapshot}`)
         .join('\n') || 'No players queued.';
+    const openDescription = [
+      'Join a private 5v5 CS2 match.',
+      '',
+      'When 10 players are queued, everyone gets a ready check before teams and the map are selected.',
+      '',
+      `**Queue: ${String(queue.entries.length)} / ${String(size)}**`,
+      playersNeeded === 0
+        ? 'Queue is full — ready check will start when the last player joins.'
+        : `${String(playersNeeded)} more player${playersNeeded === 1 ? '' : 's'} needed.`,
+      '',
+      '**What happens next?**',
+      'Queue → Ready Check → Teams → Map → Server → Match',
+      '',
+      locked ? '' : names,
+    ]
+      .filter(Boolean)
+      .join('\n');
     return {
       embeds: [
         {
-          title: '10MAN QUEUE',
+          title: 'CS2 10man',
           description: locked
-            ? 'A match is currently being formed or played. Queue entries are paused.'
-            : `Players: ${String(queue.entries.length)} / ${String(size)}\n\n${names}`,
-          fields: [
-            {
-              name: 'Status',
-              value: locked
-                ? 'Temporarily unavailable'
-                : `Waiting for ${String(Math.max(0, size - queue.entries.length))} players`,
-            },
-          ],
+            ? 'A match is currently being formed or played. The queue will reopen when it finishes.'
+            : openDescription,
+          fields: locked
+            ? [
+                {
+                  name: 'Status',
+                  value: 'Temporarily unavailable',
+                },
+              ]
+            : [
+                {
+                  name: 'Status',
+                  value: `Waiting for ${String(playersNeeded)} player${playersNeeded === 1 ? '' : 's'}`,
+                },
+              ],
         },
       ],
-      components: locked ? [] : buildQueueControls(queue.guildId, queue.version, this.secret),
+      components: locked
+        ? buildLockedQueueControls(queue.guildId, queue.version, this.secret)
+        : buildQueueControls(queue.guildId, queue.version, this.secret),
     };
   }
 }

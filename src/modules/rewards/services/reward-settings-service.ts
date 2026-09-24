@@ -3,6 +3,7 @@ import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { RewardService } from './reward-service.js';
 import { LevelRoleService } from './level-role-service.js';
 import { VoiceActivityService } from './voice-activity-service.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 export interface RewardLevelInput {
   level: number;
@@ -121,24 +122,16 @@ export class RewardSettingsService {
         { idempotencyKey: 'rewards:voice-accrual', type: 'REWARDS_VOICE_ACCRUAL' },
         { idempotencyKey: 'rewards:tag-reconcile', type: 'REWARDS_TAG_RECONCILE' },
       ]) {
-        await transaction.job.upsert({
-          where: { idempotencyKey: recurring.idempotencyKey },
-          update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-          create: {
-            type: recurring.type,
-            idempotencyKey: recurring.idempotencyKey,
-            payload: {},
-          },
+        await scheduleJob(transaction, {
+          type: recurring.type,
+          idempotencyKey: recurring.idempotencyKey,
+          payload: {},
         });
       }
-      await transaction.job.upsert({
-        where: { idempotencyKey: `rewards:roles:${command.guildId}` },
-        update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-        create: {
-          type: 'REWARDS_ROLE_RECONCILE',
-          idempotencyKey: `rewards:roles:${command.guildId}`,
-          payload: { guildId: command.guildId },
-        },
+      await scheduleJob(transaction, {
+        type: 'REWARDS_ROLE_RECONCILE',
+        idempotencyKey: `rewards:roles:${command.guildId}`,
+        payload: { guildId: command.guildId },
       });
       await transaction.auditEvent.create({
         data: {

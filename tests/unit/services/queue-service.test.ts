@@ -62,6 +62,7 @@ function createPrisma(options?: {
     user: { upsert: vi.fn().mockResolvedValue(undefined) },
     tenManQueue: {
       upsert: vi.fn().mockResolvedValue({ status: 'OPEN' }),
+      findUnique: vi.fn().mockResolvedValue({ entries: [] }),
       update: vi.fn().mockResolvedValue(undefined),
     },
     tenManQueueEntry: {
@@ -86,13 +87,14 @@ describe('QueueService party joins', () => {
   it('inserts every party member with the shared party id in one createMany call', async () => {
     const { prisma, transaction } = createPrisma({ party: true });
 
-    await new QueueService(prisma).join({
+    const result = await new QueueService(prisma).join({
       guildId,
       discordUserId: leaderId,
       displayName: 'Leader live',
       correlationId: 'corr-1',
     });
 
+    expect(result).toMatchObject({ status: 'joined', playersInQueue: 2, queueSize: 10 });
     expect(transaction.tenManQueueEntry.createMany).toHaveBeenCalledWith({
       data: expect.arrayContaining([
         expect.objectContaining({
@@ -112,21 +114,20 @@ describe('QueueService party joins', () => {
     expect(transaction.tenManQueueEntry.createMany).toHaveBeenCalledTimes(1);
   });
 
-  it('does not insert any party member when one lacks a verified Steam identity', async () => {
+  it('does not insert any party member when one lacks an assigned Steam identity', async () => {
     const { prisma, transaction } = createPrisma({
       party: true,
       identities: [{ discordUserId: leaderId, steamId64: '76561198000000001' }],
     });
 
-    await expect(
-      new QueueService(prisma).join({
-        guildId,
-        discordUserId: leaderId,
-        displayName: 'Leader live',
-        correlationId: 'corr-2',
-      }),
-    ).rejects.toMatchObject({ code: 'STEAM_REQUIRED' });
+    const result = await new QueueService(prisma).join({
+      guildId,
+      discordUserId: leaderId,
+      displayName: 'Leader live',
+      correlationId: 'corr-2',
+    });
 
+    expect(result).toMatchObject({ status: 'missing_steam', memberCount: 2 });
     expect(transaction.tenManQueueEntry.createMany).not.toHaveBeenCalled();
   });
 
@@ -135,13 +136,14 @@ describe('QueueService party joins', () => {
       identities: [{ discordUserId: leaderId, steamId64: '76561198000000001' }],
     });
 
-    await new QueueService(prisma).join({
+    const result = await new QueueService(prisma).join({
       guildId,
       discordUserId: leaderId,
       displayName: 'Leader live',
       correlationId: 'corr-3',
     });
 
+    expect(result).toMatchObject({ status: 'joined', playersInQueue: 1, queueSize: 10 });
     expect(transaction.tenManQueueEntry.createMany).toHaveBeenCalledWith({
       data: [
         expect.objectContaining({
@@ -165,8 +167,14 @@ describe('QueueService party joins', () => {
         discordUserId: leaderId,
         steamId64: '76561198000000001',
         displayNameSnapshot: 'Leader live',
+        partyId: 'party-1',
       },
-      { discordUserId: memberId, steamId64: '76561198000000002', displayNameSnapshot: 'Member' },
+      {
+        discordUserId: memberId,
+        steamId64: '76561198000000002',
+        displayNameSnapshot: 'Member',
+        partyId: 'party-1',
+      },
     ];
     transaction.tenManQueueEntry.count.mockResolvedValue(8);
     transaction.tenManQueueEntry.findMany.mockImplementation(
@@ -175,14 +183,19 @@ describe('QueueService party joins', () => {
     );
     transaction.match.create.mockResolvedValue({ id: 'match-1', version: 0 });
 
-    await expect(
-      new QueueService(prisma).join({
-        guildId,
-        discordUserId: leaderId,
-        displayName: 'Leader live',
-        correlationId: 'corr-4',
-      }),
-    ).resolves.toEqual({ promotedMatchId: 'match-1' });
+    const result = await new QueueService(prisma).join({
+      guildId,
+      discordUserId: leaderId,
+      displayName: 'Leader live',
+      correlationId: 'corr-4',
+    });
+
+    expect(result).toMatchObject({
+      status: 'joined',
+      playersInQueue: 10,
+      queueSize: 10,
+      promotedMatchId: 'match-1',
+    });
 
     expect(transaction.match.create).toHaveBeenCalledWith(
       expect.objectContaining({

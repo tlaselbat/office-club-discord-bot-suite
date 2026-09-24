@@ -187,6 +187,7 @@ model User {
   partyInvitations TenManPartyInvite[]
   playerStats     PlayerGuildStats[]
   rewardMembers   RewardMember[]
+  assignmentDisputes SteamAssignmentDispute[]
 
   @@map("users")
 }
@@ -195,10 +196,11 @@ model SteamIdentity {
   id                 String    @id @default(uuid()) @db.Uuid
   discordUserId      String    @map("discord_user_id")
   steamId64          String    @map("steam_id_64")
-  verifiedAt         DateTime  @map("verified_at")
+  assignedAt         DateTime  @default(now()) @map("assigned_at")
+  assignmentSource   String    @default("MODAL_SELF_ASSIGN") @map("assignment_source")
   invalidatedAt      DateTime? @map("invalidated_at")
   invalidationReason String?   @map("invalidation_reason")
-  provenance         String
+  provenance         String    @default("SELF_ASSIGNMENT")
   createdAt          DateTime  @default(now()) @map("created_at")
   user               User      @relation(fields: [discordUserId], references: [discordUserId])
 
@@ -207,17 +209,38 @@ model SteamIdentity {
   @@map("steam_identities")
 }
 
-model SteamLinkSession {
-  id                String    @id @default(uuid()) @db.Uuid
-  tokenHash         String    @unique @map("token_hash")
-  discordUserId     String    @map("discord_user_id")
-  expectedReturnUrl String    @map("expected_return_url")
-  expiresAt         DateTime  @map("expires_at")
-  consumedAt        DateTime? @map("consumed_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
+model SteamAssignmentDispute {
+  id                 String    @id @default(uuid()) @db.Uuid
+  guildId            String    @map("guild_id")
+  discordUserId      String    @map("discord_user_id")
+  steamId64          String    @map("steam_id_64")
+  status             String    @default("PENDING") @map("status")
+  actorDiscordUserId String?   @map("actor_discord_user_id")
+  resolution         String?   @map("resolution")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  resolvedAt         DateTime? @map("resolved_at")
+  user               User      @relation(fields: [discordUserId], references: [discordUserId])
 
-  @@index([discordUserId, expiresAt])
-  @@map("steam_link_sessions")
+  @@index([guildId, status])
+  @@index([discordUserId, steamId64])
+  @@map("steam_assignment_disputes")
+}
+
+model MatchResultDispute {
+  id                 String    @id @default(uuid()) @db.Uuid
+  matchId            String    @map("match_id") @db.Uuid
+  discordUserId      String    @map("discord_user_id")
+  reason             String
+  status             String    @default("PENDING") @map("status")
+  actorDiscordUserId String?   @map("actor_discord_user_id")
+  resolution         String?   @map("resolution")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  resolvedAt         DateTime? @map("resolved_at")
+  match              Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId])
+  @@index([status])
+  @@map("match_result_disputes")
 }
 
 model WebSession {
@@ -456,6 +479,7 @@ model Match {
   draftPicks               MatchDraftPick[]
   vetoActions              MatchVetoAction[]
   ratingChanges            MatchRatingChange[]
+  resultDisputes           MatchResultDispute[]
 
   @@index([guildId, state])
   @@index([state, lastMatchzyEventAt])
@@ -468,6 +492,7 @@ model MatchPlayer {
   discordUserId       String          @map("discord_user_id")
   steamId64           String          @map("steam_id_64")
   displayNameSnapshot String          @map("display_name_snapshot")
+  partyId             String?         @map("party_id") @db.Uuid
   participantRole     ParticipantRole @default(PLAYER) @map("participant_role")
   team                PlayerTeam      @default(UNASSIGNED)
   readyState          ReadyState      @default(NOT_READY) @map("ready_state")
@@ -476,6 +501,7 @@ model MatchPlayer {
   joinedAt            DateTime        @default(now()) @map("joined_at")
   match               Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
   user                User            @relation(fields: [discordUserId], references: [discordUserId])
+  party               TenManParty?    @relation(fields: [partyId], references: [id], onDelete: SetNull)
 
   @@unique([matchId, discordUserId])
   @@unique([matchId, steamId64])
@@ -484,15 +510,16 @@ model MatchPlayer {
 }
 
 model TenManQueue {
-  guildId        String            @id @map("guild_id")
-  status         TenManQueueStatus @default(OPEN)
-  version        Int               @default(0)
-  panelChannelId String?           @map("panel_channel_id")
-  panelMessageId String?           @map("panel_message_id")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  updatedAt      DateTime          @updatedAt @map("updated_at")
-  guild          TenManSettings    @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-  entries        TenManQueueEntry[]
+  guildId             String            @id @map("guild_id")
+  status              TenManQueueStatus @default(OPEN)
+  version             Int               @default(0)
+  panelChannelId      String?           @map("panel_channel_id")
+  panelMessageId      String?           @map("panel_message_id")
+  lastQueueAlertCount Int               @default(0) @map("last_queue_alert_count")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  guild               TenManSettings    @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  entries             TenManQueueEntry[]
 
   @@map("tenman_queues")
 }
@@ -525,6 +552,7 @@ model TenManParty {
   members   TenManPartyMember[]
   invitations TenManPartyInvite[]
   queueEntries TenManQueueEntry[]
+  matchPlayers MatchPlayer[]
 
   @@index([guildId])
   @@map("tenman_parties")
@@ -575,6 +603,18 @@ model TenManQueueBan {
 
   @@index([guildId, discordUserId, expiresAt])
   @@map("tenman_queue_bans")
+}
+
+model TenManNotificationPreference {
+  guildId       String   @map("guild_id")
+  discordUserId String   @map("discord_user_id")
+  queueAlert    Boolean  @default(false) @map("queue_alert")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@id([guildId, discordUserId])
+  @@index([guildId, queueAlert])
+  @@map("tenman_notification_preferences")
 }
 
 model MatchDiscordResource {

@@ -15,7 +15,7 @@ MatchZy manages the CS2 match and reports authenticated events.
 | Component            | Responsibility                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------ |
 | Discord bot          | Slash commands, signed components, persistent panels, private connection details, voice movement |
-| Fastify HTTP service | Health checks, owner-only web configuration, Steam OpenID, and authenticated MatchZy endpoints   |
+| Fastify HTTP service | Health checks, owner-only web administration, and authenticated MatchZy endpoints                |
 | Worker runner        | Exclusively leases durable jobs and executes one polling cycle at a time                         |
 | PostgreSQL           | Match state, one-active-slot invariant, jobs, credentials, events, audit history                 |
 | DatHost client       | Disposable server creation, duplication, configuration, lifecycle, and console commands          |
@@ -103,7 +103,7 @@ Soft disable prevents only new match creation. Existing match components, MatchZ
 - MatchZy commands are allowlisted and rendered in `src/modules/tenman/integrations/matchzy/commands.ts`.
 - MatchZy tokens are scoped (`CONFIG_READ` or `EVENT_WRITE`) and bound to a match and server generation.
 - RCON and join passwords are encrypted with AES-256-GCM; tokens are stored as hashes.
-- Steam OpenID sessions are random, hashed, expiring, and single-use.
+- Steam accounts are self-reported assignments, not verified ownership; assignment changes are advisory-locked and blocked while the identity is queued or protected by a live match.
 - DatHost template IDs are protected from reconfiguration and deletion by ownership checks.
-- Connection commands, Steam links, diagnostics, and interaction errors are ephemeral.
+- Connection commands, Steam account details, diagnostics, and interaction errors are ephemeral.
 - Pino redaction covers configured token, password, and authorization fields.

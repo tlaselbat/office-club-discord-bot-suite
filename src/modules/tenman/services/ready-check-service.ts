@@ -3,6 +3,7 @@ import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
 import { RandomTeamBalancer } from '../domain/teams.js';
 import { schedulePhaseTimeout } from './phase-timeout-job.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 import { assertSupportedFormationPolicy } from './formation-policy.js';
 
 export class ReadyCheckService {
@@ -138,15 +139,11 @@ export class ReadyCheckService {
         },
       });
       if (nextState === 'TEAMS_LOCKED') {
-        await transaction.job.upsert({
-          where: { idempotencyKey: `provision:${matchId}` },
-          update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-          create: {
-            matchId,
-            type: 'PROVISION_SERVER',
-            idempotencyKey: `provision:${matchId}`,
-            payload: { matchId },
-          },
+        await scheduleJob(transaction, {
+          type: 'PROVISION_SERVER',
+          idempotencyKey: `provision:${matchId}`,
+          matchId,
+          payload: { matchId },
         });
       }
       await transaction.auditEvent.create({
@@ -211,6 +208,7 @@ export class ReadyCheckService {
             discordUserId: player.discordUserId,
             steamId64: player.steamId64,
             displayNameSnapshot: player.displayNameSnapshot,
+            partyId: player.partyId ?? null,
           })),
           skipDuplicates: true,
         });
@@ -220,15 +218,11 @@ export class ReadyCheckService {
         update: { status: 'LOCKED', version: { increment: 1 } },
         create: { guildId: match.guildId, status: 'LOCKED' },
       });
-      await transaction.job.upsert({
-        where: { idempotencyKey: `cleanup:${matchId}` },
-        update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-        create: {
-          matchId,
-          type: 'CLEANUP_MATCH',
-          idempotencyKey: `cleanup:${matchId}`,
-          payload: { matchId },
-        },
+      await scheduleJob(transaction, {
+        type: 'CLEANUP_MATCH',
+        idempotencyKey: `cleanup:${matchId}`,
+        matchId,
+        payload: { matchId },
       });
       await dashboardRefresh(transaction, matchId);
       await transaction.auditEvent.create({
@@ -259,14 +253,10 @@ async function dashboardRefresh(
     : never,
   matchId: string,
 ): Promise<void> {
-  await transaction.job.upsert({
-    where: { idempotencyKey: `match-dashboard:${matchId}` },
-    update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-    create: {
-      matchId,
-      type: 'MATCH_DASHBOARD_REFRESH',
-      idempotencyKey: `match-dashboard:${matchId}`,
-      payload: { matchId },
-    },
+  await scheduleJob(transaction, {
+    type: 'MATCH_DASHBOARD_REFRESH',
+    idempotencyKey: `match-dashboard:${matchId}`,
+    matchId,
+    payload: { matchId },
   });
 }

@@ -13,4 +13,11 @@ export const dathostServerSchema = z.looseObject({
   deletion_protection: z.boolean().optional(),
 });
 
+export const dathostFileSchema = z.object({
+  path: z.string().min(1),
+  type: z.enum(['file', 'directory']).default('file'),
+  size: z.number().int().nonnegative().optional(),
+});
+
+export type DatHostFile = z.infer<typeof dathostFileSchema>;
 export type DatHostServer = z.infer<typeof dathostServerSchema>;

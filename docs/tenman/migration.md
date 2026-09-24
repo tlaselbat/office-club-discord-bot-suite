@@ -13,9 +13,11 @@
 
 ## Database baseline
 
-The repository contains one initial schema migration. Use a new PostgreSQL
-database for deployment and retain a backup before any destructive database
-operation.
+The repository contains a sequential migration history beginning with
+`20260920000000_initial_schema` and continuing through the Steam-assignment,
+dispute, and queue-alert changes. Apply it to a new PostgreSQL database or an
+existing deployment with `prisma migrate deploy`; retain a backup before any
+destructive database operation.
 
 ## Recovery
 

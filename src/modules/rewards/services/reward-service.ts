@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 export type RewardSource = 'TEXT_ACTIVITY' | 'VOICE_ACTIVITY' | 'ADMIN_ADJUSTMENT';
 
@@ -180,14 +181,10 @@ export class RewardService {
             },
           },
         });
-        await transaction.job.upsert({
-          where: { idempotencyKey: `rewards:roles:${command.guildId}` },
-          update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-          create: {
-            type: 'REWARDS_ROLE_RECONCILE',
-            idempotencyKey: `rewards:roles:${command.guildId}`,
-            payload: { guildId: command.guildId },
-          },
+        await scheduleJob(transaction, {
+          type: 'REWARDS_ROLE_RECONCILE',
+          idempotencyKey: `rewards:roles:${command.guildId}`,
+          payload: { guildId: command.guildId },
         });
       }
       return { applied: true, effectiveXp, level: level?.level ?? 0 };

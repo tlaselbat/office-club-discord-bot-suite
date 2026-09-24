@@ -84,7 +84,7 @@ That config supplies the selected map, exact SteamID64 team lists, readiness thr
 - The template itself has deletion protection on and remains stopped after validation.
 - `meta list` reports CounterStrikeSharp and `css_plugins list` reports MatchZy 0.8.15.
 - A disposable duplicate has a different ID, the guild-selected location, 11 slots for `competitive_5v5`, private-server/GOTV enabled, and a unique `tenman:<matchId>:<attemptId>` marker.
-- Before configuration load, an unrostered player cannot enter; after load, each of the ten linked SteamID64s can join and reaches the correct team.
+- Before configuration load, an unrostered player cannot enter; after load, each of the ten assigned SteamID64s can join and reaches the correct team.
 - The ready-up threshold is 10 for `competitive_5v5`; the knife round occurs unless that profile disables it.
 - `series_start`, `going_live`, `round_end`, `map_result`, and `series_end` reach the bot with the per-match `x-matchzy-token`.
 - A MatchZy demo is present before cleanup when demo retention is enabled; collect it before deletion because DatHost deletes server files with the duplicate.

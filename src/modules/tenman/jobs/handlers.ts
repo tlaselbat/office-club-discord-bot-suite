@@ -17,7 +17,10 @@ import { PhaseTimeoutService } from '../services/phase-timeout-service.js';
 import { MatchResourceService } from '../services/match-resource-service.js';
 import { QueuePanelService } from '../services/queue-panel-service.js';
 import { MatchDashboardService } from '../services/match-dashboard-service.js';
+import { MatchResultReceiptService } from '../services/match-result-receipt-service.js';
+import type { MatchArtifactService } from '../services/match-artifact-service.js';
 import type { JobHandler, LeasedJob } from '../../../jobs/worker.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 export interface WorkerDependencies {
   prisma: PrismaClient;
@@ -25,6 +28,7 @@ export interface WorkerDependencies {
   discord: Client;
   cipher: CredentialCipher;
   credentials: MatchCredentialService;
+  artifacts: MatchArtifactService;
   publicBaseUrl: URL;
   templateServerIds: ReadonlySet<string>;
   componentSigningSecret: string;
@@ -84,6 +88,7 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
     dependencies.discord,
     dependencies.componentSigningSecret,
   );
+  const resultReceipt = new MatchResultReceiptService(dependencies.prisma, dependencies.discord);
 
   const provisionHandler: JobHandler = (job: LeasedJob) => {
     const payload = job.payload as { matchId: string };
@@ -107,6 +112,24 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
       async (job: LeasedJob) => {
         const { matchId } = job.payload as { matchId: string };
         await dashboard.refresh(matchId);
+      },
+    ],
+    [
+      'MATCH_RESULT_RECEIPT',
+      async (job: LeasedJob) => {
+        const { matchId } = job.payload as { matchId: string };
+        await resultReceipt.postReceipt(matchId);
+      },
+    ],
+    [
+      'COLLECT_MATCH_ARTIFACTS',
+      async (job: LeasedJob) => {
+        const { matchId } = job.payload as { matchId: string };
+        const rescheduleAt = await dependencies.artifacts.collectArtifacts(
+          matchId,
+          `job:${job.id}`,
+        );
+        return rescheduleAt === undefined ? undefined : { rescheduleAt };
       },
     ],
     [
@@ -148,7 +171,13 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
       'CLEANUP_MATCH',
       (job: LeasedJob) => {
         const { matchId } = job.payload as { matchId: string };
-        return cleanupJob(dependencies.prisma, cleanup, matchResources, matchId);
+        return cleanupJob(
+          dependencies.prisma,
+          cleanup,
+          matchResources,
+          dependencies.artifacts,
+          matchId,
+        );
       },
     ],
     [
@@ -211,26 +240,18 @@ export async function failProvisioning(
       },
     });
     if (requiresCleanup) {
-      await transaction.job.upsert({
-        where: { idempotencyKey: `cleanup:${matchId}` },
-        update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-        create: {
-          matchId,
-          type: 'CLEANUP_MATCH',
-          idempotencyKey: `cleanup:${matchId}`,
-          payload: { matchId },
-        },
+      await scheduleJob(transaction, {
+        type: 'CLEANUP_MATCH',
+        idempotencyKey: `cleanup:${matchId}`,
+        matchId,
+        payload: { matchId },
       });
     }
-    await transaction.job.upsert({
-      where: { idempotencyKey: `panel:${matchId}:failure` },
-      update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-      create: {
-        matchId,
-        type: 'MATCH_DASHBOARD_REFRESH',
-        idempotencyKey: `panel:${matchId}:failure`,
-        payload: { matchId },
-      },
+    await scheduleJob(transaction, {
+      type: 'MATCH_DASHBOARD_REFRESH',
+      idempotencyKey: `panel:${matchId}:failure`,
+      matchId,
+      payload: { matchId },
     });
     return requiresCleanup;
   });
@@ -243,13 +264,18 @@ async function cleanupJob(
   prisma: PrismaClient,
   cleanup: CleanupOrchestrator,
   matchResources: MatchResourceService,
+  artifacts: MatchArtifactService,
   matchId: string,
-): Promise<void> {
+): Promise<{ rescheduleAt: Date } | undefined> {
   const match = await prisma.match.findUnique({
     where: { id: matchId },
     select: { dathostServerId: true, cleanupStatus: true },
   });
   if (match === null) return;
+  const artifactsReady = await artifacts.ensureArtifactsTerminal(matchId);
+  if (!artifactsReady) {
+    return { rescheduleAt: new Date(Date.now() + 60_000) };
+  }
   await cleanup.cleanup({
     matchId,
     serverId: match.dathostServerId,
@@ -267,6 +293,7 @@ async function cleanupJob(
   });
   for (const resource of resources) await matchResources.archiveOwnedChannel(resource.id);
   await reopenQueueAfterCleanup(prisma, matchId);
+  return undefined;
 }
 
 /** Reopens the persistent queue after cleanup, or immediately when cleanup was never required. */
@@ -282,17 +309,13 @@ async function reopenQueueAfterCleanup(prisma: PrismaClient, matchId: string): P
     await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${match.guildId}, 0))`;
     const reopened = await transaction.tenManQueue.updateMany({
       where: { guildId: match.guildId, status: 'LOCKED' },
-      data: { status: 'OPEN', version: { increment: 1 } },
+      data: { status: 'OPEN', version: { increment: 1 }, lastQueueAlertCount: 0 },
     });
     if (reopened.count !== 1) return;
-    await transaction.job.upsert({
-      where: { idempotencyKey: `queue-panel:${match.guildId}` },
-      update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-      create: {
-        type: 'QUEUE_PANEL_REFRESH',
-        idempotencyKey: `queue-panel:${match.guildId}`,
-        payload: { guildId: match.guildId },
-      },
+    await scheduleJob(transaction, {
+      type: 'QUEUE_PANEL_REFRESH',
+      idempotencyKey: `queue-panel:${match.guildId}`,
+      payload: { guildId: match.guildId },
     });
     await transaction.auditEvent.create({
       data: {

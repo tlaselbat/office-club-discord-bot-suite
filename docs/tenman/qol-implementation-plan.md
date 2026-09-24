@@ -4,7 +4,7 @@
 
 Improve the player experience without changing competitive CS2 rules, creating a second match controller, exposing server credentials, or weakening the existing durable ownership and cleanup model.
 
-The first supported release is deliberately **BO1, 5v5, ten Steam-linked players, and one GOTV slot**. MatchZy is the sole match controller; DatHost supplies disposable infrastructure only. Do not enable BO3, generic player-count profiles, live substitutions, coaching, spectators, player RCON, skins, practice plugins, or DatHost Match API in this release.
+The first supported release is deliberately **BO1, 5v5, ten Steam-assigned players, and one GOTV slot**. MatchZy is the sole match controller; DatHost supplies disposable infrastructure only. Do not enable BO3, generic player-count profiles, live substitutions, coaching, spectators, player RCON, skins, practice plugins, or DatHost Match API in this release.
 
 Results are called **points** and W/L records. The current fixed +/-25 result is not calibrated matchmaking rating.
 

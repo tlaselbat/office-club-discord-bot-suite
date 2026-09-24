@@ -11,8 +11,14 @@ import {
 } from 'discord.js';
 import type { PrismaClient, TenManSettings } from '../generated/prisma/client.js';
 import type { MatchService } from '../modules/tenman/services/match-service.js';
-import type { SteamLinkService } from '../modules/tenman/services/steam-link-service.js';
+import type { SteamAccountService } from '../modules/tenman/services/steam-account-service.js';
+import type { SteamProfileService } from '../modules/tenman/services/steam-profile-service.js';
+import { PlayerStatusService } from '../modules/tenman/services/player-status-service.js';
+import { SteamAdminService } from '../modules/tenman/services/steam-admin-service.js';
 import { GuildSettingsService } from '../modules/tenman/services/guild-settings-service.js';
+import { buildPlayerHubResponse } from '../modules/tenman/bot/player-hub-components.js';
+import { MatchResultDisputeService } from '../modules/tenman/services/match-result-dispute-service.js';
+import { QueueAlertService } from '../modules/tenman/services/queue-alert-service.js';
 import type { DatHostClient } from '../modules/tenman/integrations/dathost/client.js';
 import { DiagnosticsService } from '../modules/tenman/services/diagnostics-service.js';
 import { commands } from '../modules/tenman/bot/commands.js';
@@ -34,7 +40,11 @@ import { LevelRoleService } from '../modules/rewards/services/level-role-service
 import { VoiceActivityService } from '../modules/rewards/services/voice-activity-service.js';
 import { TagLoyaltyService } from '../modules/rewards/services/tag-loyalty-service.js';
 import { QueuePanelService } from '../modules/tenman/services/queue-panel-service.js';
-import { TenManComponentInteractionRouter } from '../modules/tenman/bot/interaction-router.js';
+import {
+  TenManComponentInteractionRouter,
+  buildSteamAccountStatusResponse,
+} from '../modules/tenman/bot/interaction-router.js';
+import { buildStaffDisputeList } from '../modules/tenman/bot/steam-account-components.js';
 import { MatchHistoryService } from '../modules/tenman/services/match-history-service.js';
 import { QueueBanService } from '../modules/tenman/services/queue-ban-service.js';
 import {
@@ -53,7 +63,8 @@ export interface BotDependencies {
   clientId: string;
   prisma: PrismaClient;
   matchService: MatchService;
-  steamLinkService: SteamLinkService;
+  steamAccountService: SteamAccountService;
+  steamProfileService: SteamProfileService;
   dathost: DatHostClient;
   componentSigningSecret: string;
   credentialCipher: CredentialCipher;
@@ -173,6 +184,9 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
     adminActorFor: (interaction) => createGuildAdminActor(interaction, dependencies.prisma),
     guildResourceService,
     matchService: dependencies.matchService,
+    steamAccountService: dependencies.steamAccountService,
+    steamProfileService: dependencies.steamProfileService,
+    discord: client,
     participantInfo: new MatchParticipantInfoService(
       dependencies.prisma,
       dependencies.credentialCipher,
@@ -202,7 +216,12 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
     }),
   ]);
   client.on(Events.InteractionCreate, (interaction) => {
-    if (!interaction.isChatInputCommand() && !interaction.isMessageComponent()) return;
+    if (
+      !interaction.isChatInputCommand() &&
+      !interaction.isMessageComponent() &&
+      !interaction.isModalSubmit()
+    )
+      return;
     const operation = modules.dispatch(interaction).then(async (handled) => {
       if (!handled)
         await interaction.reply({ content: 'Unknown module interaction.', ephemeral: true });
@@ -219,6 +238,12 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
         'Discord interaction failed',
       );
       const content = publicMessage(error, interaction.id);
+      if (interaction.isModalSubmit()) {
+        await interaction
+          .reply({ content, ephemeral: true, components: [] })
+          .catch(() => undefined);
+        return;
+      }
       if (interaction.deferred) {
         await interaction.editReply({ content, components: [] }).catch(() => undefined);
       } else if (interaction.replied) {
@@ -250,27 +275,12 @@ async function handleCommand(
         'Use 10man commands in an active bot-managed 10man channel.',
       );
   }
-  if (
-    interaction.commandName === 'steam' &&
-    ['register', 'replace'].includes(interaction.options.getSubcommand())
-  ) {
-    const challenge = await dependencies.steamLinkService.createChallenge(interaction.user.id);
-    await interaction.editReply({
-      content: `Verify Steam ownership: ${challenge.startUrl.toString()}`,
-    });
-    return;
-  }
-  if (interaction.commandName === 'steam' && interaction.options.getSubcommand() === 'status') {
-    const identity = await dependencies.prisma.steamIdentity.findFirst({
-      where: { discordUserId: interaction.user.id, invalidatedAt: null },
-      select: { steamId64: true, verifiedAt: true },
-    });
-    await interaction.editReply({
-      content:
-        identity === null
-          ? 'No verified Steam account.'
-          : `Verified SteamID64: ${identity.steamId64}`,
-    });
+  if (interaction.commandName === 'steam' && interaction.options.getSubcommand() === 'account') {
+    await renderSteamAccountStatus(
+      interaction,
+      dependencies.steamAccountService,
+      dependencies.componentSigningSecret,
+    );
     return;
   }
   if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'queue') {
@@ -312,6 +322,46 @@ async function handleCommand(
       dependencies.componentSigningSecret,
     ).reconcile(interaction.guildId, channel);
     await interaction.editReply({ content: `10man queue panel is ready in <#${channel.id}>.` });
+    return;
+  }
+  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'hub') {
+    const [status, queue, match] = await Promise.all([
+      new PlayerStatusService(dependencies.prisma).getStatus(
+        interaction.guildId,
+        interaction.user.id,
+      ),
+      dependencies.prisma.tenManQueue.findUnique({ where: { guildId: interaction.guildId } }),
+      dependencies.prisma.match.findFirst({
+        where: {
+          guildId: interaction.guildId,
+          guildSlotActive: true,
+          players: { some: { discordUserId: interaction.user.id } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    const { embeds, components } = buildPlayerHubResponse(
+      status,
+      interaction.guildId,
+      interaction.user.id,
+      queue?.version ?? 0,
+      match?.version ?? 0,
+      match?.phaseGeneration ?? 0,
+      dependencies.componentSigningSecret,
+    );
+    await interaction.editReply({ embeds, components });
+    return;
+  }
+  if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'alerts') {
+    const enabled = interaction.options.getBoolean('enabled', true);
+    await new QueueAlertService(dependencies.prisma, client).setPreference(
+      interaction.guildId,
+      interaction.user.id,
+      enabled,
+    );
+    await interaction.editReply({
+      content: `Queue fill alerts ${enabled ? 'enabled' : 'disabled'}. You will ${enabled ? 'receive' : 'no longer receive'} direct-message notifications when the queue nears full.`,
+    });
     return;
   }
   if (interaction.commandName === '10man' && interaction.options.getSubcommand() === 'cancel') {
@@ -606,6 +656,86 @@ async function handleCommand(
       await interaction.editReply({ content: '10man configuration saved.' });
       return;
     }
+    if (subcommand === 'steam-disputes') {
+      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('DIAGNOSTICS', adminActor);
+      const disputes = await new SteamAdminService(
+        dependencies.prisma,
+        dependencies.steamProfileService,
+      ).listPendingDisputes(interaction.guildId);
+      await interaction.editReply(
+        buildStaffDisputeList(
+          disputes,
+          interaction.guildId,
+          interaction.user.id,
+          dependencies.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (subcommand === 'resolve-steam-dispute') {
+      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('RESOLVE_DISPUTE', adminActor);
+      const disputeId = interaction.options.getString('dispute_id', true);
+      const action = interaction.options.getString('action', true);
+      const reason = interaction.options.getString('reason', true);
+      if (action !== 'REJECT' && action !== 'FORCE_REPLACE' && action !== 'FORCE_REMOVE') {
+        await interaction.editReply({ content: 'Invalid resolution action.' });
+        return;
+      }
+      await new SteamAdminService(
+        dependencies.prisma,
+        dependencies.steamProfileService,
+      ).resolveDispute(disputeId, action, interaction.user.id, interaction.id, reason);
+      await interaction.editReply({ content: 'Steam assignment dispute resolved.' });
+      return;
+    }
+    if (subcommand === 'result-disputes') {
+      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('DIAGNOSTICS', adminActor);
+      const disputes = await new MatchResultDisputeService(dependencies.prisma).listPending(
+        interaction.guildId,
+      );
+      if (disputes.length === 0) {
+        await interaction.editReply({ content: 'No pending match result disputes.' });
+        return;
+      }
+      await interaction.editReply({
+        content: [
+          'Pending match result disputes:',
+          ...disputes.map(
+            (dispute) =>
+              `• \`${dispute.id.slice(0, 8)}\` — match \`${dispute.matchId.slice(0, 8)}\` — <@${dispute.discordUserId}> — ${dispute.reason.slice(0, 80)}`,
+          ),
+        ].join('\n'),
+      });
+      return;
+    }
+    if (subcommand === 'resolve-result-dispute') {
+      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('ROLLBACK_MATCH', adminActor);
+      const disputeId = interaction.options.getString('dispute_id', true);
+      const action = interaction.options.getString('action', true);
+      const reason = interaction.options.getString('reason', true);
+      if (action !== 'REJECT' && action !== 'REVERSE') {
+        await interaction.editReply({ content: 'Invalid resolution action.' });
+        return;
+      }
+      await new MatchResultDisputeService(dependencies.prisma).resolveDispute(
+        disputeId,
+        action,
+        reason,
+        interaction.user.id,
+        interaction.id,
+      );
+      await interaction.editReply({
+        content:
+          action === 'REVERSE'
+            ? 'Dispute accepted and match result reversed.'
+            : 'Dispute rejected.',
+      });
+      return;
+    }
     if (subcommand === 'diagnostics') {
       const adminActor = await createActorContext(interaction, '', dependencies.prisma);
       assertAuthorized('DIAGNOSTICS', adminActor);
@@ -842,18 +972,61 @@ function formatRecentMatches(
     id: string;
     selectedMap: string | null;
     score: unknown;
+    result: unknown;
     resultStatus: string;
     finishedAt: Date | null;
+    players: { team: string }[];
   }[],
 ): string {
   if (matches.length === 0) return `<@${discordUserId}> has no finished matches yet.`;
+  const outcomes = matches.map((match) => {
+    const userTeam = match.players[0]?.team;
+    const winner = (match.result as { winner?: { team?: string } } | null)?.winner?.team;
+    const won = winner !== undefined && userTeam === winner;
+    return { match, won };
+  });
+  const record = `${String(outcomes.filter(({ won }) => won).length)}W–${String(outcomes.filter(({ won }) => !won).length)}L`;
+  const streak = formatStreak(outcomes.map(({ won }) => won));
+  const mapRecord = new Map<string, { wins: number; losses: number }>();
+  for (const { match, won } of outcomes) {
+    const map = match.selectedMap ?? 'unknown';
+    const current = mapRecord.get(map) ?? { wins: 0, losses: 0 };
+    if (won) current.wins += 1;
+    else current.losses += 1;
+    mapRecord.set(map, current);
+  }
+  const mapRecordLine = [...mapRecord.entries()]
+    .map(([map, stats]) => `${map}: ${String(stats.wins)}–${String(stats.losses)}`)
+    .join(', ');
+  const lines = outcomes.slice(0, 5).map(({ match, won }) => {
+    const score = scoreSummary(match.score);
+    const date =
+      match.finishedAt === null
+        ? ''
+        : ` — <t:${String(Math.floor(match.finishedAt.getTime() / 1000))}:d>`;
+    return `• ${match.id.slice(0, 8)} — ${match.selectedMap ?? 'unknown'} — ${won ? 'win' : 'loss'}${score}${date}`;
+  });
   return [
-    `Recent matches for <@${discordUserId}>:`,
-    ...matches.map(
-      (match) =>
-        `• ${match.id.slice(0, 8)} — ${match.selectedMap ?? 'map pending'} — ${match.resultStatus.toLowerCase()}${match.finishedAt === null ? '' : ` — <t:${String(Math.floor(match.finishedAt.getTime() / 1000))}:d>`}`,
-    ),
+    `Recent matches for <@${discordUserId}> (${record}, streak: ${streak}):`,
+    ...lines,
+    ...(mapRecordLine ? [`Map record: ${mapRecordLine}`] : []),
   ].join('\n');
+}
+
+function scoreSummary(score: unknown): string {
+  const parsed = score as { team1?: number; team2?: number } | null;
+  if (parsed === null || parsed.team1 === undefined || parsed.team2 === undefined) return '';
+  return ` — ${String(parsed.team1)}:${String(parsed.team2)}`;
+}
+
+function formatStreak(outcomes: boolean[]): string {
+  if (outcomes.length === 0) return '-';
+  let streak = 0;
+  for (const won of outcomes) {
+    if (won === outcomes[0]) streak += 1;
+    else break;
+  }
+  return `${outcomes[0] ? 'W' : 'L'}${String(streak)}`;
 }
 
 function formatManagedPreview(preview: ManagedPreview, teardown: boolean): string {
@@ -980,6 +1153,21 @@ async function createGuildAdminActor(
       (settings !== null &&
         memberRoles.some((role) => settings.administratorRoleIds.includes(role))),
   };
+}
+
+async function renderSteamAccountStatus(
+  interaction: ChatInputCommandInteraction,
+  steamAccountService: SteamAccountService,
+  secret: string,
+): Promise<void> {
+  const active = await steamAccountService.findActive(interaction.user.id);
+  const { content, components } = buildSteamAccountStatusResponse(
+    active,
+    interaction.guildId ?? '',
+    interaction.user.id,
+    secret,
+  );
+  await interaction.editReply({ content, components });
 }
 
 async function createActorContext(

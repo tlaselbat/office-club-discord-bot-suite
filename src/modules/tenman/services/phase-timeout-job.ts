@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 type Transaction = Parameters<PrismaClient['$transaction']>[0] extends (arg: infer T) => unknown
   ? T
@@ -13,23 +14,17 @@ export async function schedulePhaseTimeout(
   deadline: Date,
   correlationId: string,
 ): Promise<void> {
-  await transaction.job.upsert({
-    where: {
-      idempotencyKey: `phase-timeout:${matchId}:${expectedState}:${String(expectedVersion)}`,
-    },
-    update: { status: 'PENDING', runAt: deadline, attempts: 0, lastError: null },
-    create: {
+  await scheduleJob(transaction, {
+    type: 'MATCH_PHASE_TIMEOUT',
+    idempotencyKey: `phase-timeout:${matchId}:${expectedState}:${String(expectedVersion)}`,
+    matchId,
+    runAt: deadline,
+    payload: {
       matchId,
-      type: 'MATCH_PHASE_TIMEOUT',
-      idempotencyKey: `phase-timeout:${matchId}:${expectedState}:${String(expectedVersion)}`,
-      runAt: deadline,
-      payload: {
-        matchId,
-        expectedState,
-        expectedVersion,
-        deadline: deadline.toISOString(),
-        correlationId,
-      },
+      expectedState,
+      expectedVersion,
+      deadline: deadline.toISOString(),
+      correlationId,
     },
   });
 }

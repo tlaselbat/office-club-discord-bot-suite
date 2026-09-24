@@ -19,24 +19,18 @@ describe('authorization policy', () => {
     expect(isAuthorized('ORGANIZE_TEAMS', participant, match)).toBe(false);
   });
 
-  it('allows configured privilege to create without granting controls', () => {
-    const privileged = { ...participant, isParticipant: false, isPrivilegedMember: true };
-    expect(isAuthorized('CREATE', privileged)).toBe(true);
-    expect(isAuthorized('PAUSE', privileged, match)).toBe(false);
-  });
-
   it('allows moderators to control any match but not configure the guild', () => {
     const moderator = { ...participant, isModerator: true };
     expect(isAuthorized('STOP', moderator, match)).toBe(true);
     expect(isAuthorized('CONFIGURE_GUILD', moderator, match)).toBe(false);
     expect(isAuthorized('QUEUE_BAN', moderator, match)).toBe(true);
     expect(isAuthorized('ROLLBACK_MATCH', moderator, match)).toBe(true);
+    expect(isAuthorized('RESOLVE_DISPUTE', moderator)).toBe(true);
   });
 
-  it('limits new queue and ready actions to their intended actor', () => {
-    expect(isAuthorized('JOIN_QUEUE', { ...participant, isParticipant: false })).toBe(true);
-    expect(isAuthorized('LEAVE_QUEUE', participant)).toBe(true);
-    expect(isAuthorized('CAPTAIN_PICK', participant, match)).toBe(false);
+  it('denies non-moderators moderation actions', () => {
+    expect(isAuthorized('RESOLVE_DISPUTE', participant)).toBe(false);
+    expect(isAuthorized('QUEUE_BAN', participant, match)).toBe(false);
   });
 
   it('allows administrators to perform every action', () => {

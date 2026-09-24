@@ -10,7 +10,7 @@ The installation consists of:
 - PostgreSQL 17 in a separate Docker container with persistent storage.
 - Caddy on the Ubuntu host for automatic public HTTPS.
 - An owner-only web panel at `https://your-domain/admin`.
-- Steam OpenID callback routes and authenticated MatchZy endpoints.
+- Authenticated MatchZy endpoints and the owner web panel.
 - Global Discord slash commands.
 
 Docker publishes the application only on `127.0.0.1:3000`. Caddy is the public entry point on ports 80 and 443.
@@ -589,25 +589,21 @@ View the basic saved status with:
 
 Do not stage the first real match until diagnostics pass.
 
-## 17. Link participant Steam accounts
+## 17. Assign participant Steam accounts
 
 Each participant runs:
 
 ```text
-/steam register
+/steam account
 ```
 
-The bot returns a private Steam OpenID link. The participant signs in through Steam and returns to the public HTTPS domain to complete verification.
+(or clicks **Steam Account** on the lobby panel or player hub) and submits a SteamID64 or `steamcommunity.com` profile URL. Assignment is self-reported and does not verify Steam ownership; vanity URLs resolve only when `STEAM_API_KEY` is configured.
 
-Confirm the link with:
-
-```text
-/steam status
-```
+Re-running `/steam account` shows the currently assigned SteamID64 and when it was assigned.
 
 ## 18. Create the first test 10man
 
-A Steam-linked member runs:
+A member with an assigned Steam account runs:
 
 ```text
 /10man queue
@@ -616,7 +612,7 @@ A Steam-linked member runs:
 Verify that:
 
 1. The persistent queue panel appears in the configured lobby text channel.
-2. Ten Steam-linked participants can join the queue.
+2. Ten Steam-assigned participants can join the queue.
 3. Ready check, captain draft, and map veto progress through signed controls.
 4. Voice movement uses the configured lobby and team channels.
 5. DatHost provisioning duplicates the protected template into a disposable server.

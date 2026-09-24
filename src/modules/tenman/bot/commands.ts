@@ -7,23 +7,33 @@ export const commands = [
     .addSubcommand((command) =>
       command.setName('queue').setDescription('Create or repair the persistent 10man queue panel'),
     )
-    .addSubcommand((command) => command.setName('status').setDescription('Show the active 10man'))
     .addSubcommand((command) =>
-      command.setName('cancel').setDescription('Cancel the active 10man'),
+      command.setName('hub').setDescription('Open your personal 10man status'),
+    )
+    .addSubcommand((command) => command.setName('status').setDescription('Show the active 10man'))
+    .addSubcommand((command) => command.setName('cancel').setDescription('Cancel the active 10man'))
+    .addSubcommand((command) =>
+      command
+        .setName('alerts')
+        .setDescription('Opt in or out of 10man queue fill alerts')
+        .addBooleanOption((option) =>
+          option
+            .setName('enabled')
+            .setDescription('Whether to receive direct-message queue alerts')
+            .setRequired(true),
+        ),
     ),
   new SlashCommandBuilder()
     .setName('steam')
-    .setDescription('Manage your verified Steam account')
+    .setDescription('Manage your assigned Steam account for 10man matches')
     .addSubcommand((command) =>
-      command.setName('register').setDescription('Link through Steam OpenID'),
-    )
-    .addSubcommand((command) => command.setName('status').setDescription('Show your Steam link'))
-    .addSubcommand((command) =>
-      command.setName('replace').setDescription('Replace your Steam link'),
+      command
+        .setName('account')
+        .setDescription('View or assign the Steam account you intend to use'),
     ),
   new SlashCommandBuilder()
     .setName('match')
-    .setDescription('Administrative match controls')
+    .setDescription('Match information and administrative controls')
     .addSubcommand((command) =>
       command
         .setName('history')
@@ -72,7 +82,7 @@ export const commands = [
               option.setName('outgoing').setDescription('Current participant').setRequired(true),
             )
             .addUserOption((option) =>
-              option.setName('incoming').setDescription('Verified replacement').setRequired(true),
+              option.setName('incoming').setDescription('Assigned replacement').setRequired(true),
             ),
         )
         .addSubcommand((command) =>
@@ -110,6 +120,69 @@ export const commands = [
             .setDescription('Revoke a player queue ban')
             .addUserOption((option) =>
               option.setName('player').setDescription('Player to unban').setRequired(true),
+            ),
+        )
+        .addSubcommand((command) =>
+          command.setName('result-disputes').setDescription('List pending match result disputes'),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('resolve-result-dispute')
+            .setDescription('Resolve a match result dispute')
+            .addStringOption((option) =>
+              option
+                .setName('dispute_id')
+                .setDescription('Full UUID of the dispute')
+                .setRequired(true),
+            )
+            .addStringOption((option) =>
+              option
+                .setName('action')
+                .setDescription('Resolution action')
+                .setRequired(true)
+                .addChoices(
+                  { name: 'Reject', value: 'REJECT' },
+                  { name: 'Reverse result', value: 'REVERSE' },
+                ),
+            )
+            .addStringOption((option) =>
+              option
+                .setName('reason')
+                .setDescription('Staff-visible resolution reason')
+                .setRequired(true),
+            ),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('steam-disputes')
+            .setDescription('List pending Steam assignment disputes'),
+        )
+        .addSubcommand((command) =>
+          command
+            .setName('resolve-steam-dispute')
+            .setDescription('Resolve a Steam assignment dispute')
+            .addStringOption((option) =>
+              option
+                .setName('dispute_id')
+                .setDescription('Full UUID of the dispute')
+                .setRequired(true),
+            )
+            .addStringOption((option) =>
+              option
+                .setName('action')
+                .setDescription('Resolution action')
+                .setRequired(true)
+                .addChoices(
+                  { name: 'Reject', value: 'REJECT' },
+                  { name: 'Force replace', value: 'FORCE_REPLACE' },
+                  { name: 'Force remove', value: 'FORCE_REMOVE' },
+                ),
+            )
+            .addStringOption((option) =>
+              option
+                .setName('reason')
+                .setDescription('Staff-visible resolution reason')
+                .setRequired(true),
             ),
         )
         .addSubcommand((command) =>
@@ -181,12 +254,6 @@ export const commands = [
                 .setRequired(true)
                 .addChannelTypes(ChannelType.GuildVoice),
             )
-            .addChannelOption((option) =>
-              option
-                .setName('results_channel')
-                .setDescription('Bot-post-only channel for retained match results')
-                .addChannelTypes(ChannelType.GuildText),
-            )
             .addRoleOption((option) =>
               option
                 .setName('privileged_role')
@@ -210,6 +277,12 @@ export const commands = [
                 .setName('dathost_template_server_id')
                 .setDescription('DatHost template server ID')
                 .setRequired(true),
+            )
+            .addChannelOption((option) =>
+              option
+                .setName('results_channel')
+                .setDescription('Bot-post-only channel for retained match results')
+                .addChannelTypes(ChannelType.GuildText),
             )
             .addStringOption((option) =>
               option
@@ -326,7 +399,7 @@ export const commands = [
         .setName('disband')
         .setDescription('Disband your party')
         .addStringOption((option) =>
-          option.setName('party_id').setDescription('Your party UUID').setRequired(true),
+          option.setName('party_id').setDescription('Party UUID').setRequired(true),
         ),
     ),
 ].map((command) => command.toJSON());

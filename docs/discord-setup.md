@@ -79,9 +79,7 @@ After setup, either a native Discord administrator or a member with the configur
 - `/10man queue` — create or repair the durable queue panel.
 - `/10man status` — show the active match state and ready count.
 - `/10man cancel` — cancel the active match; leader, moderator, or administrator only.
-- `/steam register` — start Steam OpenID verification.
-- `/steam status` — show the current verified SteamID64.
-- `/steam replace` — verify a replacement identity; replacement is blocked while the identity is protected by an active locked/live match.
+- `/steam account` — assign or replace the SteamID64 reported for 10man rosters (also reachable from the **Steam Account** button on the lobby panel and player hub). Assignment is self-reported and does not verify Steam ownership; changes are blocked while the user is queued or in a live match.
 - `/match admin status` — show stored configuration status.
 - `/match admin configure` — create or replace guild configuration.
 - `/match admin diagnostics` — validate channels, roles, permissions, template access, managed recovery state, and active-match status.

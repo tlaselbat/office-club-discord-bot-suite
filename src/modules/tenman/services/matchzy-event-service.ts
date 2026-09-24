@@ -1,9 +1,15 @@
 import { createHash } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import type { MatchZyEvent } from '../integrations/matchzy/schemas.js';
+import type { MatchArtifactService } from './match-artifact-service.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 export class MatchZyEventService {
-  public constructor(private readonly prisma: PrismaClient) {}
+  public constructor(
+    private readonly prisma: PrismaClient,
+    private readonly artifacts: MatchArtifactService,
+    private readonly demoCollectionDeadlineSeconds: number,
+  ) {}
 
   public async ingest(matchId: string, event: MatchZyEvent): Promise<'processed' | 'duplicate'> {
     const payload = JSON.parse(JSON.stringify(event)) as object;
@@ -15,7 +21,17 @@ export class MatchZyEventService {
         select: { id: true },
       });
       if (existing !== null) return 'duplicate';
-      const match = await transaction.match.findUnique({ where: { id: matchId } });
+      const match = await transaction.match.findUnique({
+        where: { id: matchId },
+        select: {
+          id: true,
+          guildId: true,
+          state: true,
+          matchzyMatchId: true,
+          selectedMap: true,
+          resultStatus: true,
+        },
+      });
       if (match === null || match.matchzyMatchId !== event.matchid)
         throw new Error('MatchZy match ID mismatch');
       const journal = await transaction.externalEvent.create({
@@ -28,6 +44,14 @@ export class MatchZyEventService {
           payloadHash,
         },
       });
+      if (event.event === 'demo_upload_ended') {
+        await this.artifacts.processDemoUploadEnded(matchId, event, journal.id);
+        await transaction.externalEvent.update({
+          where: { id: journal.id },
+          data: { processedAt: new Date() },
+        });
+        return 'processed';
+      }
       const update = eventUpdate(match.state, event);
       if (update !== null) {
         await transaction.match.update({
@@ -51,26 +75,43 @@ export class MatchZyEventService {
         }
         const scoreUpdate = event.event === 'round_end' || event.event === 'map_result';
         const dashboardKey = `match-dashboard:${matchId}:${scoreUpdate ? 'score' : 'state'}`;
-        await transaction.job.upsert({
-          where: { idempotencyKey: dashboardKey },
-          update: {
-            status: 'PENDING',
-            runAt: scoreUpdate ? new Date(Date.now() + 5_000) : new Date(),
-            attempts: 0,
-            lastError: null,
-          },
-          create: {
-            matchId,
-            type: 'MATCH_DASHBOARD_REFRESH',
-            idempotencyKey: dashboardKey,
-            payload: { matchId },
-            ...(scoreUpdate ? { runAt: new Date(Date.now() + 5_000) } : {}),
-          },
+        await scheduleJob(transaction, {
+          type: 'MATCH_DASHBOARD_REFRESH',
+          idempotencyKey: dashboardKey,
+          matchId,
+          payload: { matchId },
+          ...(scoreUpdate ? { runAt: new Date(Date.now() + 5_000) } : {}),
         });
         if (event.event === 'series_end') {
           if (match.resultStatus === 'PENDING') {
             await applyResult(transaction, matchId, event);
           }
+          await transaction.demoReference.upsert({
+            where: { matchId_mapNumber: { matchId, mapNumber: 0 } },
+            update: {},
+            create: {
+              matchId,
+              mapNumber: 0,
+              mapName: match.selectedMap ?? 'unknown',
+              status: 'EXPECTED',
+              collectionDeadlineAt: new Date(
+                Date.now() + this.demoCollectionDeadlineSeconds * 1000,
+              ),
+            },
+          });
+          await scheduleJob(transaction, {
+            type: 'COLLECT_MATCH_ARTIFACTS',
+            idempotencyKey: `artifacts:${matchId}`,
+            matchId,
+            payload: { matchId },
+            runAt: new Date(Date.now() + 130_000),
+          });
+          await scheduleJob(transaction, {
+            type: 'MATCH_RESULT_RECEIPT',
+            idempotencyKey: `receipt:${matchId}`,
+            matchId,
+            payload: { matchId },
+          });
           await transaction.job.upsert({
             where: { idempotencyKey: `cleanup:${matchId}` },
             update: {},

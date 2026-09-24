@@ -9,29 +9,35 @@
 
 ## Environment variables
 
-| Variable                             | Required | Default       | Validation and use                                                                                  |
-| ------------------------------------ | -------- | ------------- | --------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                           | no       | `development` | `development`, `test`, or `production`                                                              |
-| `HOST`                               | no       | `0.0.0.0`     | Non-empty HTTP bind host                                                                            |
-| `PORT`                               | no       | `3000`        | Integer from 1 through 65535                                                                        |
-| `LOG_LEVEL`                          | no       | `info`        | `fatal`, `error`, `warn`, `info`, `debug`, or `trace`                                               |
-| `POSTGRES_PASSWORD`                  | Docker   | —             | PostgreSQL container password used by `compose.yaml`                                                |
-| `DATABASE_URL`                       | yes      | —             | Must start with `postgresql://`                                                                     |
-| `DISCORD_TOKEN`                      | yes      | —             | Bot token; also used by `pnpm discord:register`                                                     |
-| `DISCORD_CLIENT_ID`                  | yes      | —             | Application ID containing 17-20 digits                                                              |
-| `DISCORD_CLIENT_SECRET`              | yes      | —             | OAuth client secret for the owner panel                                                             |
-| `PANEL_OWNER_DISCORD_USER_IDS`       | yes      | —             | Comma-separated Discord user IDs allowed to access `/admin`                                         |
-| `PANEL_SESSION_SECRET`               | yes      | —             | At least 32 characters; signs OAuth state and CSRF tokens                                           |
-| `DATHOST_EMAIL`                      | yes      | —             | DatHost API account email                                                                           |
-| `DATHOST_PASSWORD`                   | yes      | —             | DatHost API account password                                                                        |
-| `DATHOST_TEMPLATE_SERVER_ID`         | yes      | —             | Globally protected template ID used by ownership safety checks                                      |
-| `PUBLIC_BASE_URL`                    | yes      | —             | HTTPS origin for Steam callbacks and MatchZy config/events                                          |
-| `MATCH_TOKEN_SIGNING_SECRET`         | yes      | —             | At least 32 characters; signs Discord component IDs                                                 |
-| `CREDENTIAL_ENCRYPTION_KEY`          | yes      | —             | Base64 value decoding to exactly 32 bytes                                                           |
-| `DEFAULT_DATHOST_LOCATION`           | no       | —             | Present for environment compatibility; guild configuration currently controls provisioning location |
-| `WORKER_POLL_INTERVAL_MS`            | no       | `1000`        | Integer from 100 through 60000 milliseconds                                                         |
-| `MATCHZY_RECONCILIATION_INTERVAL_MS` | no       | `30000`       | Integer from 5000 through 300000 milliseconds; recurring reconciliation schedule                    |
-| `MATCHZY_STALE_AFTER_MS`             | no       | `120000`      | Integer of at least 30000 milliseconds                                                              |
+| Variable                             | Required | Default       | Validation and use                                                                    |
+| ------------------------------------ | -------- | ------------- | ------------------------------------------------------------------------------------- |
+| `NODE_ENV`                           | no       | `development` | `development`, `test`, or `production`                                                |
+| `HOST`                               | no       | `0.0.0.0`     | Non-empty HTTP bind host                                                              |
+| `PORT`                               | no       | `3000`        | Integer from 1 through 65535                                                          |
+| `LOG_LEVEL`                          | no       | `info`        | `fatal`, `error`, `warn`, `info`, `debug`, or `trace`                                 |
+| `POSTGRES_PASSWORD`                  | Docker   | —             | PostgreSQL container password used by `compose.yaml`                                  |
+| `DATABASE_URL`                       | yes      | —             | Must start with `postgresql://`                                                       |
+| `DISCORD_TOKEN`                      | yes      | —             | Bot token; also used by `pnpm discord:register`                                       |
+| `DISCORD_CLIENT_ID`                  | yes      | —             | Application ID containing 17-20 digits                                                |
+| `DISCORD_CLIENT_SECRET`              | yes      | —             | OAuth client secret for the owner panel                                               |
+| `PANEL_OWNER_DISCORD_USER_IDS`       | yes      | —             | Comma-separated Discord user IDs allowed to access `/admin`                           |
+| `PANEL_SESSION_SECRET`               | yes      | —             | At least 32 characters; signs OAuth state and CSRF tokens                             |
+| `DATHOST_EMAIL`                      | yes      | —             | DatHost API account email                                                             |
+| `DATHOST_PASSWORD`                   | yes      | —             | DatHost API account password                                                          |
+| `DATHOST_TEMPLATE_SERVER_ID`         | yes      | —             | Globally protected template ID used by ownership safety checks                        |
+| `PUBLIC_BASE_URL`                    | yes      | —             | HTTPS origin for the admin panel and MatchZy config/events endpoints                  |
+| `MATCH_TOKEN_SIGNING_SECRET`         | yes      | —             | At least 32 characters; signs Discord component IDs                                   |
+| `CREDENTIAL_ENCRYPTION_KEY`          | yes      | —             | Base64 value decoding to exactly 32 bytes                                             |
+| `STEAM_API_KEY`                      | no       | —             | Optional Steam Web API key; enables vanity-URL resolution and display-name enrichment |
+| `R2_ACCOUNT_ID`                      | no       | —             | Optional Cloudflare R2 (S3-compatible) account ID for demo/artifact storage           |
+| `R2_BUCKET`                          | no       | —             | Bucket for match demo artifacts; required when the other `R2_*` values are set        |
+| `R2_ACCESS_KEY_ID`                   | no       | —             | S3 access key for the artifact bucket                                                 |
+| `R2_SECRET_ACCESS_KEY`               | no       | —             | S3 secret key for the artifact bucket                                                 |
+| `DEMO_RETENTION_DAYS`                | no       | `90`          | Integer from 1 through 3650; expiry applied to stored demo artifacts                  |
+| `DEMO_COLLECTION_DEADLINE_SECONDS`   | no       | `1800`        | Integer from 60 through 7200; artifact collection cutoff after series end             |
+| `WORKER_POLL_INTERVAL_MS`            | no       | `1000`        | Integer from 100 through 60000 milliseconds                                           |
+| `MATCHZY_RECONCILIATION_INTERVAL_MS` | no       | `30000`       | Integer from 5000 through 300000 milliseconds; recurring reconciliation schedule      |
+| `MATCHZY_STALE_AFTER_MS`             | no       | `120000`      | Integer of at least 30000 milliseconds                                                |
 
 The application validates the complete runtime environment before startup. The dedicated command-registration script validates only its two Discord variables.
 

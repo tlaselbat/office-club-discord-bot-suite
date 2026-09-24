@@ -1,4 +1,8 @@
-import type { ChatInputCommandInteraction, MessageComponentInteraction } from 'discord.js';
+import type {
+  ChatInputCommandInteraction,
+  MessageComponentInteraction,
+  ModalSubmitInteraction,
+} from 'discord.js';
 import type { JobHandler } from '../../jobs/worker.js';
 import type { ApplicationCommand, SuiteModule } from './types.js';
 
@@ -35,7 +39,7 @@ export class ModuleRegistry {
   }
 
   public async dispatch(
-    interaction: ChatInputCommandInteraction | MessageComponentInteraction,
+    interaction: ChatInputCommandInteraction | MessageComponentInteraction | ModalSubmitInteraction,
   ): Promise<boolean> {
     const module = interaction.isChatInputCommand()
       ? (this.commandOwners.get(interaction.commandName) ??

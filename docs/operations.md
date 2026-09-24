@@ -134,4 +134,4 @@ or channel by name.
 
 ## Steam relinking
 
-Users can run `/steam replace`. The replacement verification invalidates the prior active identity only after successful Steam OpenID completion. Relinking is rejected while that Discord identity is protected by a locked, provisioning, loaded, warmup, live, or paused match.
+Users can run `/steam account` to replace their assigned SteamID64. The reassignment invalidates the prior active identity in the same transaction that records the new one. Changes are rejected while that Discord identity is queued or protected by a locked, provisioning, loaded, warmup, live, or paused match. Duplicate Steam IDs are reported to staff as assignment disputes.

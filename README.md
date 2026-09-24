@@ -8,7 +8,7 @@ A modular Discord server-management suite with independently configurable member
 - Member Rewards grants idempotent XP for allowlisted text and voice activity, calculates configurable levels, manages level roles, and exposes profiles and leaderboards.
 - Guild-tag loyalty tracks continuous use of the server's primary-guild identity and grants a configurable role after the required duration.
 - The OAuth-protected `/admin` panel independently configures and toggles modules and records audited manual XP adjustments.
-- A persistent Steam-verified queue promotes atomically into one active match per Discord guild.
+- A persistent Steam-assigned queue promotes atomically into one active match per Discord guild.
 - A deadline-driven ready check, captain draft, and map veto use signed, stale-safe controls.
 - The bot owns and reconciles the queue panel plus per-match text/dashboard resources.
 - Parties, queue bans, MatchZy result history, ratings, and audited rollback are durable.
@@ -43,7 +43,7 @@ A modular Discord server-management suite with independently configurable member
 - PostgreSQL
 - Discord bot application
 - DatHost account and protected MatchZy template
-- Public HTTPS origin reachable by Steam and the game server
+- Public HTTPS origin reachable by the game server (MatchZy callbacks)
 
 ## Local setup
 
@@ -94,7 +94,7 @@ For a single Docker host:
 docker compose up --build -d
 ```
 
-Apply migrations, seed profiles, and run `corepack pnpm discord:register` as explicit deployment steps. This release is an initial-schema baseline and must use a new empty database; see the [operations runbook](docs/operations.md) before designing an import for existing data.
+Apply migrations, seed profiles, and run `corepack pnpm discord:register` as explicit deployment steps. Migrations apply forward on a new or existing database with `corepack pnpm prisma:migrate`; see the [operations runbook](docs/operations.md) before designing an import for existing data.
 
 The long-running `app` image is production-pruned. For Docker deployments, use
 the separate database-tools image after PostgreSQL is healthy:

@@ -1,4 +1,9 @@
-import { dathostServerSchema, type DatHostServer } from './schemas.js';
+import {
+  dathostFileSchema,
+  dathostServerSchema,
+  type DatHostFile,
+  type DatHostServer,
+} from './schemas.js';
 import { z } from 'zod';
 
 export interface DatHostClientOptions {
@@ -76,6 +81,25 @@ export class DatHostClient {
 
   public async deleteServer(serverId: string): Promise<void> {
     await this.empty(`game-servers/${encodeURIComponent(serverId)}`, 'DELETE', true);
+  }
+
+  public listFiles(serverId: string, path?: string): Promise<DatHostFile[]> {
+    const params = new URLSearchParams();
+    if (path !== undefined && path.length > 0) params.set('path', path);
+    const query = params.toString();
+    return this.json(
+      `game-servers/${encodeURIComponent(serverId)}/files${query ? `?${query}` : ''}`,
+      z.array(dathostFileSchema),
+    );
+  }
+
+  public downloadFile(serverId: string, filePath: string): Promise<Response> {
+    if (/\.\.|^\/|\\/u.test(filePath)) {
+      throw new Error('Invalid DatHost file path');
+    }
+    return this.fetch(
+      `game-servers/${encodeURIComponent(serverId)}/files/${encodeURIComponent(filePath)}`,
+    );
   }
 
   public async sendConsole(serverId: string, line: string): Promise<void> {

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
 import { assertCompetitiveBo1FiveVFive, gameProfileSchema } from '../domain/game-profile.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 export interface JoinQueueCommand {
   guildId: string;
@@ -9,14 +10,40 @@ export interface JoinQueueCommand {
   correlationId: string;
 }
 
-export interface QueueJoinResult {
-  promotedMatchId?: string;
+export type QueueJoinResult =
+  | {
+      status: 'joined';
+      playersInQueue: number;
+      queueSize: number;
+      promotedMatchId: string | undefined;
+    }
+  | { status: 'already_queued'; playersInQueue: number; queueSize: number }
+  | { status: 'missing_steam'; memberCount: number }
+  | { status: 'queue_banned'; expiresAt: Date | null; reason: string }
+  | { status: 'queue_unavailable' }
+  | { status: 'queue_full' }
+  | { status: 'active_match'; matchId: string }
+  | { status: 'parties_disabled' }
+  | { status: 'party_forbidden' }
+  | { status: 'party_guild_mismatch' }
+  | { status: 'party_partially_queued' }
+  | { status: 'party_duplicate_steam' };
+
+export interface QueueLeaveResult {
+  removedCount: number;
+  wasParty: boolean;
+}
+
+export interface QueueStatus {
+  playersInQueue: number;
+  queueSize: number;
 }
 
 type QueueCandidate = {
   discordUserId: string;
   displayName: string;
   steamId64: string;
+  partyId?: string;
 };
 
 /**
@@ -34,7 +61,7 @@ export class QueueService {
         where: { guildId: command.guildId },
       });
       if (settings === null || !settings.enabled || settings.defaultGameProfileKey === null) {
-        throw new PublicError('QUEUE_UNAVAILABLE', 'The 10man queue is unavailable.');
+        return { status: 'queue_unavailable' };
       }
       const profile = await transaction.gameProfile.findUnique({
         where: { key: settings.defaultGameProfileKey },
@@ -50,10 +77,7 @@ export class QueueService {
         },
       });
       if (profile === null) {
-        throw new PublicError(
-          'QUEUE_PROFILE_MISMATCH',
-          'Queue size must match the selected game profile capacity.',
-        );
+        return { status: 'queue_unavailable' };
       }
       try {
         const parsedProfile = gameProfileSchema.parse({
@@ -62,23 +86,17 @@ export class QueueService {
         });
         assertCompetitiveBo1FiveVFive(parsedProfile);
       } catch {
-        throw new PublicError(
-          'QUEUE_PROFILE_MISMATCH',
-          'Queue size must match the selected game profile capacity.',
-        );
+        return { status: 'queue_unavailable' };
       }
       if (settings.queueSize !== profile.playersPerTeam * 2) {
-        throw new PublicError(
-          'QUEUE_PROFILE_MISMATCH',
-          'Queue size must match the selected game profile capacity.',
-        );
+        return { status: 'queue_unavailable' };
       }
       const activeMatch = await transaction.match.findFirst({
         where: { guildId: command.guildId, guildSlotActive: true },
         select: { id: true },
       });
       if (activeMatch !== null) {
-        throw new PublicError('QUEUE_LOCKED', 'A 10man is already being formed or played.');
+        return { status: 'active_match', matchId: activeMatch.id };
       }
 
       const party = await transaction.tenManPartyMember.findUnique({
@@ -90,23 +108,23 @@ export class QueueService {
         },
       });
       if (party !== null && party.party.guildId !== command.guildId) {
-        throw new PublicError('PARTY_GUILD_MISMATCH', 'That party belongs to a different guild.');
+        return { status: 'party_guild_mismatch' };
       }
       if (party !== null && party.party.leaderDiscordUserId !== command.discordUserId) {
-        throw new PublicError('PARTY_FORBIDDEN', 'Only the party leader can queue the party.');
+        return { status: 'party_forbidden' };
       }
       if (party !== null && !settings.partyEnabled) {
-        throw new PublicError('PARTIES_DISABLED', 'Parties are disabled for this queue.');
+        return { status: 'parties_disabled' };
       }
 
       const memberIds =
         party === null
           ? [command.discordUserId]
           : party.party.members.map((member) => member.discordUserId);
-      const [identities, activeBan, existingEntries] = await Promise.all([
+      const [identities, activeBan, existingEntries, currentQueue] = await Promise.all([
         transaction.steamIdentity.findMany({
           where: { discordUserId: { in: memberIds }, invalidatedAt: null },
-          orderBy: { verifiedAt: 'desc' },
+          orderBy: { assignedAt: 'desc' },
         }),
         transaction.tenManQueueBan.findFirst({
           where: {
@@ -120,37 +138,40 @@ export class QueueService {
           where: { guildId: command.guildId, discordUserId: { in: memberIds } },
           select: { discordUserId: true },
         }),
+        transaction.tenManQueue.findUnique({
+          where: { guildId: command.guildId },
+          include: { entries: true },
+        }),
       ]);
+      const queueSize = settings.queueSize;
+      const playersInQueue = currentQueue?.entries.length ?? 0;
+
       const identitiesByUser = new Map<string, string>();
       for (const identity of identities) {
         if (!identitiesByUser.has(identity.discordUserId))
           identitiesByUser.set(identity.discordUserId, identity.steamId64);
       }
       if (memberIds.some((discordUserId) => !identitiesByUser.has(discordUserId))) {
-        throw new PublicError(
-          'STEAM_REQUIRED',
-          'Every party member needs a verified Steam account before the party can queue.',
-        );
+        return { status: 'missing_steam', memberCount: memberIds.length };
       }
-      if (activeBan !== null)
-        throw new PublicError('QUEUE_BANNED', 'A party member is banned from this queue.');
+      if (activeBan !== null) {
+        return {
+          status: 'queue_banned',
+          expiresAt: activeBan.expiresAt,
+          reason: activeBan.reason,
+        };
+      }
       if (existingEntries.length > 0) {
         if (party !== null && existingEntries.length !== memberIds.length) {
-          throw new PublicError(
-            'PARTY_PARTIALLY_QUEUED',
-            'This party has inconsistent queue entries and cannot be changed automatically.',
-          );
+          return { status: 'party_partially_queued' };
         }
-        throw new PublicError('ALREADY_QUEUED', 'You are already in this queue.');
+        return { status: 'already_queued', playersInQueue, queueSize };
       }
       const steamIds = memberIds.map(
         (discordUserId) => identitiesByUser.get(discordUserId) as string,
       );
       if (new Set(steamIds).size !== steamIds.length) {
-        throw new PublicError(
-          'PARTY_DUPLICATE_STEAM',
-          'Party members must have distinct Steam accounts.',
-        );
+        return { status: 'party_duplicate_steam' };
       }
 
       const candidates: QueueCandidate[] =
@@ -169,6 +190,7 @@ export class QueueService {
                   ? command.displayName
                   : member.user.displayName,
               steamId64: identitiesByUser.get(member.discordUserId) as string,
+              partyId: party.partyId,
             }));
       await transaction.user.upsert({
         where: { discordUserId: command.discordUserId },
@@ -180,12 +202,15 @@ export class QueueService {
         update: {},
         create: { guildId: command.guildId },
       });
-      if (queue.status !== 'OPEN') throw new PublicError('QUEUE_LOCKED', 'The queue is locked.');
+      if (queue.status !== 'OPEN') {
+        return { status: 'active_match', matchId: '' };
+      }
       const entryCount = await transaction.tenManQueueEntry.count({
         where: { guildId: command.guildId },
       });
-      if (entryCount + candidates.length > settings.queueSize)
-        throw new PublicError('QUEUE_FULL', 'The queue is full.');
+      if (entryCount + candidates.length > settings.queueSize) {
+        return { status: 'queue_full' };
+      }
       try {
         await transaction.tenManQueueEntry.createMany({
           data: candidates.map((candidate) => ({
@@ -193,12 +218,12 @@ export class QueueService {
             discordUserId: candidate.discordUserId,
             steamId64: candidate.steamId64,
             displayNameSnapshot: candidate.displayName,
-            partyId: party?.partyId ?? null,
+            partyId: candidate.partyId ?? null,
           })),
         });
       } catch (error) {
         if (isUniqueConstraint(error)) {
-          throw new PublicError('ALREADY_QUEUED', 'You are already in this queue.');
+          return { status: 'already_queued', playersInQueue, queueSize };
         }
         throw error;
       }
@@ -229,12 +254,21 @@ export class QueueService {
           },
         },
       });
-      return matchId === undefined ? {} : { promotedMatchId: matchId };
+      return {
+        status: 'joined',
+        playersInQueue: entryCount + candidates.length,
+        queueSize,
+        promotedMatchId: matchId,
+      };
     });
   }
 
-  public async leave(guildId: string, discordUserId: string, correlationId: string): Promise<void> {
-    await this.prisma.$transaction(async (transaction) => {
+  public async leave(
+    guildId: string,
+    discordUserId: string,
+    correlationId: string,
+  ): Promise<QueueLeaveResult> {
+    return this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${guildId}, 0))`;
       const entry = await transaction.tenManQueueEntry.findUnique({
         where: { guildId_discordUserId: { guildId, discordUserId } },
@@ -261,7 +295,22 @@ export class QueueService {
           metadata: { partyId: entry.partyId, memberCount: removed.count },
         },
       });
+      return { removedCount: removed.count, wasParty: entry.partyId !== null };
     });
+  }
+
+  public async getStatus(guildId: string): Promise<QueueStatus> {
+    const [settings, queue] = await Promise.all([
+      this.prisma.tenManSettings.findUnique({ where: { guildId }, select: { queueSize: true } }),
+      this.prisma.tenManQueue.findUnique({
+        where: { guildId },
+        include: { entries: { select: { discordUserId: true } } },
+      }),
+    ]);
+    return {
+      queueSize: settings?.queueSize ?? 10,
+      playersInQueue: queue?.entries.length ?? 0,
+    };
   }
 
   private async promoteIfFull(
@@ -298,6 +347,7 @@ export class QueueService {
             discordUserId: entry.discordUserId,
             steamId64: entry.steamId64,
             displayNameSnapshot: entry.displayNameSnapshot,
+            partyId: entry.partyId ?? null,
           })),
         },
       },
@@ -348,14 +398,10 @@ async function queuePanelRefresh(
     : never,
   guildId: string,
 ): Promise<void> {
-  await transaction.job.upsert({
-    where: { idempotencyKey: `queue-panel:${guildId}` },
-    update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-    create: {
-      type: 'QUEUE_PANEL_REFRESH',
-      idempotencyKey: `queue-panel:${guildId}`,
-      payload: { guildId },
-    },
+  await scheduleJob(transaction, {
+    type: 'QUEUE_PANEL_REFRESH',
+    idempotencyKey: `queue-panel:${guildId}`,
+    payload: { guildId },
   });
 }
 

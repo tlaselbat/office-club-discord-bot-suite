@@ -111,8 +111,8 @@ Confirm the recurring job is `PENDING` with a future `run_at` after each success
 - Inspect match cleanup status and the `CLEANUP_MATCH` job's attempts and `last_error`.
 - Correct the underlying problem, reset cleanup work to `PENDING`, and confirm completion releases the guild slot.
 
-## Steam linking or replacement fails
+## Steam assignment fails
 
-- `PUBLIC_BASE_URL` must exactly match the HTTPS origin used to construct the OpenID realm and return URL.
-- Sessions are single-use and expire after ten minutes; start again with `/steam register` or `/steam replace`.
-- Replacement is intentionally blocked while the existing identity is protected by an active locked/live match.
+- Accepts a SteamID64, `steamcommunity.com` profile URL, or `steamcommunity.com/id/<vanity>` URL; vanity resolution requires `STEAM_API_KEY`.
+- Assignment is intentionally blocked while the user is in the queue or protected by an active locked/live match.
+- A Steam ID already assigned to another Discord user opens an assignment dispute; staff resolve it with `/match admin steam-disputes` and `/match admin resolve-steam-dispute`.

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
 import { schedulePhaseTimeout } from './phase-timeout-job.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 import { assertSupportedFormationPolicy } from './formation-policy.js';
 
 export class VetoService {
@@ -80,15 +81,11 @@ export class VetoService {
           correlationId,
         );
       }
-      await transaction.job.upsert({
-        where: { idempotencyKey: `match-dashboard:${matchId}` },
-        update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-        create: {
-          matchId,
-          type: 'MATCH_DASHBOARD_REFRESH',
-          idempotencyKey: `match-dashboard:${matchId}`,
-          payload: { matchId },
-        },
+      await scheduleJob(transaction, {
+        type: 'MATCH_DASHBOARD_REFRESH',
+        idempotencyKey: `match-dashboard:${matchId}`,
+        matchId,
+        payload: { matchId },
       });
       if (complete) {
         await transaction.matchStateTransition.create({

@@ -17,6 +17,7 @@ import { VoiceActivityService } from './services/voice-activity-service.js';
 import { TagLoyaltyService } from './services/tag-loyalty-service.js';
 import type { JobHandler, LeasedJob } from '../../jobs/worker.js';
 import { buildRewardPageId, parseRewardPageId } from './pagination.js';
+import { scheduleJob } from '../../database/schedule-job.js';
 
 export interface RewardsModuleDependencies {
   prisma: PrismaClient;
@@ -83,24 +84,16 @@ export function createRewardsModule(dependencies?: RewardsModuleDependencies): S
                 ]),
           ]),
           start: async () => {
-            await voiceRuntime.prisma.job.upsert({
-              where: { idempotencyKey: 'rewards:voice-accrual' },
-              update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-              create: {
-                type: 'REWARDS_VOICE_ACCRUAL',
-                idempotencyKey: 'rewards:voice-accrual',
-                payload: {},
-              },
+            await scheduleJob(voiceRuntime.prisma, {
+              type: 'REWARDS_VOICE_ACCRUAL',
+              idempotencyKey: 'rewards:voice-accrual',
+              payload: {},
             });
             if (tagRuntime !== undefined) {
-              await voiceRuntime.prisma.job.upsert({
-                where: { idempotencyKey: 'rewards:tag-reconcile' },
-                update: { status: 'PENDING', runAt: new Date(), attempts: 0, lastError: null },
-                create: {
-                  type: 'REWARDS_TAG_RECONCILE',
-                  idempotencyKey: 'rewards:tag-reconcile',
-                  payload: {},
-                },
+              await scheduleJob(voiceRuntime.prisma, {
+                type: 'REWARDS_TAG_RECONCILE',
+                idempotencyKey: 'rewards:tag-reconcile',
+                payload: {},
               });
             }
             const settings = await voiceRuntime.prisma.rewardSettings.findMany({
@@ -137,7 +130,7 @@ export function createRewardsModule(dependencies?: RewardsModuleDependencies): S
                 queries,
                 dependencies?.componentSigningSecret,
               );
-            } else {
+            } else if (interaction.isMessageComponent()) {
               await handleLeaderboardComponent(
                 interaction,
                 queries,

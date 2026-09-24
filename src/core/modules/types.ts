@@ -1,4 +1,8 @@
-import type { ChatInputCommandInteraction, MessageComponentInteraction } from 'discord.js';
+import type {
+  ChatInputCommandInteraction,
+  MessageComponentInteraction,
+  ModalSubmitInteraction,
+} from 'discord.js';
 import type { JobHandler } from '../../jobs/worker.js';
 
 export interface ApplicationCommand {
@@ -6,7 +10,7 @@ export interface ApplicationCommand {
 }
 
 export interface ModuleInteractionContext {
-  interaction: ChatInputCommandInteraction | MessageComponentInteraction;
+  interaction: ChatInputCommandInteraction | MessageComponentInteraction | ModalSubmitInteraction;
 }
 
 export interface SuiteModule {
