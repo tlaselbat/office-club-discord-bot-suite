@@ -503,6 +503,8 @@ async function handleCommand(
 
   if (interaction.commandName === '10man-config') {
     if (subcommand === 'status') {
+      const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
+      assertAuthorized('CONFIGURE_GUILD', adminActor);
       const settings = await dependencies.prisma.tenManSettings.findUnique({
         where: { guildId: interaction.guildId },
       });

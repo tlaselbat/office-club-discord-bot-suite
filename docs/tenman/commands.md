@@ -17,6 +17,12 @@ administrator); Discord command registration is not relied on for access
 control. Components re-verify the actor, guild, match version, phase
 generation, and expiry before mutating.
 
+No command sets `default_member_permissions`: `/10man-admin` and
+`/10man-config` stay visible in the picker, and unauthorized invocations fail
+at the backend boundary. Discord's default permission bits cannot express the
+configured moderator/administrator role IDs stored in `TenManSettings`, so
+hiding these commands would lock out legitimate staff.
+
 ## Player commands
 
 | Command                   | Result                                                           |
@@ -53,7 +59,7 @@ propagation removes them from Discord clients within roughly an hour of
 registration.
 
 | Legacy command                        | Now                                                     |
-| ------------------------------------- | ------------------------------------------------------- | --- | ----------------- |
+| ------------------------------------- | ------------------------------------------------------- |
 | `/10man queue`                        | `/10man-admin queue-panel`                              |
 | `/10man hub`                          | `/10man hub` (unchanged)                                |
 | `/10man status`                       | `/10man hub` (derives state)                            |
@@ -75,7 +81,7 @@ registration.
 | `/match admin resolve-result-dispute` | `/10man-admin disputes` → Reverse/Reject + reason modal |
 | `/match admin steam-disputes`         | `/10man-admin disputes`                                 |
 | `/match admin resolve-steam-dispute`  | `/10man-admin disputes` → Resolve/Reject                |
-| `/match admin setup                   | configure                                               | …`  | `/10man-config …` |
+| `/match admin setup/configure/…`      | `/10man-config …`                                       |
 | `/player stats`                       | `/10man stats`                                          |
 | `/player matches`                     | `/10man history`                                        |
 | `/party create`                       | `/10man party` → Create Party                           |
