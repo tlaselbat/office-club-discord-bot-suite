@@ -27,9 +27,9 @@ export class QueuePanelService {
       queue.status === 'OPEN'
         ? null
         : await this.prisma.match.findFirst({
-          where: { guildId, guildSlotActive: true },
-          select: { state: true },
-        });
+            where: { guildId, guildSlotActive: true },
+            select: { state: true },
+          });
     const payload = renderQueuePanel(
       {
         guildId,

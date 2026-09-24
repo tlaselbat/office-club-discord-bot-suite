@@ -157,12 +157,12 @@ export class QueueService {
             ? [command.displayName]
             : []
           : party.party.members
-            .filter((member) => !identitiesByUser.has(member.discordUserId))
-            .map((member) =>
-              member.discordUserId === command.discordUserId
-                ? command.displayName
-                : member.user.displayName,
-            );
+              .filter((member) => !identitiesByUser.has(member.discordUserId))
+              .map((member) =>
+                member.discordUserId === command.discordUserId
+                  ? command.displayName
+                  : member.user.displayName,
+              );
       if (missingDisplayNames.length > 0) {
         return { status: 'missing_steam', memberCount: memberIds.length, missingDisplayNames };
       }

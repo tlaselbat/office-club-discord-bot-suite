@@ -25,14 +25,14 @@ hiding these commands would lock out legitimate staff.
 
 ## Player commands
 
-| Command                   | Result                                                           |
-| ------------------------- | ---------------------------------------------------------------- |
+| Command                   | Result                                                               |
+| ------------------------- | -------------------------------------------------------------------- |
 | `/10man hub`              | Lobby Status panel: queue, ready check, match, party, history, stats |
-| `/10man account`          | Steam account panel: assign, review, change, remove, dispute     |
-| `/10man history [player]` | Recent finished matches; staff also see rollback controls        |
-| `/10man stats [player]`   | Rating and record                                                |
-| `/10man party`            | Party panel: create, invite, accept, leave, kick, disband        |
-| `/10man alerts <enabled>` | Opt in/out of queue-fill DM alerts                               |
+| `/10man account`          | Steam account panel: assign, review, change, remove, dispute         |
+| `/10man history [player]` | Recent finished matches; staff also see rollback controls            |
+| `/10man stats [player]`   | Rating and record                                                    |
+| `/10man party`            | Party panel: create, invite, accept, leave, kick, disband            |
+| `/10man alerts <enabled>` | Opt in/out of queue-fill DM alerts                                   |
 
 ## Staff commands (`/10man-admin`)
 

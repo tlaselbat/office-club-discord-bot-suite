@@ -17,11 +17,7 @@ export function joinQueueButton(
     .setStyle(ButtonStyle.Success);
 }
 
-export function leaveQueueButton(
-  guildId: string,
-  version: number,
-  secret: string,
-): ButtonBuilder {
+export function leaveQueueButton(guildId: string, version: number, secret: string): ButtonBuilder {
   return new ButtonBuilder()
     .setCustomId(createQueueCustomId({ action: 'LEAVE', guildId, version }, secret))
     .setLabel('Leave Queue')
@@ -35,9 +31,7 @@ export function myTenManButton(
   label = 'Lobby Status',
 ): ButtonBuilder {
   return new ButtonBuilder()
-    .setCustomId(
-      createPlayerHubCustomId({ action: 'HUB', guildId, actorDiscordUserId }, secret),
-    )
+    .setCustomId(createPlayerHubCustomId({ action: 'HUB', guildId, actorDiscordUserId }, secret))
     .setLabel(label)
     .setStyle(ButtonStyle.Primary);
 }
@@ -54,11 +48,7 @@ export function steamAccountButton(guildId: string, secret: string): ButtonBuild
     .setStyle(ButtonStyle.Secondary);
 }
 
-export function howItWorksButton(
-  guildId: string,
-  version: number,
-  secret: string,
-): ButtonBuilder {
+export function howItWorksButton(guildId: string, version: number, secret: string): ButtonBuilder {
   return new ButtonBuilder()
     .setCustomId(createQueueCustomId({ action: 'HOW_IT_WORKS', guildId, version }, secret))
     .setLabel('How It Works')
