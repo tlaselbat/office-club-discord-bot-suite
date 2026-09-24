@@ -1,4 +1,7 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   EmbedBuilder,
   type Client,
   type MessageComponentInteraction,
@@ -24,7 +27,13 @@ import { MatchResultDisputeService } from '../services/match-result-dispute-serv
 import { QueueAlertService } from '../services/queue-alert-service.js';
 import { adminGeneration, parseAdminCustomId } from './admin-custom-id.js';
 import { parseMatchCustomId } from './match-custom-id.js';
-import { parseQueueCustomId } from './queue-custom-id.js';
+import { createQueueCustomId, parseQueueCustomId } from './queue-custom-id.js';
+import {
+  joinQueueButton,
+  leaveQueueButton,
+  myTenManButton,
+  queueRefreshButton,
+} from './queue-components.js';
 import { parseMatchAdminCustomId } from './match-admin-custom-id.js';
 import { parseMatchOpsCustomId } from './match-ops-custom-id.js';
 import { createQueueAdminCustomId, parseQueueAdminCustomId } from './queue-admin-custom-id.js';
@@ -622,23 +631,40 @@ export class TenManComponentInteractionRouter {
     if (payload.guildId !== interaction.guildId)
       throw new Error('Queue does not belong to this guild');
 
-    const queue = await this.options.prisma.tenManQueue.findUnique({
-      where: { guildId: payload.guildId },
-    });
-    if (queue === null || queue.version !== payload.version) {
-      await this.renderStaleRefresh(interaction, payload.guildId);
+    // Non-mutating controls stay usable on a stale panel.
+    if (payload.action === 'HOW_IT_WORKS') {
+      await interaction.reply({ ephemeral: true, content: howItWorksText() });
       return;
     }
-
     if (payload.action === 'REFRESH') {
       await interaction.deferReply({ ephemeral: true });
       await this.queuePanelService.reconcile(payload.guildId);
-      await interaction.editReply({ content: 'Queue panel refreshed.' });
+      const status = await this.playerStatusService.getStatus(
+        payload.guildId,
+        interaction.user.id,
+      );
+      await interaction.editReply({
+        content:
+          status.kind === 'READY_CHECK'
+            ? "Queue status refreshed. You're now in a ready check."
+            : status.kind === 'MATCH_ACTIVE'
+              ? 'Queue status refreshed. Your match is in progress.'
+              : 'Queue status refreshed.',
+        components: [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            myTenManButton(payload.guildId, interaction.user.id, this.options.componentSigningSecret),
+          ),
+        ],
+      });
       return;
     }
 
-    if (payload.action === 'HOW_IT_WORKS') {
-      await interaction.reply({ ephemeral: true, content: howItWorksText() });
+    const queue = await this.options.prisma.tenManQueue.findUnique({
+      where: { guildId: payload.guildId },
+      include: { entries: { orderBy: { joinedAt: 'asc' } } },
+    });
+    if (queue === null || queue.version !== payload.version) {
+      await this.renderStaleRefresh(interaction, payload.guildId, queue?.version ?? null);
       return;
     }
 
@@ -662,8 +688,69 @@ export class TenManComponentInteractionRouter {
       return;
     }
 
+    if (payload.action === 'LEAVE') {
+      const entry = queue.entries.find(
+        (candidate) => candidate.discordUserId === interaction.user.id,
+      );
+      if (entry !== undefined && entry.partyId !== null) {
+        const partySize = queue.entries.filter(
+          (candidate) => candidate.partyId === entry.partyId,
+        ).length;
+        await interaction.editReply({
+          content: [
+            '**Remove your party from the queue?**',
+            `This will remove all ${String(partySize)} members of your party from the current queue.`,
+          ].join('\n'),
+          components: [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  createQueueCustomId(
+                    { action: 'LEAVE_CONFIRM', guildId: payload.guildId, version: queue.version },
+                    this.options.componentSigningSecret,
+                  ),
+                )
+                .setLabel('Remove Party')
+                .setStyle(ButtonStyle.Danger),
+              myTenManButton(
+                payload.guildId,
+                interaction.user.id,
+                this.options.componentSigningSecret,
+                'Cancel',
+              ),
+            ),
+          ],
+        });
+        return;
+      }
+      await this.queueService.leave(payload.guildId, interaction.user.id, interaction.id);
+      await interaction.editReply(await this.buildLeftQueueReply(payload.guildId, false));
+      return;
+    }
+
     await this.queueService.leave(payload.guildId, interaction.user.id, interaction.id);
-    await interaction.editReply({ content: 'You left the queue.' });
+    await interaction.editReply(await this.buildLeftQueueReply(payload.guildId, true));
+  }
+
+  private async buildLeftQueueReply(
+    guildId: string,
+    wasParty: boolean,
+  ): Promise<{ content: string; components: ActionRowBuilder<ButtonBuilder>[] }> {
+    const queue = await this.options.prisma.tenManQueue.findUnique({
+      where: { guildId },
+      select: { version: true },
+    });
+    return {
+      content: wasParty ? 'Your party was removed from the queue.' : 'You left the queue.',
+      components:
+        queue === null
+          ? []
+          : [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              joinQueueButton(guildId, queue.version, this.options.componentSigningSecret, 'Join Queue Again'),
+            ),
+          ],
+    };
   }
 
   private async renderQueueJoinResponse(
@@ -671,24 +758,78 @@ export class TenManComponentInteractionRouter {
     guildId: string,
     result: Awaited<ReturnType<QueueService['join']>>,
   ): Promise<void> {
+    const secret = this.options.componentSigningSecret;
+    const queue = await this.options.prisma.tenManQueue.findUnique({
+      where: { guildId },
+      include: { entries: { orderBy: { joinedAt: 'asc' } } },
+    });
+    const version = queue?.version ?? 0;
+    const hubAndLeave = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        myTenManButton(guildId, interaction.user.id, secret),
+        leaveQueueButton(guildId, version, secret),
+      ),
+    ];
+    const hubAndRefresh = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        myTenManButton(guildId, interaction.user.id, secret),
+        queueRefreshButton(guildId, version, secret),
+      ),
+    ];
     switch (result.status) {
-      case 'joined':
+      case 'joined': {
+        const needed = result.queueSize - result.playersInQueue;
         await interaction.editReply({
           content:
             result.promotedMatchId === undefined
-              ? `Joined the queue. **${String(result.playersInQueue)} / ${String(result.queueSize)}** players.`
-              : 'Queue is full; ready check has started.',
+              ? [
+                "**You're in the queue**",
+                `Players: ${String(result.playersInQueue)} / ${String(result.queueSize)}`,
+                `Needed: ${String(needed)}`,
+                `You'll receive a ready check when the queue reaches ${String(result.queueSize)} players.`,
+              ].join('\n')
+              : '**Queue full — ready check has started.** Watch for the ready prompt.',
+          components:
+            result.promotedMatchId === undefined
+              ? hubAndLeave
+              : [
+                new ActionRowBuilder<ButtonBuilder>().addComponents(
+                  myTenManButton(guildId, interaction.user.id, secret),
+                ),
+              ],
         });
         return;
-      case 'already_queued':
+      }
+      case 'already_queued': {
+        const position =
+          (queue?.entries.findIndex(
+            (entry) => entry.discordUserId === interaction.user.id,
+          ) ?? -1) + 1;
         await interaction.editReply({
-          content: `You are already in the queue. **${String(result.playersInQueue)} / ${String(result.queueSize)}** players.`,
+          content: [
+            "**You're already in the queue**",
+            position > 0 ? `Position: ${String(position)}` : null,
+            `Players: ${String(result.playersInQueue)} / ${String(result.queueSize)}`,
+          ]
+            .filter((line): line is string => line !== null)
+            .join('\n'),
+          components: hubAndLeave,
         });
         return;
+      }
       case 'missing_steam':
         await interaction.editReply({
           content:
-            'You need an assigned Steam account before joining. Use the Steam Account button.',
+            result.memberCount > 1
+              ? [
+                "**Party can't join yet**",
+                'Every party member must have a Steam account assigned before the party can queue.',
+                `Still needed: ${result.missingDisplayNames.join(', ')}`,
+              ].join('\n')
+              : [
+                '**Steam account needed**',
+                'Assign the Steam account you plan to use before joining the queue.',
+              ].join('\n'),
           components: buildSteamAccountButton(
             guildId,
             interaction.user.id,
@@ -698,20 +839,35 @@ export class TenManComponentInteractionRouter {
         return;
       case 'queue_banned':
         await interaction.editReply({
-          content:
+          content: [
+            "**You can't join this queue right now**",
             result.expiresAt === null
-              ? `You are banned from the queue: ${result.reason}`
-              : `You are banned from the queue until <t:${String(Math.floor(result.expiresAt.getTime() / 1000))}:f>: ${result.reason}`,
+              ? null
+              : `Available again: <t:${String(Math.floor(result.expiresAt.getTime() / 1000))}:f>`,
+            `Reason: ${result.reason}`,
+          ]
+            .filter((line): line is string => line !== null)
+            .join('\n'),
         });
         return;
       case 'queue_unavailable':
-        await interaction.editReply({ content: 'The queue is not available right now.' });
+      case 'active_match':
+        await interaction.editReply({
+          content: [
+            '**Queue unavailable**',
+            'A 10man is currently being formed or played. The queue will reopen automatically afterward.',
+          ].join('\n'),
+          components: hubAndRefresh,
+        });
         return;
       case 'queue_full':
-        await interaction.editReply({ content: 'The queue is full. Try again when it reopens.' });
-        return;
-      case 'active_match':
-        await interaction.editReply({ content: 'A match is already being formed or played.' });
+        await interaction.editReply({
+          content: [
+            '**Queue just filled**',
+            'Another player filled the final slot before your request completed.',
+          ].join('\n'),
+          components: hubAndRefresh,
+        });
         return;
       case 'parties_disabled':
         await interaction.editReply({ content: 'Parties are disabled for this queue.' });
@@ -1050,28 +1206,25 @@ export class TenManComponentInteractionRouter {
   private async renderStaleRefresh(
     interaction: MessageComponentInteraction,
     guildId: string,
+    currentVersion: number | null,
   ): Promise<void> {
-    const refreshId = createPlayerHubCustomId(
-      { action: 'HUB', guildId, actorDiscordUserId: interaction.user.id },
-      this.options.componentSigningSecret,
-    );
+    const buttons = [
+      myTenManButton(guildId, interaction.user.id, this.options.componentSigningSecret),
+    ];
+    if (currentVersion !== null) {
+      buttons.unshift(
+        queueRefreshButton(guildId, currentVersion, this.options.componentSigningSecret),
+      );
+    }
     await interaction.reply({
       ephemeral: true,
-      content: 'This control is out of date. Refresh to see the current state.',
-      components: [
-        {
-          type: 1,
-          components: [
-            {
-              type: 2,
-              style: 2,
-              custom_id: refreshId,
-              label: 'Refresh My 10man',
-            },
-          ],
-        },
-      ],
+      content: [
+        '**This queue panel was updated**',
+        'The queue changed after this button was created.',
+      ].join('\n'),
+      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)],
     });
+    await this.queuePanelService.reconcile(guildId).catch(() => undefined);
   }
 
   private async handleMatchAdmin(interaction: MessageComponentInteraction): Promise<void> {
@@ -1232,15 +1385,15 @@ export class TenManComponentInteractionRouter {
 
 function howItWorksText(): string {
   return [
-    '**How 10man works**',
+    '**How 10mans work**',
     '',
-    '1. Press **Steam Account** and paste your Steam ID64/profile URL.',
-    '2. Press **Join Queue** when the queue is open.',
-    '3. When 10 players are queued, you get a ready check with a deadline.',
-    '4. After ready check, captains are picked and the map is vetoed.',
-    '5. The bot provisions a private CS2 server and moves you to team voice channels.',
-    '6. Play the match; the bot records the result automatically.',
-    '7. Queue again or report an issue if something went wrong.',
+    '1. Assign the Steam account you plan to use.',
+    '2. Join the queue.',
+    '3. When 10 players join, everyone receives a ready check.',
+    '4. Teams are formed.',
+    '5. Captains select/ban maps when required.',
+    '6. The match server is prepared automatically.',
+    '7. Open **My Match Info** when the server is ready.',
   ].join('\n');
 }
 

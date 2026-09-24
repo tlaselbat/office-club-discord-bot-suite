@@ -1,11 +1,15 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import { buildSteamAccountButton } from './steam-account-components.js';
+import {
+  buildAssignSteamAccountButton,
+  buildSteamAccountButton,
+} from './steam-account-components.js';
 import { createPlayerHubCustomId } from './player-hub-custom-id.js';
 import { createQueueCustomId } from './queue-custom-id.js';
 import { createMatchCustomId } from './match-custom-id.js';
 import { createPartyCustomId } from './party-custom-id.js';
 import { createResultDisputeCustomId } from './match-result-dispute-custom-id.js';
 import type { PlayerStatus } from '../services/player-status-service.js';
+import { matchPhaseLabel } from './presentation.js';
 
 export function buildPlayerHubResponse(
   status: PlayerStatus,
@@ -16,7 +20,7 @@ export function buildPlayerHubResponse(
   matchPhaseGeneration: number,
   secret: string,
 ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
-  const base = new EmbedBuilder().setTitle('Your 10man Status').setColor(0x5865f2);
+  const base = new EmbedBuilder().setTitle('Your 10man').setColor(0x5865f2);
   const nav = navRow(guildId, discordUserId, secret);
 
   switch (status.kind) {
@@ -33,7 +37,7 @@ export function buildPlayerHubResponse(
             ),
         ],
         components: [
-          ...buildSteamAccountButton(guildId, discordUserId, secret),
+          ...buildAssignSteamAccountButton(guildId, discordUserId, secret),
           new ActionRowBuilder<ButtonBuilder>().addComponents(
             howItWorksButton(guildId, discordUserId, queueVersion, secret),
             refreshButton(guildId, discordUserId, secret),
@@ -81,9 +85,10 @@ export function buildPlayerHubResponse(
         embeds: [
           base
             .setDescription(
-              'You are in the queue. You can leave at any time until the ready check starts.',
+              `You are in the queue. Waiting for ${String(Math.max(0, status.queueSize - status.playersInQueue))} more player${status.queueSize - status.playersInQueue === 1 ? '' : 's'} — you can leave any time before the ready check starts.`,
             )
             .addFields(
+              { name: 'Status', value: 'In queue', inline: true },
               { name: 'Position', value: String(status.position), inline: true },
               {
                 name: 'Players',
@@ -161,7 +166,7 @@ export function buildPlayerHubResponse(
           base
             .setDescription('You have an active 10man match.')
             .addFields(
-              { name: 'State', value: plainStateName(status.state), inline: true },
+              { name: 'Phase', value: matchPhaseLabel(status.state), inline: true },
               { name: 'Map', value: status.selectedMap ?? 'Pending', inline: true },
             ),
         ],
@@ -231,7 +236,13 @@ export function buildPlayerHubResponse(
         );
       }
       return {
-        embeds: [base.setDescription(`Match ended with state: ${plainStateName(status.state)}.`)],
+        embeds: [
+          base.setDescription(
+            status.state === 'FINISHED'
+              ? 'Your previous match has ended. Cleanup is finishing before the queue reopens.'
+              : `Match ended: ${matchPhaseLabel(status.state)}.`,
+          ),
+        ],
         components: [
           row,
           new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -288,31 +299,4 @@ function refreshButton(guildId: string, actorDiscordUserId: string, secret: stri
     .setCustomId(createPlayerHubCustomId({ action: 'HUB', guildId, actorDiscordUserId }, secret))
     .setLabel('Refresh')
     .setStyle(ButtonStyle.Secondary);
-}
-
-function plainStateName(state: string): string {
-  switch (state) {
-    case 'SERVER_PROVISIONING':
-      return 'Preparing server';
-    case 'SERVER_BOOTING':
-      return 'Starting CS2 server';
-    case 'SERVER_READY':
-      return 'Server nearly ready';
-    case 'MATCH_LOADED':
-      return 'Server ready';
-    case 'WARMUP':
-      return 'Warmup';
-    case 'LIVE':
-      return 'Match live';
-    case 'PAUSED':
-      return 'Match paused';
-    case 'FINISHED':
-      return 'Match complete';
-    case 'CANCELED':
-      return 'Match canceled';
-    case 'FAILED':
-      return 'Match failed';
-    default:
-      return state.replaceAll('_', ' ').toLowerCase();
-  }
 }

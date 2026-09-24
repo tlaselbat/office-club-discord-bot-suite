@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
 const payloadSchema = z.object({
-  action: z.enum(['JOIN', 'LEAVE', 'HOW_IT_WORKS', 'REFRESH']),
+  action: z.enum(['JOIN', 'LEAVE', 'LEAVE_CONFIRM', 'HOW_IT_WORKS', 'REFRESH']),
   guildId: z.string().regex(/^\d{17,20}$/),
   version: z.number().int().nonnegative(),
 });

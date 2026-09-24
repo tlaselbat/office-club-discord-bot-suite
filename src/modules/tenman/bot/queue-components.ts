@@ -3,6 +3,79 @@ import { createQueueCustomId } from './queue-custom-id.js';
 import { createPlayerHubCustomId } from './player-hub-custom-id.js';
 import { createSteamAccountCustomId } from './steam-account-custom-id.js';
 
+const PANEL_ACTOR_PLACEHOLDER = '00000000000000000000';
+
+export function joinQueueButton(
+  guildId: string,
+  version: number,
+  secret: string,
+  label = 'Join Queue',
+): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(createQueueCustomId({ action: 'JOIN', guildId, version }, secret))
+    .setLabel(label)
+    .setStyle(ButtonStyle.Success);
+}
+
+export function leaveQueueButton(
+  guildId: string,
+  version: number,
+  secret: string,
+): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(createQueueCustomId({ action: 'LEAVE', guildId, version }, secret))
+    .setLabel('Leave Queue')
+    .setStyle(ButtonStyle.Danger);
+}
+
+export function myTenManButton(
+  guildId: string,
+  actorDiscordUserId: string,
+  secret: string,
+  label = 'My 10man',
+): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(
+      createPlayerHubCustomId({ action: 'HUB', guildId, actorDiscordUserId }, secret),
+    )
+    .setLabel(label)
+    .setStyle(ButtonStyle.Primary);
+}
+
+export function steamAccountButton(guildId: string, secret: string): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(
+      createSteamAccountCustomId(
+        { action: 'VIEW', guildId, actorDiscordUserId: PANEL_ACTOR_PLACEHOLDER },
+        secret,
+      ),
+    )
+    .setLabel('Steam Account')
+    .setStyle(ButtonStyle.Secondary);
+}
+
+export function howItWorksButton(
+  guildId: string,
+  version: number,
+  secret: string,
+): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(createQueueCustomId({ action: 'HOW_IT_WORKS', guildId, version }, secret))
+    .setLabel('How It Works')
+    .setStyle(ButtonStyle.Secondary);
+}
+
+export function queueRefreshButton(
+  guildId: string,
+  version: number,
+  secret: string,
+): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(createQueueCustomId({ action: 'REFRESH', guildId, version }, secret))
+    .setLabel('Refresh')
+    .setStyle(ButtonStyle.Secondary);
+}
+
 export function buildQueueControls(
   guildId: string,
   version: number,
@@ -10,34 +83,13 @@ export function buildQueueControls(
 ): ActionRowBuilder<ButtonBuilder>[] {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(createQueueCustomId({ action: 'JOIN', guildId, version }, secret))
-        .setLabel('Join Queue')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(
-          createPlayerHubCustomId(
-            { action: 'HUB', guildId, actorDiscordUserId: '00000000000000000000' },
-            secret,
-          ),
-        )
-        .setLabel('My 10man')
-        .setStyle(ButtonStyle.Primary),
+      joinQueueButton(guildId, version, secret),
+      myTenManButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(
-          createSteamAccountCustomId(
-            { action: 'OPEN', guildId, actorDiscordUserId: '00000000000000000000' },
-            secret,
-          ),
-        )
-        .setLabel('Steam Account')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(createQueueCustomId({ action: 'HOW_IT_WORKS', guildId, version }, secret))
-        .setLabel('How It Works')
-        .setStyle(ButtonStyle.Secondary),
+      steamAccountButton(guildId, secret),
+      howItWorksButton(guildId, version, secret),
+      queueRefreshButton(guildId, version, secret),
     ),
   ];
 }
@@ -51,17 +103,15 @@ export function buildLockedQueueControls(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(createQueueCustomId({ action: 'REFRESH', guildId, version }, secret))
-        .setLabel('Refresh')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(
-          createPlayerHubCustomId(
-            { action: 'HUB', guildId, actorDiscordUserId: '00000000000000000000' },
-            secret,
-          ),
-        )
-        .setLabel('My 10man')
-        .setStyle(ButtonStyle.Primary),
+        .setLabel('Queue Locked')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true),
+      myTenManButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+    ),
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      steamAccountButton(guildId, secret),
+      howItWorksButton(guildId, version, secret),
+      queueRefreshButton(guildId, version, secret),
     ),
   ];
 }

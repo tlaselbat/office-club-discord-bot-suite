@@ -18,7 +18,7 @@ export type QueueJoinResult =
       promotedMatchId: string | undefined;
     }
   | { status: 'already_queued'; playersInQueue: number; queueSize: number }
-  | { status: 'missing_steam'; memberCount: number }
+  | { status: 'missing_steam'; memberCount: number; missingDisplayNames: string[] }
   | { status: 'queue_banned'; expiresAt: Date | null; reason: string }
   | { status: 'queue_unavailable' }
   | { status: 'queue_full' }
@@ -151,8 +151,20 @@ export class QueueService {
         if (!identitiesByUser.has(identity.discordUserId))
           identitiesByUser.set(identity.discordUserId, identity.steamId64);
       }
-      if (memberIds.some((discordUserId) => !identitiesByUser.has(discordUserId))) {
-        return { status: 'missing_steam', memberCount: memberIds.length };
+      const missingDisplayNames =
+        party === null
+          ? memberIds.some((discordUserId) => !identitiesByUser.has(discordUserId))
+            ? [command.displayName]
+            : []
+          : party.party.members
+            .filter((member) => !identitiesByUser.has(member.discordUserId))
+            .map((member) =>
+              member.discordUserId === command.discordUserId
+                ? command.displayName
+                : member.user.displayName,
+            );
+      if (missingDisplayNames.length > 0) {
+        return { status: 'missing_steam', memberCount: memberIds.length, missingDisplayNames };
       }
       if (activeBan !== null) {
         return {

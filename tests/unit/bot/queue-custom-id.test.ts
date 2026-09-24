@@ -18,4 +18,13 @@ describe('signed queue component IDs', () => {
     });
     expect(() => parseQueueCustomId(`${id}x`, secret)).toThrow('Invalid queue component');
   });
+
+  it('round trips every supported action', () => {
+    const secret = 'test-secret';
+    for (const action of ['JOIN', 'LEAVE', 'LEAVE_CONFIRM', 'HOW_IT_WORKS', 'REFRESH'] as const) {
+      const id = createQueueCustomId({ action, guildId: '123456789012345678', version: 3 }, secret);
+      expect(parseQueueCustomId(id, secret).action).toBe(action);
+      expect(id.length).toBeLessThanOrEqual(100);
+    }
+  });
 });

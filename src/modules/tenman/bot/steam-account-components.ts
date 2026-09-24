@@ -26,6 +26,23 @@ export function buildSteamAccountButton(
   ];
 }
 
+export function buildAssignSteamAccountButton(
+  guildId: string,
+  actorDiscordUserId: string,
+  secret: string,
+): ActionRowBuilder<ButtonBuilder>[] {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          createSteamAccountCustomId({ action: 'OPEN', guildId, actorDiscordUserId }, secret),
+        )
+        .setLabel('Assign Steam Account')
+        .setStyle(ButtonStyle.Primary),
+    ),
+  ];
+}
+
 export function buildSteamAssignmentModal(customId: string): ModalBuilder {
   return (
     new ModalBuilder()

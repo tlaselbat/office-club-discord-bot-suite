@@ -1,6 +1,6 @@
 import type { Client, TextBasedChannel, TextChannel } from 'discord.js';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
-import { buildLockedQueueControls, buildQueueControls } from '../bot/queue-components.js';
+import { renderQueuePanel } from '../bot/queue-panel-renderer.js';
 
 /** Renders the singleton guild queue without inferring state from Discord. */
 export class QueuePanelService {
@@ -23,7 +23,25 @@ export class QueuePanelService {
         ? null
         : await this.client.channels.fetch(queue.panelChannelId).catch(() => null));
     if (target === null || !target.isTextBased()) return;
-    const payload = this.render(queue, settings.queueSize);
+    const activeMatch =
+      queue.status === 'OPEN'
+        ? null
+        : await this.prisma.match.findFirst({
+          where: { guildId, guildSlotActive: true },
+          select: { state: true },
+        });
+    const payload = renderQueuePanel(
+      {
+        guildId,
+        version: queue.version,
+        queueOpen: queue.status === 'OPEN',
+        queueCount: queue.entries.length,
+        queueCapacity: settings.queueSize,
+        playerDisplayNames: queue.entries.map((entry) => entry.displayNameSnapshot),
+        activeMatchState: activeMatch?.state ?? null,
+      },
+      this.secret,
+    );
     const text = target as TextChannel;
     const existing =
       queue.panelMessageId === null
@@ -36,65 +54,5 @@ export class QueuePanelService {
         data: { panelChannelId: text.id, panelMessageId: message.id },
       });
     } else await existing.edit(payload);
-  }
-
-  private render(
-    queue: {
-      guildId: string;
-      status: string;
-      version: number;
-      entries: { displayNameSnapshot: string }[];
-    },
-    size: number,
-  ) {
-    const locked = queue.status !== 'OPEN';
-    const playersNeeded = Math.max(0, size - queue.entries.length);
-    const names =
-      queue.entries
-        .map((entry, index) => `${String(index + 1)}. ${entry.displayNameSnapshot}`)
-        .join('\n') || 'No players queued.';
-    const openDescription = [
-      'Join a private 5v5 CS2 match.',
-      '',
-      'When 10 players are queued, everyone gets a ready check before teams and the map are selected.',
-      '',
-      `**Queue: ${String(queue.entries.length)} / ${String(size)}**`,
-      playersNeeded === 0
-        ? 'Queue is full — ready check will start when the last player joins.'
-        : `${String(playersNeeded)} more player${playersNeeded === 1 ? '' : 's'} needed.`,
-      '',
-      '**What happens next?**',
-      'Queue → Ready Check → Teams → Map → Server → Match',
-      '',
-      locked ? '' : names,
-    ]
-      .filter(Boolean)
-      .join('\n');
-    return {
-      embeds: [
-        {
-          title: 'CS2 10man',
-          description: locked
-            ? 'A match is currently being formed or played. The queue will reopen when it finishes.'
-            : openDescription,
-          fields: locked
-            ? [
-                {
-                  name: 'Status',
-                  value: 'Temporarily unavailable',
-                },
-              ]
-            : [
-                {
-                  name: 'Status',
-                  value: `Waiting for ${String(playersNeeded)} player${playersNeeded === 1 ? '' : 's'}`,
-                },
-              ],
-        },
-      ],
-      components: locked
-        ? buildLockedQueueControls(queue.guildId, queue.version, this.secret)
-        : buildQueueControls(queue.guildId, queue.version, this.secret),
-    };
   }
 }
