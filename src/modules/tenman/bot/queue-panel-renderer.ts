@@ -1,4 +1,13 @@
-import { ContainerBuilder, MessageFlags, TextDisplayBuilder } from 'discord.js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  AttachmentBuilder,
+  ContainerBuilder,
+  MessageFlags,
+  SectionBuilder,
+  TextDisplayBuilder,
+  ThumbnailBuilder,
+} from 'discord.js';
 import type { ActionRowBuilder, ButtonBuilder } from 'discord.js';
 import { buildLockedQueueControls, buildQueueControls } from './queue-components.js';
 import { playersNeededLabel } from './presentation.js';
@@ -7,6 +16,8 @@ const ACCENT_COLOR = 0x5865f2;
 const TEXT_DISPLAY_LIMIT = 4000;
 const NAME_LIMIT = 48;
 const LIFECYCLE = 'Ready Check → Teams → Map → Server → Match';
+const THUMBNAIL_FILE_NAME = 'office-club-cs2-10man-thumbnail-512.png';
+const THUMBNAIL_ASSET_PATH = resolve(process.cwd(), 'assets', 'tenman', THUMBNAIL_FILE_NAME);
 
 export interface QueuePanelView {
   guildId: string;
@@ -22,13 +33,16 @@ export interface QueuePanelView {
 export interface QueuePanelPayload {
   flags: typeof MessageFlags.IsComponentsV2;
   components: (ContainerBuilder | ActionRowBuilder<ButtonBuilder>)[];
+  files: AttachmentBuilder[];
 }
 
 export function renderQueuePanel(view: QueuePanelView, secret: string): QueuePanelPayload {
-  return view.queueOpen ? renderOpen(view, secret) : renderLocked(view, secret);
+  const attachment = buildThumbnailAttachment();
+  const payload = view.queueOpen ? renderOpen(view, secret) : renderLocked(view, secret);
+  return { ...payload, files: [attachment] };
 }
 
-function renderOpen(view: QueuePanelView, secret: string): QueuePanelPayload {
+function renderOpen(view: QueuePanelView, secret: string): Omit<QueuePanelPayload, 'files'> {
   return {
     flags: MessageFlags.IsComponentsV2,
     components: [
@@ -39,7 +53,7 @@ function renderOpen(view: QueuePanelView, secret: string): QueuePanelPayload {
   };
 }
 
-function renderLocked(view: QueuePanelView, secret: string): QueuePanelPayload {
+function renderLocked(view: QueuePanelView, secret: string): Omit<QueuePanelPayload, 'files'> {
   return {
     flags: MessageFlags.IsComponentsV2,
     components: [
@@ -47,6 +61,21 @@ function renderLocked(view: QueuePanelView, secret: string): QueuePanelPayload {
       ...buildLockedQueueControls(view.guildId, view.version, secret),
     ],
   };
+}
+
+function buildThumbnailAttachment(): AttachmentBuilder {
+  return new AttachmentBuilder(readFileSync(THUMBNAIL_ASSET_PATH), {
+    name: THUMBNAIL_FILE_NAME,
+  });
+}
+
+function buildHeaderSection(): SectionBuilder {
+  return new SectionBuilder()
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('# CS2 10man'),
+      new TextDisplayBuilder().setContent('Private 5v5 CS2 matchmaking.'),
+    )
+    .setThumbnailAccessory(new ThumbnailBuilder().setURL(`attachment://${THUMBNAIL_FILE_NAME}`));
 }
 
 function buildSummaryContainer(view: QueuePanelView): ContainerBuilder {
@@ -58,8 +87,8 @@ function buildSummaryContainer(view: QueuePanelView): ContainerBuilder {
 
   return new ContainerBuilder()
     .setAccentColor(ACCENT_COLOR)
+    .addSectionComponents(buildHeaderSection())
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('# CS2 10man\nPrivate 5v5 CS2 matchmaking.'),
       new TextDisplayBuilder().setContent(queueMetric),
       new TextDisplayBuilder().setContent(`**Next**\n${LIFECYCLE}`),
     );
@@ -97,10 +126,8 @@ function buildLockedSummaryContainer(view: QueuePanelView): ContainerBuilder {
 
   return new ContainerBuilder()
     .setAccentColor(ACCENT_COLOR)
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('# CS2 10man\nPrivate 5v5 CS2 matchmaking.'),
-      new TextDisplayBuilder().setContent(`${heading}\n${subtext}`),
-    );
+    .addSectionComponents(buildHeaderSection())
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`${heading}\n${subtext}`));
 }
 
 function formatRoster(names: string[]): string {

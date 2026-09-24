@@ -23,6 +23,10 @@ function view(overrides: Partial<Parameters<typeof renderQueuePanel>[0]> = {}) {
   };
 }
 
+type JSONMedia = {
+  url?: string;
+};
+
 type JSONComponent = {
   type: ComponentType;
   content?: string;
@@ -32,6 +36,10 @@ type JSONComponent = {
   label?: string;
   disabled?: boolean;
   style?: number;
+  accessory?: {
+    type: ComponentType;
+    media?: JSONMedia;
+  };
 };
 
 function topLevelJSON(payload: ReturnType<typeof renderQueuePanel>): JSONComponent[] {
@@ -98,6 +106,18 @@ describe('queue panel renderer (Components V2)', () => {
     ]);
     expect(top[0]?.accent_color).toBe(0x5865f2);
     expect(top[1]?.accent_color).toBe(0x5865f2);
+
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files[0]?.name).toBe('office-club-cs2-10man-thumbnail-512.png');
+  });
+
+  it('renders the header as a Section with a native Thumbnail accessory', () => {
+    const payload = renderQueuePanel(view(), secret);
+    const summaryContainer = summary(payload);
+    expect(summaryContainer.components?.[0]?.type).toBe(ComponentType.Section);
+    const accessory = summaryContainer.components?.[0]?.accessory;
+    expect(accessory?.type).toBe(ComponentType.Thumbnail);
+    expect(accessory?.media?.url).toBe('attachment://office-club-cs2-10man-thumbnail-512.png');
   });
 
   it('renders the open queue hierarchy in the summary container', () => {

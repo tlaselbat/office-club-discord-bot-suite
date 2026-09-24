@@ -37,6 +37,7 @@ COPY --from=build --chown=app:app /app/dist ./dist
 COPY --from=build --chown=app:app /app/src/generated ./src/generated
 COPY --from=build --chown=app:app /app/prisma ./prisma
 COPY --from=build --chown=app:app /app/prisma.config.ts ./prisma.config.ts
+COPY --from=build --chown=app:app /app/assets ./assets
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
