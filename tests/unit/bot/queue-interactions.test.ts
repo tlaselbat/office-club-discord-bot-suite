@@ -1,3 +1,4 @@
+import { MessageFlags } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 import { TenManComponentInteractionRouter } from '../../../src/modules/tenman/bot/interaction-router.js';
@@ -21,6 +22,7 @@ function interaction(customId: string) {
     editReply: vi.fn().mockResolvedValue(undefined),
     reply: vi.fn().mockResolvedValue(undefined),
     deferUpdate: vi.fn().mockResolvedValue(undefined),
+    update: vi.fn().mockResolvedValue(undefined),
     showModal: vi.fn().mockResolvedValue(undefined),
     isModalSubmit: vi.fn().mockReturnValue(false),
     isMessageComponent: vi.fn().mockReturnValue(true),
@@ -37,13 +39,13 @@ function prismaMock(overrides: {
     'queue' in overrides
       ? overrides.queue
       : {
-        guildId,
-        version: 5,
-        status: 'OPEN',
-        panelChannelId: null,
-        panelMessageId: null,
-        entries: [],
-      };
+          guildId,
+          version: 5,
+          status: 'OPEN',
+          panelChannelId: null,
+          panelMessageId: null,
+          entries: [],
+        };
   const joinResult =
     'joinResult' in overrides
       ? overrides.joinResult
@@ -58,9 +60,7 @@ function prismaMock(overrides: {
     tenManQueue: { findUnique: vi.fn().mockResolvedValue(queue) },
     tenManSettings: { findUnique: vi.fn().mockResolvedValue({ queueSize: 10 }) },
     tenManQueueEntry: {
-      findUnique: vi
-        .fn()
-        .mockResolvedValue(overrides.status?.queued ? { partyId: null } : null),
+      findUnique: vi.fn().mockResolvedValue(overrides.status?.queued ? { partyId: null } : null),
     },
     steamIdentity: {
       findFirst: vi
@@ -89,28 +89,43 @@ function router(prisma: PrismaClient) {
 
 describe('queue component interactions', () => {
   it('responds to a stale mutating control with a recovery interface', async () => {
-    const prisma = prismaMock({ queue: { guildId, version: 9, status: 'OPEN', entries: [] } });
-    const event = interaction(
-      createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret),
-    );
+    const prisma = prismaMock({
+      queue: {
+        guildId,
+        version: 9,
+        status: 'OPEN',
+        panelChannelId: null,
+        panelMessageId: null,
+        entries: [],
+      },
+    });
+    const event = interaction(createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret));
     await router(prisma).handle(event as never);
-    expect(event.reply).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ephemeral: true,
-        content: expect.stringContaining('queue panel was updated'),
-      }),
-    );
+    expect(event.deferUpdate).toHaveBeenCalledOnce();
+    expect(event.reply).not.toHaveBeenCalled();
     expect(event.deferReply).not.toHaveBeenCalled();
   });
 
   it('keeps How It Works usable even when the panel version is stale', async () => {
-    const prisma = prismaMock({ queue: { guildId, version: 9, status: 'OPEN', entries: [] } });
+    const prisma = prismaMock({
+      queue: {
+        guildId,
+        version: 9,
+        status: 'OPEN',
+        panelChannelId: null,
+        panelMessageId: null,
+        entries: [],
+      },
+    });
     const event = interaction(
       createQueueCustomId({ action: 'HOW_IT_WORKS', guildId, version: 1 }, secret),
     );
     await router(prisma).handle(event as never);
     expect(event.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ ephemeral: true, content: expect.stringContaining('ready check') }),
+      expect.objectContaining({
+        flags: MessageFlags.Ephemeral,
+        content: expect.stringContaining('ready check'),
+      }),
     );
   });
 
@@ -120,19 +135,21 @@ describe('queue component interactions', () => {
       createQueueCustomId({ action: 'REFRESH', guildId, version: 0 }, secret),
     );
     await router(prisma).handle(event as never);
-    expect(event.deferReply).toHaveBeenCalledWith({ ephemeral: true });
-    expect(event.editReply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: expect.stringContaining('Queue status refreshed') }),
-    );
+    expect(event.deferUpdate).toHaveBeenCalledOnce();
+    expect(event.deferReply).not.toHaveBeenCalled();
+    expect(event.editReply).not.toHaveBeenCalled();
   });
 
   it('returns a rich ephemeral summary on join success', async () => {
     const prisma = prismaMock({
-      joinResult: { status: 'joined', playersInQueue: 3, queueSize: 10, promotedMatchId: undefined },
+      joinResult: {
+        status: 'joined',
+        playersInQueue: 3,
+        queueSize: 10,
+        promotedMatchId: undefined,
+      },
     });
-    const event = interaction(
-      createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret),
-    );
+    const event = interaction(createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret));
     await router(prisma).handle(event as never);
     const reply = event.editReply.mock.calls.at(0)?.[0] as {
       content: string;
@@ -203,9 +220,7 @@ describe('queue component interactions', () => {
     const prisma = prismaMock({
       joinResult: { status: 'queue_banned', expiresAt, reason: 'No-show' },
     });
-    const event = interaction(
-      createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret),
-    );
+    const event = interaction(createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret));
     await router(prisma).handle(event as never);
     const reply = event.editReply.mock.calls.at(0)?.[0] as { content: string };
     expect(reply.content).toContain("can't join this queue right now");
@@ -217,11 +232,12 @@ describe('queue component interactions', () => {
     const prisma = prismaMock({
       joinResult: { status: 'missing_steam', memberCount: 1, missingDisplayNames: ['Player'] },
     });
-    const event = interaction(
-      createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret),
-    );
+    const event = interaction(createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret));
     await router(prisma).handle(event as never);
-    const reply = event.editReply.mock.calls.at(0)?.[0] as { content: string; components: unknown[] };
+    const reply = event.editReply.mock.calls.at(0)?.[0] as {
+      content: string;
+      components: unknown[];
+    };
     expect(reply.content).toContain('Steam account needed');
     expect(reply.components.length).toBeGreaterThan(0);
   });
@@ -239,9 +255,7 @@ describe('queue component interactions', () => {
       },
       joinResult: { status: 'already_queued', playersInQueue: 2, queueSize: 10 },
     });
-    const event = interaction(
-      createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret),
-    );
+    const event = interaction(createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret));
     await router(prisma).handle(event as never);
     const reply = event.editReply.mock.calls.at(0)?.[0] as { content: string };
     expect(reply.content).toContain('already in the queue');

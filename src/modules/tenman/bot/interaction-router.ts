@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  MessageFlags,
   type Client,
   type MessageComponentInteraction,
   type ModalSubmitInteraction,
@@ -106,7 +107,7 @@ export class MatchInteractionRouter {
   public async handle(interaction: MessageComponentInteraction): Promise<void> {
     if (interaction.guildId === null) throw new Error('Guild interaction required');
     const payload = parseMatchCustomId(interaction.customId, this.options.componentSigningSecret);
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const match = await this.options.prisma.match.findUnique({ where: { id: payload.matchId } });
     if (
       match === null ||
@@ -295,12 +296,12 @@ export class TenManComponentInteractionRouter {
         case 'already_assigned':
           await interaction.reply({
             content: buildAssignmentSuccessResponse(result.steamId64, result.displayName),
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
         case 'duplicate':
           await interaction.reply({
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
             ...buildDuplicateAssignmentResponse(
               payload.guildId,
               interaction.user.id,
@@ -310,15 +311,21 @@ export class TenManComponentInteractionRouter {
           });
           return;
         case 'invalid_input':
-          await interaction.reply({ content: buildInvalidInputResponse(), ephemeral: true });
+          await interaction.reply({
+            content: buildInvalidInputResponse(),
+            flags: MessageFlags.Ephemeral,
+          });
           return;
         case 'api_unavailable':
-          await interaction.reply({ content: buildApiUnavailableResponse(), ephemeral: true });
+          await interaction.reply({
+            content: buildApiUnavailableResponse(),
+            flags: MessageFlags.Ephemeral,
+          });
           return;
         case 'locked':
           await interaction.reply({
             content: buildLockedAssignmentResponse(result.reason),
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
       }
@@ -339,7 +346,7 @@ export class TenManComponentInteractionRouter {
         );
         await interaction.reply({
           content: buildResultDisputeAcknowledgedResponse(result.id),
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -359,7 +366,7 @@ export class TenManComponentInteractionRouter {
           interaction.id,
         );
         await interaction.reply({
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
           content:
             payload.resolution === 'REVERSE'
               ? 'Dispute accepted and match result reversed.'
@@ -398,7 +405,7 @@ export class TenManComponentInteractionRouter {
         interaction.id,
       );
       await interaction.reply({
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
         content: `<@${payload.targetDiscordUserId}> has been banned from the queue${expiresAt === null ? '' : ` until <t:${String(Math.floor(expiresAt.getTime() / 1000))}:f>`}.`,
       });
       return;
@@ -433,12 +440,12 @@ export class TenManComponentInteractionRouter {
       );
       await interaction.reply({
         content: buildDisputeAcknowledgedResponse(id),
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
     if (payload.action === 'VIEW') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const active = await this.options.steamAccountService.findActive(interaction.user.id);
       await interaction.editReply(
         buildSteamAccountStatusResponse(
@@ -482,7 +489,7 @@ export class TenManComponentInteractionRouter {
       return;
     }
     if (payload.action === 'RESOLVE' || payload.action === 'REJECT') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const actor = await this.options.adminActorFor(interaction);
       assertAuthorized('RESOLVE_DISPUTE', actor);
       if (payload.disputeId === undefined) throw new Error('Missing dispute ID');
@@ -549,7 +556,7 @@ export class TenManComponentInteractionRouter {
 
   private async handlePlayerHub(interaction: MessageComponentInteraction): Promise<void> {
     if (interaction.guildId === null) throw new Error('Guild interaction required');
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferUpdate();
     const payload = parsePlayerHubCustomId(
       interaction.customId,
       this.options.componentSigningSecret,
@@ -633,29 +640,12 @@ export class TenManComponentInteractionRouter {
 
     // Non-mutating controls stay usable on a stale panel.
     if (payload.action === 'HOW_IT_WORKS') {
-      await interaction.reply({ ephemeral: true, content: howItWorksText() });
+      await interaction.reply({ flags: MessageFlags.Ephemeral, content: howItWorksText() });
       return;
     }
     if (payload.action === 'REFRESH') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferUpdate();
       await this.queuePanelService.reconcile(payload.guildId);
-      const status = await this.playerStatusService.getStatus(
-        payload.guildId,
-        interaction.user.id,
-      );
-      await interaction.editReply({
-        content:
-          status.kind === 'READY_CHECK'
-            ? "Queue status refreshed. You're now in a ready check."
-            : status.kind === 'MATCH_ACTIVE'
-              ? 'Queue status refreshed. Your match is in progress.'
-              : 'Queue status refreshed.',
-        components: [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            myTenManButton(payload.guildId, interaction.user.id, this.options.componentSigningSecret),
-          ),
-        ],
-      });
       return;
     }
 
@@ -664,11 +654,11 @@ export class TenManComponentInteractionRouter {
       include: { entries: { orderBy: { joinedAt: 'asc' } } },
     });
     if (queue === null || queue.version !== payload.version) {
-      await this.renderStaleRefresh(interaction, payload.guildId, queue?.version ?? null);
+      await this.renderStaleRefresh(interaction, payload.guildId);
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (payload.action === 'JOIN') {
       const result = await this.queueService.join({
@@ -746,10 +736,15 @@ export class TenManComponentInteractionRouter {
         queue === null
           ? []
           : [
-            new ActionRowBuilder<ButtonBuilder>().addComponents(
-              joinQueueButton(guildId, queue.version, this.options.componentSigningSecret, 'Join Queue Again'),
-            ),
-          ],
+              new ActionRowBuilder<ButtonBuilder>().addComponents(
+                joinQueueButton(
+                  guildId,
+                  queue.version,
+                  this.options.componentSigningSecret,
+                  'Join Queue Again',
+                ),
+              ),
+            ],
     };
   }
 
@@ -783,28 +778,27 @@ export class TenManComponentInteractionRouter {
           content:
             result.promotedMatchId === undefined
               ? [
-                "**You're in the queue**",
-                `Players: ${String(result.playersInQueue)} / ${String(result.queueSize)}`,
-                `Needed: ${String(needed)}`,
-                `You'll receive a ready check when the queue reaches ${String(result.queueSize)} players.`,
-              ].join('\n')
+                  "**You're in the queue**",
+                  `Players: ${String(result.playersInQueue)} / ${String(result.queueSize)}`,
+                  `Needed: ${String(needed)}`,
+                  `You'll receive a ready check when the queue reaches ${String(result.queueSize)} players.`,
+                ].join('\n')
               : '**Queue full — ready check has started.** Watch for the ready prompt.',
           components:
             result.promotedMatchId === undefined
               ? hubAndLeave
               : [
-                new ActionRowBuilder<ButtonBuilder>().addComponents(
-                  myTenManButton(guildId, interaction.user.id, secret),
-                ),
-              ],
+                  new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    myTenManButton(guildId, interaction.user.id, secret),
+                  ),
+                ],
         });
         return;
       }
       case 'already_queued': {
         const position =
-          (queue?.entries.findIndex(
-            (entry) => entry.discordUserId === interaction.user.id,
-          ) ?? -1) + 1;
+          (queue?.entries.findIndex((entry) => entry.discordUserId === interaction.user.id) ?? -1) +
+          1;
         await interaction.editReply({
           content: [
             "**You're already in the queue**",
@@ -822,14 +816,14 @@ export class TenManComponentInteractionRouter {
           content:
             result.memberCount > 1
               ? [
-                "**Party can't join yet**",
-                'Every party member must have a Steam account assigned before the party can queue.',
-                `Still needed: ${result.missingDisplayNames.join(', ')}`,
-              ].join('\n')
+                  "**Party can't join yet**",
+                  'Every party member must have a Steam account assigned before the party can queue.',
+                  `Still needed: ${result.missingDisplayNames.join(', ')}`,
+                ].join('\n')
               : [
-                '**Steam account needed**',
-                'Assign the Steam account you plan to use before joining the queue.',
-              ].join('\n'),
+                  '**Steam account needed**',
+                  'Assign the Steam account you plan to use before joining the queue.',
+                ].join('\n'),
           components: buildSteamAccountButton(
             guildId,
             interaction.user.id,
@@ -912,7 +906,7 @@ export class TenManComponentInteractionRouter {
       match.phaseGeneration !== payload.phaseGeneration
     ) {
       await interaction.reply({
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
         content:
           "That action isn't available anymore because the match has moved to the next stage.",
         components: [
@@ -984,7 +978,7 @@ export class TenManComponentInteractionRouter {
     if (payload.action === 'RB') {
       const actor = await this.options.adminActorFor(interaction);
       assertAuthorized('ROLLBACK_MATCH', actor);
-      await interaction.reply({ ephemeral: true, ...confirm('rollback') });
+      await interaction.update(confirm('rollback'));
       return;
     }
     if (payload.action === 'FR') {
@@ -1126,7 +1120,7 @@ export class TenManComponentInteractionRouter {
     const guildId = interaction.guildId ?? payload.guildId;
     if (payload.action === 'ACCEPT') {
       if (payload.inviteId === undefined) throw new Error('Missing party invitation');
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       await this.partyService.accept(payload.inviteId, interaction.user.id);
       await interaction.editReply({ content: 'Party invitation accepted. Welcome aboard.' });
       return;
@@ -1160,18 +1154,16 @@ export class TenManComponentInteractionRouter {
                 })
                 .then(() => true)
                 .catch(() => false);
-        await interaction.followUp({
-          ephemeral: true,
-          content: delivered
-            ? `Invitation sent to <@${target}>.`
-            : `Invitation created for <@${target}>. Their DMs are unavailable; they can accept it from their **/10man party** panel.`,
-        });
+        if (!delivered) {
+          await interaction.editReply({
+            content: `Invitation created for <@${target}>. Their DMs are unavailable; they can accept it from their **/10man party** panel.`,
+            components: [],
+            embeds: [],
+          });
+          return;
+        }
       } else {
         await this.partyService.kick(payload.partyId, interaction.user.id, target);
-        await interaction.followUp({
-          ephemeral: true,
-          content: `<@${target}> was removed from the party.`,
-        });
       }
       await this.renderPartyPanel(interaction, guildId);
       return;
@@ -1206,25 +1198,9 @@ export class TenManComponentInteractionRouter {
   private async renderStaleRefresh(
     interaction: MessageComponentInteraction,
     guildId: string,
-    currentVersion: number | null,
   ): Promise<void> {
-    const buttons = [
-      myTenManButton(guildId, interaction.user.id, this.options.componentSigningSecret),
-    ];
-    if (currentVersion !== null) {
-      buttons.unshift(
-        queueRefreshButton(guildId, currentVersion, this.options.componentSigningSecret),
-      );
-    }
-    await interaction.reply({
-      ephemeral: true,
-      content: [
-        '**This queue panel was updated**',
-        'The queue changed after this button was created.',
-      ].join('\n'),
-      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)],
-    });
-    await this.queuePanelService.reconcile(guildId).catch(() => undefined);
+    await interaction.deferUpdate();
+    await this.queuePanelService.reconcile(guildId);
   }
 
   private async handleMatchAdmin(interaction: MessageComponentInteraction): Promise<void> {

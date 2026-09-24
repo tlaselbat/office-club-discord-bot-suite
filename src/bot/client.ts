@@ -4,6 +4,7 @@ import {
   Events,
   GatewayIntentBits,
   GuildMemberRoleManager,
+  MessageFlags,
   PermissionFlagsBits,
   REST,
   Routes,
@@ -225,7 +226,10 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
       return;
     const operation = modules.dispatch(interaction).then(async (handled) => {
       if (!handled)
-        await interaction.reply({ content: 'Unknown module interaction.', ephemeral: true });
+        await interaction.reply({
+          content: 'Unknown module interaction.',
+          flags: MessageFlags.Ephemeral,
+        });
     });
     void operation.catch(async (error: unknown) => {
       dependencies.logger.error(
@@ -241,16 +245,18 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
       const content = publicMessage(error, interaction.id);
       if (interaction.isModalSubmit()) {
         await interaction
-          .reply({ content, ephemeral: true, components: [] })
+          .reply({ content, flags: MessageFlags.Ephemeral, components: [] })
           .catch(() => undefined);
         return;
       }
       if (interaction.deferred) {
         await interaction.editReply({ content, components: [] }).catch(() => undefined);
       } else if (interaction.replied) {
-        await interaction.followUp({ content, ephemeral: true }).catch(() => undefined);
+        await interaction
+          .followUp({ content, flags: MessageFlags.Ephemeral })
+          .catch(() => undefined);
       } else {
-        await interaction.reply({ content, ephemeral: true }).catch(() => undefined);
+        await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => undefined);
       }
     });
   });
@@ -265,7 +271,7 @@ async function handleCommand(
   guildResourceService: GuildResourceService,
 ): Promise<void> {
   if (interaction.guildId === null) throw new Error('Guild command required');
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const subcommand = interaction.options.getSubcommand();
 
   if (interaction.commandName === '10man') {

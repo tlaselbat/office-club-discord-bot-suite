@@ -1,3 +1,4 @@
+import { MessageFlags } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 import { MatchInteractionRouter } from '../../../src/modules/tenman/bot/interaction-router.js';
@@ -48,7 +49,7 @@ describe('interaction router stale-control guard', () => {
     );
 
     await expect(subject.handle(event as never)).rejects.toThrow('Match dashboard is stale');
-    expect(event.deferReply).toHaveBeenCalledWith({ ephemeral: true });
+    expect(event.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
     expect(event.editReply).not.toHaveBeenCalled();
     expect(prisma.match.findUnique).toHaveBeenCalledWith({ where: { id: matchId } });
   });

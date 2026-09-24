@@ -2,6 +2,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
   type ChatInputCommandInteraction,
   type Client,
   type MessageComponentInteraction,
@@ -148,7 +149,7 @@ async function handleRewardsCommand(
   signingSecret?: string,
 ): Promise<void> {
   if (interaction.guildId === null) throw new Error('Guild command required');
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const subcommand = interaction.options.getSubcommand();
   if (subcommand === 'leaderboard') {
     const requestedPage = interaction.options.getInteger('page') ?? 1;
