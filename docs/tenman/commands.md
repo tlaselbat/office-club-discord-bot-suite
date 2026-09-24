@@ -27,7 +27,7 @@ hiding these commands would lock out legitimate staff.
 
 | Command                   | Result                                                           |
 | ------------------------- | ---------------------------------------------------------------- |
-| `/10man hub`              | My 10man panel: queue, ready check, match, party, history, stats |
+| `/10man hub`              | Lobby Status panel: queue, ready check, match, party, history, stats |
 | `/10man account`          | Steam account panel: assign, review, change, remove, dispute     |
 | `/10man history [player]` | Recent finished matches; staff also see rollback controls        |
 | `/10man stats [player]`   | Rating and record                                                |

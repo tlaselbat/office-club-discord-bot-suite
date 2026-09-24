@@ -1,14 +1,14 @@
 import {
-  EmbedBuilder,
-  type ActionRowBuilder,
-  type APIEmbedField,
-  type ButtonBuilder,
+  ContainerBuilder,
+  MessageFlags,
+  SeparatorBuilder,
+  TextDisplayBuilder,
 } from 'discord.js';
 import { buildLockedQueueControls, buildQueueControls } from './queue-components.js';
 import { matchPhaseLabel, playersNeededLabel } from './presentation.js';
 
 const ACCENT_COLOR = 0x5865f2;
-const FIELD_VALUE_LIMIT = 1024;
+const TEXT_DISPLAY_LIMIT = 4000;
 const NAME_LIMIT = 48;
 const LIFECYCLE = 'Queue → Ready Check → Teams → Map → Server → Match';
 
@@ -24,8 +24,8 @@ export interface QueuePanelView {
 }
 
 export interface QueuePanelPayload {
-  embeds: EmbedBuilder[];
-  components: ActionRowBuilder<ButtonBuilder>[];
+  flags: typeof MessageFlags.IsComponentsV2;
+  components: ContainerBuilder[];
 }
 
 export function renderQueuePanel(view: QueuePanelView, secret: string): QueuePanelPayload {
@@ -34,42 +34,38 @@ export function renderQueuePanel(view: QueuePanelView, secret: string): QueuePan
 
 function renderOpen(view: QueuePanelView, secret: string): QueuePanelPayload {
   const playersNeeded = Math.max(0, view.queueCapacity - view.queueCount);
-  const fields: APIEmbedField[] = [
-    {
-      name: 'Queue',
-      value: `${String(view.queueCount)} / ${String(view.queueCapacity)}`,
-      inline: true,
-    },
-    { name: 'Needed', value: playersNeededLabel(playersNeeded), inline: true },
-    {
-      name: 'Status',
-      value:
-        playersNeeded === 0
+  const container = new ContainerBuilder()
+    .setAccentColor(ACCENT_COLOR)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('## CS2 10man'),
+      new TextDisplayBuilder().setContent(
+        [
+          'Join a private 5v5 CS2 match.',
+          `When ${String(view.queueCapacity)} players are queued, everyone gets a ready check before teams and map selection.`,
+        ].join('\n'),
+      ),
+    )
+    .addSeparatorComponents(new SeparatorBuilder())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Queue**\n${String(view.queueCount)} / ${String(view.queueCapacity)}`,
+      ),
+      new TextDisplayBuilder().setContent(
+        `**Status**\n${playersNeeded === 0
           ? 'Queue full — starting ready check'
-          : `Waiting for ${playersNeededLabel(playersNeeded)}`,
-      inline: true,
-    },
-    { name: 'Next', value: LIFECYCLE },
-    {
-      name: `Players in Queue — ${String(view.queueCount)}`,
-      value: formatRoster(view.playerDisplayNames),
-    },
-  ];
-  return {
-    embeds: [
-      new EmbedBuilder()
-        .setTitle('CS2 10man')
-        .setColor(ACCENT_COLOR)
-        .setDescription(
-          [
-            'Join a private 5v5 CS2 match.',
-            `When ${String(view.queueCapacity)} players are queued, everyone gets a ready check before teams and the map are selected.`,
-          ].join('\n'),
-        )
-        .addFields(fields),
-    ],
-    components: buildQueueControls(view.guildId, view.version, secret),
-  };
+          : `Waiting for ${playersNeededLabel(playersNeeded)}`
+        }`,
+      ),
+      new TextDisplayBuilder().setContent(`**Next**\n${LIFECYCLE}`),
+  )
+    .addSeparatorComponents(new SeparatorBuilder())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`**Players in Queue · ${String(view.queueCount)}**`),
+      new TextDisplayBuilder().setContent(formatRoster(view.playerDisplayNames)),
+    )
+    .addSeparatorComponents(new SeparatorBuilder())
+    .addActionRowComponents(...buildQueueControls(view.guildId, view.version, secret));
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
 function renderLocked(view: QueuePanelView, secret: string): QueuePanelPayload {
@@ -80,18 +76,22 @@ function renderLocked(view: QueuePanelView, secret: string): QueuePanelPayload {
       : phase === 'FINISHED' || phase === 'CANCELED' || phase === 'FAILED'
         ? 'Queue reopening after cleanup'
         : `${matchPhaseLabel(phase)} — match in progress`;
-  return {
-    embeds: [
-      new EmbedBuilder()
-        .setTitle('CS2 10man')
-        .setColor(ACCENT_COLOR)
-        .setDescription(
-          'A 10man match is currently being formed or played. The queue will reopen automatically when cleanup finishes.',
-        )
-        .addFields({ name: 'Status', value: status }, { name: 'Next', value: LIFECYCLE }),
-    ],
-    components: buildLockedQueueControls(view.guildId, view.version, secret),
-  };
+  const container = new ContainerBuilder()
+    .setAccentColor(ACCENT_COLOR)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('## CS2 10man'),
+      new TextDisplayBuilder().setContent(
+        'A 10man match is currently being formed or played. The queue will reopen automatically when cleanup finishes.',
+      ),
+  )
+    .addSeparatorComponents(new SeparatorBuilder())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`**Status**\n${status}`),
+      new TextDisplayBuilder().setContent(`**Next**\n${LIFECYCLE}`),
+    )
+    .addSeparatorComponents(new SeparatorBuilder())
+    .addActionRowComponents(...buildLockedQueueControls(view.guildId, view.version, secret));
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
 function formatRoster(names: string[]): string {
@@ -101,7 +101,7 @@ function formatRoster(names: string[]): string {
   for (const [index, raw] of names.entries()) {
     const name = raw.length > NAME_LIMIT ? `${raw.slice(0, NAME_LIMIT - 1)}…` : raw;
     const line = `${String(index + 1)}. ${name}`;
-    if (used + line.length + 1 > FIELD_VALUE_LIMIT - 32) {
+    if (used + line.length + 1 > TEXT_DISPLAY_LIMIT - 32) {
       const remaining = names.length - index;
       lines.push(`…and ${String(remaining)} more`);
       break;

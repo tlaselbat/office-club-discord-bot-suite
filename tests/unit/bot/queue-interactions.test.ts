@@ -144,7 +144,7 @@ describe('queue component interactions', () => {
     const labels = reply.components.flatMap((row) =>
       row.toJSON().components.map((component) => component.label),
     );
-    expect(labels).toEqual(['My 10man', 'Leave Queue']);
+    expect(labels).toEqual(['Lobby Status', 'Leave Queue']);
   });
 
   it('leaves the queue with a rejoin action for an individual entry', async () => {

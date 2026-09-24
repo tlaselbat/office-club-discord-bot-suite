@@ -36,7 +36,7 @@ function labels(response: ReturnType<typeof render>) {
   return buttons(response).map((button) => button.label);
 }
 
-describe('My 10man personal interface', () => {
+describe('Lobby Status personal interface', () => {
   it('new player: no Steam account, not queued, direct assign action', () => {
     const response = render({ kind: 'NEW_PLAYER' });
     expect(embed(response).title).toBe('Your 10man');
@@ -60,6 +60,10 @@ describe('My 10man personal interface', () => {
       guildId,
       version: 5,
     });
+    // Navigation uses the renamed player-facing labels.
+    expect(labels(response)).toContain('Team Status');
+    expect(labels(response)).not.toContain('My Party');
+    expect(labels(response)).not.toContain('My 10man');
   });
 
   it('queued: position, count, waiting copy, leave and refresh', () => {

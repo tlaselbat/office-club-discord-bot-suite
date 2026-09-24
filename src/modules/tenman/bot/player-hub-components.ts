@@ -263,7 +263,7 @@ function navRow(
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(createPartyCustomId({ action: 'PANEL', guildId, actorDiscordUserId }, secret))
-      .setLabel('My Party')
+      .setLabel('Team Status')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(

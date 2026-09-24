@@ -930,7 +930,7 @@ export class TenManComponentInteractionRouter {
                   },
                   this.options.componentSigningSecret,
                 ),
-                label: 'Refresh My 10man',
+                label: 'Lobby Status',
               },
             ],
           },

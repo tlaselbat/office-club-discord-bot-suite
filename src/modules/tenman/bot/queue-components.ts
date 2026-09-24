@@ -32,7 +32,7 @@ export function myTenManButton(
   guildId: string,
   actorDiscordUserId: string,
   secret: string,
-  label = 'My 10man',
+  label = 'Lobby Status',
 ): ButtonBuilder {
   return new ButtonBuilder()
     .setCustomId(
