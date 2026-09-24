@@ -5,6 +5,8 @@ import {
   ContainerBuilder,
   MessageFlags,
   SectionBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
   TextDisplayBuilder,
   ThumbnailBuilder,
 } from 'discord.js';
@@ -77,6 +79,10 @@ function buildHeaderSection(): SectionBuilder {
     .setThumbnailAccessory(new ThumbnailBuilder().setURL(`attachment://${THUMBNAIL_FILE_NAME}`));
 }
 
+function buildContentSeparator(): SeparatorBuilder {
+  return new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small);
+}
+
 function buildSummaryContainer(view: QueuePanelView): ContainerBuilder {
   const playersNeeded = Math.max(0, view.queueCapacity - view.queueCount);
   const queueMetric =
@@ -87,8 +93,10 @@ function buildSummaryContainer(view: QueuePanelView): ContainerBuilder {
   return new ContainerBuilder()
     .setAccentColor(ACCENT_COLOR)
     .addSectionComponents(buildHeaderSection())
+    .addSeparatorComponents(buildContentSeparator())
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(queueMetric))
+    .addSeparatorComponents(buildContentSeparator())
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(queueMetric),
       new TextDisplayBuilder().setContent(
         `**Next**\nReady Check when the queue reaches ${String(view.queueCapacity)}`,
       ),
@@ -98,10 +106,12 @@ function buildSummaryContainer(view: QueuePanelView): ContainerBuilder {
 function buildRosterContainer(view: QueuePanelView): ContainerBuilder {
   const heading = `**Queued Players · ${String(view.queueCount)}**`;
 
-  return new ContainerBuilder().addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(heading),
-    new TextDisplayBuilder().setContent(formatRoster(view.playerDisplayNames)),
-  );
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(heading))
+    .addSeparatorComponents(buildContentSeparator())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(formatRoster(view.playerDisplayNames)),
+    );
 }
 
 function buildLockedSummaryContainer(view: QueuePanelView): ContainerBuilder {
@@ -123,6 +133,7 @@ function buildLockedSummaryContainer(view: QueuePanelView): ContainerBuilder {
   return new ContainerBuilder()
     .setAccentColor(ACCENT_COLOR)
     .addSectionComponents(buildHeaderSection())
+    .addSeparatorComponents(buildContentSeparator())
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(`${heading}\n-# ${subtext}`));
 }
 

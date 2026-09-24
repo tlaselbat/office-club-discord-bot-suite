@@ -36,6 +36,8 @@ type JSONComponent = {
   label?: string;
   disabled?: boolean;
   style?: number;
+  divider?: boolean;
+  spacing?: number;
   accessory?: {
     type: ComponentType;
     media?: JSONMedia;
@@ -116,7 +118,9 @@ describe('queue panel renderer (Components V2)', () => {
     const summaryContainer = summary(payload);
     expect(summaryContainer.components?.map((component) => component.type)).toEqual([
       ComponentType.Section,
+      ComponentType.Separator,
       ComponentType.TextDisplay,
+      ComponentType.Separator,
       ComponentType.TextDisplay,
     ]);
 
@@ -129,10 +133,12 @@ describe('queue panel renderer (Components V2)', () => {
     expect(header?.accessory?.media?.url).toBe(
       'attachment://office-club-cs2-10man-thumbnail-512.png',
     );
-    expect(summaryContainer.components?.[1]?.content).toBe(
+    expect(summaryContainer.components?.[1]).toMatchObject({ divider: true, spacing: 1 });
+    expect(summaryContainer.components?.[2]?.content).toBe(
       '**1 / 10 players**\n-# Waiting for 9 more players',
     );
-    expect(summaryContainer.components?.[2]?.content).toBe(
+    expect(summaryContainer.components?.[3]).toMatchObject({ divider: true, spacing: 1 });
+    expect(summaryContainer.components?.[4]?.content).toBe(
       '**Next**\nReady Check when the queue reaches 10',
     );
   });
@@ -161,7 +167,14 @@ describe('queue panel renderer (Components V2)', () => {
       view({ queueCount: 1, playerDisplayNames: ['tablet.'] }),
       secret,
     );
-    const rosterText = textDisplays(roster(payload))
+    const rosterContainer = roster(payload);
+    expect(rosterContainer.components?.map((component) => component.type)).toEqual([
+      ComponentType.TextDisplay,
+      ComponentType.Separator,
+      ComponentType.TextDisplay,
+    ]);
+    expect(rosterContainer.components?.[1]).toMatchObject({ divider: true, spacing: 1 });
+    const rosterText = textDisplays(rosterContainer)
       .map((display) => display.content)
       .join('\n');
     expect(rosterText).toContain('**Queued Players · 1**');
