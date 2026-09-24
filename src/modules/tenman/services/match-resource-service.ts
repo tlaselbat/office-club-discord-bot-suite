@@ -4,7 +4,7 @@ import type { PrismaClient } from '../../../generated/prisma/client.js';
 
 /** A short lease limits abandoned work before any Discord create side effect. */
 export const MATCH_RESOURCE_CREATION_LEASE_MS = 2 * 60 * 1000;
-const ARCHIVE_PREFIX = 'archived-10man-';
+const ARCHIVE_PREFIX = 'archived-competitive-';
 
 /**
  * Owns disposable match resources. A row is committed before Discord I/O; only
@@ -29,7 +29,7 @@ export class MatchResourceService {
         where: { guildId: match.guildId },
       });
       if (settings?.managedCategoryId === null || settings?.managedCategoryId === undefined) {
-        throw new Error('10man category is not configured');
+        throw new Error('Competitive category is not configured');
       }
       return transaction.matchDiscordResource.upsert({
         where: { matchId_resourceType: { matchId, resourceType: 'MATCH_TEXT_CHANNEL' } },
@@ -276,7 +276,7 @@ export class MatchResourceService {
     const name = channel.name.startsWith(ARCHIVE_PREFIX)
       ? channel.name
       : `${ARCHIVE_PREFIX}${channel.name}`.slice(0, 100);
-    const reason = '10Man match archive; manual deletion required';
+    const reason = 'Competitive match archive; manual deletion required';
     await channel.edit({ name, reason });
     await channel.permissionOverwrites.edit(channel.guild.roles.everyone, {
       ViewChannel: false,

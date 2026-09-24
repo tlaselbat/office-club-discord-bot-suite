@@ -44,7 +44,7 @@ export class QueueAlertService {
       });
     });
 
-    const message = `10man queue is now at **${String(currentCount)}/${String(queueSize)}** players.`;
+    const message = `Match Queue is now at **${String(currentCount)}/${String(queueSize)}** players.`;
     await Promise.all(
       recipients.map(async ({ discordUserId }) => {
         try {

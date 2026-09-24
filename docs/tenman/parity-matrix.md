@@ -1,4 +1,4 @@
-# 10man release guarantees
+# Office Club Competitive release guarantees
 
 | Guarantee                                     | Evidence                                           |
 | --------------------------------------------- | -------------------------------------------------- |

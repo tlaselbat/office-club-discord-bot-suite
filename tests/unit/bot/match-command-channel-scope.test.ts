@@ -1,3 +1,4 @@
+import { ApplicationCommandOptionType } from 'discord.js';
 import { describe, expect, it } from 'vitest';
 import { commands } from '../../../src/modules/tenman/bot/commands.js';
 
@@ -14,27 +15,33 @@ function collectOptions(options: readonly CommandOption[] | undefined): CommandO
   return options.flatMap((option) => [option, ...collectOptions(option.options)]);
 }
 
-describe('10man command tree', () => {
+describe('match command tree', () => {
   it('registers exactly the consolidated command surface', () => {
     const names = commands.map((command) => command.name);
-    expect(names).toEqual(['10man', '10man-admin', '10man-config']);
+    expect(names).toEqual(['match']);
   });
 
   it('exposes the player-facing subcommands', () => {
-    const tenman = commands.find((command) => command.name === '10man');
-    expect(tenman?.options?.map((option) => option.name)).toEqual([
-      'hub',
+    const match = commands.find((command) => command.name === 'match');
+    const direct = match?.options?.filter((option) => option.type === ApplicationCommandOptionType.Subcommand);
+    expect(direct?.map((option) => option.name)).toEqual([
+      'center',
       'account',
       'history',
       'stats',
-      'party',
+      'team',
       'alerts',
     ]);
   });
 
-  it('groups staff operations under 10man-admin and lifecycle under 10man-config', () => {
-    const admin = commands.find((command) => command.name === '10man-admin');
-    expect(admin?.options?.map((option) => option.name)).toEqual([
+  it('groups staff operations under match admin and lifecycle under match config', () => {
+    const match = commands.find((command) => command.name === 'match');
+    const groups = new Map(
+      (match?.options ?? [])
+        .filter((option) => option.type === ApplicationCommandOptionType.SubcommandGroup)
+        .map((option) => [option.name, (option.options ?? []).map((sub) => sub.name)]),
+    );
+    expect(groups.get('admin')).toEqual([
       'match',
       'queue',
       'players',
@@ -42,8 +49,7 @@ describe('10man command tree', () => {
       'diagnostics',
       'queue-panel',
     ]);
-    const config = commands.find((command) => command.name === '10man-config');
-    expect(config?.options?.map((option) => option.name)).toEqual([
+    expect(groups.get('config')).toEqual([
       'status',
       'setup',
       'configure',
@@ -70,7 +76,7 @@ describe('10man command tree', () => {
 
   it('does not register legacy top-level namespaces', () => {
     const names = commands.map((command) => command.name);
-    for (const legacy of ['steam', 'match', 'player', 'party']) {
+    for (const legacy of ['10man', '10man-admin', '10man-config', 'steam', 'player', 'party']) {
       expect(names).not.toContain(legacy);
     }
   });

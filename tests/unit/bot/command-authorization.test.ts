@@ -40,13 +40,13 @@ const moderator: ActorContext = { ...ordinaryPlayer, isModerator: true };
 const configuredAdmin: ActorContext = { ...ordinaryPlayer, isAdministrator: true };
 
 describe('staff command authorization matrix', () => {
-  it('denies ordinary players every /10man-admin subcommand action', () => {
+  it('denies ordinary players every /match admin subcommand action', () => {
     for (const action of Object.values(adminSubcommandActions)) {
       expect(isAuthorized(action, ordinaryPlayer)).toBe(false);
     }
   });
 
-  it('denies ordinary players every /10man-config subcommand action', () => {
+  it('denies ordinary players every /match config subcommand action', () => {
     for (const action of Object.values(configSubcommandActions)) {
       expect(isAuthorized(action, ordinaryPlayer)).toBe(false);
     }
@@ -58,7 +58,7 @@ describe('staff command authorization matrix', () => {
     }
   });
 
-  it('denies configured moderators every /10man-config operation', () => {
+  it('denies configured moderators every /match config operation', () => {
     for (const action of Object.values(configSubcommandActions)) {
       expect(isAuthorized(action, moderator)).toBe(false);
     }
@@ -93,7 +93,7 @@ describe('staff command authorization matrix', () => {
 });
 
 describe('command-level Discord permission defaults', () => {
-  it('does not set default_member_permissions on any 10man command', () => {
+  it('does not set default_member_permissions on any match command', () => {
     // Configured moderator/administrator role IDs live in TenManSettings and
     // Discord cannot express them at registration time; relying on
     // default_member_permissions would hide staff commands from the very

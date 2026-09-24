@@ -40,7 +40,7 @@ export function guildIndex(username: string, csrf: string, guilds: GuildSummary[
     .join('');
   return page(
     'Guilds',
-    `<header><div><h1>Guilds</h1><p>Signed in as ${escapeHtml(username)}</p></div><form method="post" action="/admin/logout"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><button>Log out</button></form></header><section class="card"><table><thead><tr><th>Guild</th><th>10man</th><th>Rewards</th><th>Resources</th></tr></thead><tbody>${rows}</tbody></table></section>`,
+    `<header><div><h1>Guilds</h1><p>Signed in as ${escapeHtml(username)}</p></div><form method="post" action="/admin/logout"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><button>Log out</button></form></header><section class="card"><table><thead><tr><th>Guild</th><th>Competitive</th><th>Rewards</th><th>Resources</th></tr></thead><tbody>${rows}</tbody></table></section>`,
   );
 }
 

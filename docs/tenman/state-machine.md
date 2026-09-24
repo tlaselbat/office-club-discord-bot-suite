@@ -1,4 +1,4 @@
-# 10man state machine
+# Office Club Competitive state machine
 
 ```text
 CREATED → READY_CHECK → TEAM_SELECTION → MAP_VETO → TEAMS_LOCKED

@@ -13,6 +13,13 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Deployment / staging / testing context for the live bot server.
+  # Target device used for staging and production deployments.
+  BOT_SERVER_SSH: ssh tablet@192.168.1.175
+  # Root working directory on the bot server where the application is staged and run.
+  BOT_SERVER_DIR: O:\
+
 jobs:
   verify:
     runs-on: ubuntu-latest

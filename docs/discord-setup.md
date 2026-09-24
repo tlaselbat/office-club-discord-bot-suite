@@ -59,49 +59,49 @@ Create:
 
 ## Initial configuration
 
-A member with Discord's native **Administrator** permission can bootstrap a guild before any bot administrator role has been stored. For automated managed channels, run `/10man-config setup` with the three roles and DatHost template on first use. It creates `10Man` with `10man-lobby`, `Lobby`, `Team 1`, and `Team 2`, without permission overwrites.
+A member with Discord's native **Administrator** permission can bootstrap a guild before any bot administrator role has been stored. For automated managed channels, run `/match config setup` with the three roles and DatHost template on first use. It creates `Competitive` with `match-queue`, `Match Lobby`, `Team 1`, and `Team 2`, without permission overwrites.
 
 For existing/manual channels, run:
 
 ```text
-/10man-config configure
+/match config configure
 ```
 
 Provide all four channels, all three roles, the DatHost template server ID, and optionally a DatHost location and enabled game-profile key. The bot validates channel types, channel permissions, role existence, and that the selected profile exists and is enabled before saving.
 
-After setup, either a native Discord administrator or a member with the configured administrator role can reconfigure the guild. Run `/10man-admin diagnostics` after configuration and whenever channels, roles, or permissions change.
+After setup, either a native Discord administrator or a member with the configured administrator role can reconfigure the guild. Run `/match admin diagnostics` after configuration and whenever channels, roles, or permissions change.
 
 ## Slash commands
 
 - `/rewards profile [member]` — show XP, level, rank, and progress to the next configured level.
 - `/rewards leaderboard` — show the server's top reward members.
 - `/rewards tag-status [member]` — show guild-tag loyalty qualification progress.
-- `/10man hub` — open your personal 10man status and controls (queue, ready check, match info, party, history, stats).
-- `/10man account` — review, assign, change, or remove the Steam account reported for 10man rosters. Assignment is self-reported and does not verify Steam ownership; changes are blocked while the user is queued or in a live match.
-- `/10man history [player]` — show recent finished matches; staff also get rollback controls.
-- `/10man stats [player]` — show rating and record.
-- `/10man party` — create, invite, accept, leave, kick, or disband a party via an interactive panel.
-- `/10man alerts enabled:<bool>` — opt in or out of queue-fill DM alerts.
-- `/10man-admin match` — ephemeral admin panel for the active match (force ready, restart phase, replace player, stop).
-- `/10man-admin queue` — queue moderation panel (ban/unban via user pickers).
-- `/10man-admin players` — player administration (stats reset via user picker and signed confirmation).
-- `/10man-admin disputes` — pending match-result and Steam-assignment disputes with resolve/reject controls.
-- `/10man-admin diagnostics` — validate channels, roles, permissions, template access, managed recovery state, and active-match status.
-- `/10man-admin queue-panel` — create or repair the persistent queue panel.
-- `/10man-config status` — show stored configuration status.
-- `/10man-config configure` — create or replace guild configuration.
-- `/10man-config setup` — create and configure the fixed bot-managed category and channels.
-- `/10man-config recover-setup` — acknowledge/rollback an interrupted setup after inspecting any ambiguous Discord create.
-- `/10man-config disable` — block new matches without affecting an existing match or deleting resources.
-- `/10man-config enable` — validate an intact configuration and re-enable new matches.
-- `/10man-config teardown` — preview and, after a signed five-minute confirmation, archive and lock only persisted bot-managed channels. It never deletes channels; a Discord administrator may remove archived channels manually. Active guild slots block teardown.
+- `/match center` — open your Match Center (queue status, ready check, active match, team status, history, stats).
+- `/match account` — review, assign, change, or remove the Steam account reported for Office Club Competitive rosters. Assignment is self-reported and does not verify Steam ownership; changes are blocked while the user is queued or in a live match.
+- `/match history [player]` — show recent finished matches; staff also get rollback controls.
+- `/match stats [player]` — show rating and record.
+- `/match team` — create, invite, accept, leave, kick, or disband a team via an interactive panel.
+- `/match alerts enabled:<bool>` — opt in or out of Match Queue fill DM alerts.
+- `/match admin match` — ephemeral admin panel for the active match (force ready, restart phase, replace player, stop).
+- `/match admin queue` — queue moderation panel (ban/unban via user pickers).
+- `/match admin players` — player administration (stats reset via user picker and signed confirmation).
+- `/match admin disputes` — pending match-result and Steam-assignment disputes with resolve/reject controls.
+- `/match admin diagnostics` — validate channels, roles, permissions, template access, managed recovery state, and active-match status.
+- `/match admin queue-panel` — create or repair the persistent Match Queue panel.
+- `/match config status` — show stored configuration status.
+- `/match config configure` — create or replace guild configuration.
+- `/match config setup` — create and configure the fixed bot-managed category and channels.
+- `/match config recover-setup` — acknowledge/rollback an interrupted setup after inspecting any ambiguous Discord create.
+- `/match config disable` — block new matches without affecting an existing match or deleting resources.
+- `/match config enable` — validate an intact configuration and re-enable new matches.
+- `/match config teardown` — preview and, after a signed five-minute confirmation, archive and lock only persisted bot-managed channels. It never deletes channels; a Discord administrator may remove archived channels manually. Active guild slots block teardown.
 
-All 10man commands reply ephemerally and can be invoked from any guild channel;
+All Office Club Competitive commands reply ephemerally and can be invoked from any guild channel;
 authorization is enforced server-side by the configured roles.
 
 ## Queue and dashboard controls
 
-`/10man-admin queue-panel` repairs the persistent queue panel in the configured lobby text
+`/match admin queue-panel` repairs the persistent Match Queue panel in the configured lobby text
 channel. A full queue is promoted atomically into the deadline-driven ready,
 captain, draft, and veto workflow. Queue and match-dashboard controls are
 signed and version-bound; use the refreshed panel rather than retrying a stale

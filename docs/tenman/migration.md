@@ -1,4 +1,4 @@
-# 10man deployment
+# Office Club Competitive deployment
 
 ## Deployment order
 

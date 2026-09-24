@@ -19,7 +19,7 @@ export function buildPartyPanelResponse(
   embeds: EmbedBuilder[];
   components: ActionRowBuilder<ButtonBuilder | UserSelectMenuBuilder>[];
 } {
-  const base = new EmbedBuilder().setTitle('10man Party').setColor(0x5865f2);
+  const base = new EmbedBuilder().setTitle('Team Status').setColor(0x5865f2);
   if (!state.enabled) {
     return {
       embeds: [base.setDescription('Parties are disabled on this server.')],
@@ -29,8 +29,8 @@ export function buildPartyPanelResponse(
   if (state.party === null) {
     const description =
       state.pendingInvites.length === 0
-        ? 'You are not in a party. Create one to queue together with friends.'
-        : 'You are not in a party.';
+        ? 'You are not in a team. Create one to queue together with friends.'
+        : 'You are not in a team.';
     const embeds = [base.setDescription(description)];
     const components: ActionRowBuilder<ButtonBuilder | UserSelectMenuBuilder>[] = [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -38,7 +38,7 @@ export function buildPartyPanelResponse(
           .setCustomId(
             createPartyCustomId({ action: 'CREATE', guildId, actorDiscordUserId }, secret),
           )
-          .setLabel('Create Party')
+          .setLabel('Create Team')
           .setStyle(ButtonStyle.Success),
         refreshButton(guildId, actorDiscordUserId, secret),
       ),
@@ -46,7 +46,7 @@ export function buildPartyPanelResponse(
     for (const invite of state.pendingInvites.slice(0, 3)) {
       embeds.push(
         new EmbedBuilder()
-          .setTitle('Party invitation')
+          .setTitle('Team invitation')
           .setColor(0xfee75c)
           .setDescription(
             `<@${invite.inviterDiscordUserId}> invited you. Expires <t:${String(Math.floor(invite.expiresAt.getTime() / 1000))}:R>.`,
@@ -82,7 +82,7 @@ export function buildPartyPanelResponse(
     )
     .join('\n');
   const embeds = [
-    base.setDescription('Your 10man party. Members queue together.').addFields(
+    base.setDescription('Your team. Members queue together.').addFields(
       { name: 'Members', value: members || 'None' },
       {
         name: 'Role',
@@ -132,7 +132,7 @@ export function buildPartyPanelResponse(
             secret,
           ),
         )
-        .setLabel('Disband Party')
+        .setLabel('Disband Team')
         .setStyle(ButtonStyle.Danger),
     );
   } else {
@@ -149,7 +149,7 @@ export function buildPartyPanelResponse(
             secret,
           ),
         )
-        .setLabel('Leave Party')
+        .setLabel('Leave Team')
         .setStyle(ButtonStyle.Danger),
     );
   }
@@ -199,7 +199,7 @@ export function buildPartyInviteAcceptRows(
             secret,
           ),
         )
-        .setLabel('Accept Party Invitation')
+        .setLabel('Accept Team Invitation')
         .setStyle(ButtonStyle.Primary),
     ),
   );

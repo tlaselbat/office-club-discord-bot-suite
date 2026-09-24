@@ -34,7 +34,7 @@ import { createQueueCustomId, parseQueueCustomId } from './queue-custom-id.js';
 import {
   joinQueueButton,
   leaveQueueButton,
-  myTenManButton,
+  matchCenterButton,
   queueRefreshButton,
 } from './queue-components.js';
 import { parseMatchAdminCustomId } from './match-admin-custom-id.js';
@@ -51,7 +51,7 @@ import {
   parseResultDisputeCustomId,
   createResultDisputeCustomId,
 } from './match-result-dispute-custom-id.js';
-import { buildPlayerHubResponse } from './player-hub-components.js';
+import { buildMatchCenterResponse } from './player-hub-components.js';
 import { buildPartyInviteAcceptRows, buildPartyPanelResponse } from './party-components.js';
 import {
   buildAdminMatchPanel,
@@ -278,7 +278,7 @@ type ComponentOrModal = MessageComponentInteraction | ModalSubmitInteraction;
 
 const PUBLIC_PANEL_ACTOR_PLACEHOLDER = '00000000000000000000';
 
-/** Owns every supported 10man component namespace. */
+/** Owns every supported Office Club Competitive component namespace. */
 export class TenManComponentInteractionRouter {
   private readonly match: MatchInteractionRouter;
   private readonly queueService: QueueService;
@@ -327,7 +327,7 @@ export class TenManComponentInteractionRouter {
     if (interaction.customId.startsWith('tms:')) return this.handleSteamAccount(interaction);
     if (interaction.customId.startsWith('tmd:')) return this.handleResultDispute(interaction);
     if (interaction.customId.startsWith('tma:')) return this.handleAdmin(interaction);
-    throw new Error('Unsupported 10man component namespace');
+    throw new Error('Unsupported Office Club Competitive component namespace');
   }
 
   private async handleModal(interaction: ModalSubmitInteraction): Promise<void> {
@@ -657,11 +657,11 @@ export class TenManComponentInteractionRouter {
           },
         },
       });
-      const embed = new EmbedBuilder().setTitle('10man Stats').setColor(0x5865f2);
+      const embed = new EmbedBuilder().setTitle('Match Stats').setColor(0x5865f2);
       if (stats === null) {
         embed.setDescription('You have no match statistics yet.');
       } else {
-        embed.setDescription('Your 10man record on this server.').addFields(
+        embed.setDescription('Your competitive record on this server.').addFields(
           { name: 'Rating', value: String(stats.rating), inline: true },
           {
             name: 'Record',
@@ -693,7 +693,7 @@ export class TenManComponentInteractionRouter {
         orderBy: { createdAt: 'desc' },
       }),
     ]);
-    const response = buildPlayerHubResponse(
+    const response = buildMatchCenterResponse(
       status,
       guildId,
       interaction.user.id,
@@ -780,7 +780,7 @@ export class TenManComponentInteractionRouter {
                 )
                 .setLabel('Remove Party')
                 .setStyle(ButtonStyle.Danger),
-              myTenManButton(
+              matchCenterButton(
                 payload.guildId,
                 interaction.user.id,
                 this.options.componentSigningSecret,
@@ -839,13 +839,13 @@ export class TenManComponentInteractionRouter {
     const version = queue?.version ?? 0;
     const hubAndLeave = [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        myTenManButton(guildId, interaction.user.id, secret),
+        matchCenterButton(guildId, interaction.user.id, secret),
         leaveQueueButton(guildId, version, secret),
       ),
     ];
     const hubAndRefresh = [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        myTenManButton(guildId, interaction.user.id, secret),
+        matchCenterButton(guildId, interaction.user.id, secret),
         queueRefreshButton(guildId, version, secret),
       ),
     ];
@@ -867,7 +867,7 @@ export class TenManComponentInteractionRouter {
               ? hubAndLeave
               : [
                   new ActionRowBuilder<ButtonBuilder>().addComponents(
-                    myTenManButton(guildId, interaction.user.id, secret),
+                    matchCenterButton(guildId, interaction.user.id, secret),
                   ),
                 ],
         });
@@ -927,7 +927,7 @@ export class TenManComponentInteractionRouter {
         await interaction.editReply({
           content: [
             '**Queue unavailable**',
-            'A 10man is currently being formed or played. The queue will reopen automatically afterward.',
+            'A competitive match is currently being formed or played. The queue will reopen automatically afterward.',
           ].join('\n'),
           components: hubAndRefresh,
         });
@@ -1002,7 +1002,7 @@ export class TenManComponentInteractionRouter {
                   },
                   this.options.componentSigningSecret,
                 ),
-                label: 'Lobby Status',
+                label: 'Match Center',
               },
             ],
           },
@@ -1224,7 +1224,7 @@ export class TenManComponentInteractionRouter {
             ? false
             : await invitee
                 .send({
-                  content: `<@${interaction.user.id}> invited you to their 10man party. Accept within 15 minutes.`,
+                  content: `<@${interaction.user.id}> invited you to their team. Accept within 15 minutes.`,
                   components: buildPartyInviteAcceptRows(
                     guildId,
                     target,
@@ -1236,7 +1236,7 @@ export class TenManComponentInteractionRouter {
                 .catch(() => false);
         if (!delivered) {
           await interaction.editReply({
-            content: `Invitation created for <@${target}>. Their DMs are unavailable; they can accept it from their **/10man party** panel.`,
+            content: `Invitation created for <@${target}>. Their DMs are unavailable; they can accept it from their **/match team** panel.`,
             components: [],
             embeds: [],
           });
@@ -1321,7 +1321,7 @@ export class TenManComponentInteractionRouter {
         interaction.id,
       );
       await interaction.editReply({
-        content: 'Match canceled. Cleanup status is available in `/10man hub`.',
+        content: 'Match canceled. Cleanup status is available in `/match center`.',
         components: [],
       });
       return;
@@ -1421,7 +1421,7 @@ export class TenManComponentInteractionRouter {
       );
       await interaction.editReply({
         content:
-          'Managed 10man channels were archived and locked. A Discord administrator may delete them manually if desired.',
+          'Managed competitive channels were archived and locked. A Discord administrator may delete them manually if desired.',
         components: [],
       });
       return;
@@ -1433,7 +1433,7 @@ export class TenManComponentInteractionRouter {
       payload.settingsVersion,
     );
     await interaction.editReply({
-      content: 'Managed setup recovery completed. You can run `/10man-config setup` again.',
+      content: 'Managed setup recovery completed. You can run `/match config setup` again.',
       components: [],
     });
   }
@@ -1441,7 +1441,7 @@ export class TenManComponentInteractionRouter {
 
 function howItWorksText(): string {
   return [
-    '**How 10mans work**',
+    '**How Office Club Competitive works**',
     '',
     '1. Assign the Steam account you plan to use.',
     '2. Join the queue.',
@@ -1472,7 +1472,7 @@ export function buildSteamAccountStatusResponse(
     return {
       content: [
         'You do not have an assigned Steam account.',
-        'Assign the Steam account you intend to use for 10man matches.',
+        'Assign the Steam account you intend to use for Office Club Competitive matches.',
       ].join('\n'),
       components: [{ type: 1, components: [assignButton] }],
     };

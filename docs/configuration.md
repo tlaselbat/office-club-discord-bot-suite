@@ -56,7 +56,7 @@ The second output must decode to exactly 32 bytes. Keep all values outside sourc
 
 ## Guild settings
 
-`/10man-config configure` stores:
+`/match config configure` stores:
 
 - Lobby text channel used for the persistent panel
 - Lobby, Team 1, and Team 2 voice channels
@@ -72,7 +72,7 @@ A match cannot be created until settings are enabled and have a default profile.
 
 ## Member Rewards settings
 
-Configure Member Rewards from `/admin/guilds/<guild-id>/rewards`, then enable it independently from 10man. Settings include text XP and cooldown, allowlisted text channels, voice XP and interval, allowlisted voice channels, guild-tag duration and role, reconciliation interval, and ordered level thresholds with optional roles.
+Configure Member Rewards from `/admin/guilds/<guild-id>/rewards`, then enable it independently from Office Club Competitive. Settings include text XP and cooldown, allowlisted text channels, voice XP and interval, allowlisted voice channels, guild-tag duration and role, reconciliation interval, and ordered level thresholds with optional roles.
 
 The structured level table accepts a level number, XP threshold, optional label, and optional Discord role. Thresholds must be nonnegative and strictly increasing. Configured roles must be unmanaged and below the bot's highest role. Manual XP adjustments require a member ID, nonzero signed amount, and reason; they create immutable ledger and audit records.
 

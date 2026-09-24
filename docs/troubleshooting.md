@@ -19,14 +19,14 @@
 
 ## Initial configuration is rejected
 
-- The first `/match admin configure` must be run by a member with Discord's native Administrator permission because no configured bot administrator role exists yet.
+- The first `/match config configure` must be run by a member with Discord's native Administrator permission because no configured bot administrator role exists yet.
 - Later configuration can be performed by a native administrator or the configured administrator role.
 - Confirm all selected channels and roles still exist and the bot has the channel permissions listed in [Permissions](permissions.md).
 - Confirm the requested game profile exists and is enabled. Run the seed command if `competitive_5v5` is absent.
 
 ## Managed setup or teardown is interrupted
 
-Run `/match admin diagnostics`. An empty `SETTING_UP/RESERVED` state is recoverable through `/match admin recover-setup`. A `*_CREATE_IN_FLIGHT` state is ambiguous: inspect Discord and its audit log, manually remove any untracked resource from that attempt, then use the signed recovery acknowledgement. The bot never adopts or deletes same-named resources.
+Run `/match admin diagnostics`. An empty `SETTING_UP/RESERVED` state is recoverable through `/match config recover-setup`. A `*_CREATE_IN_FLIGHT` state is ambiguous: inspect Discord and its audit log, manually remove any untracked resource from that attempt, then use the signed recovery acknowledgement. The bot never adopts or deletes same-named resources.
 
 If teardown partially fails, settings remain disabled and only unresolved managed IDs remain. Restore Manage Channels/network access and rerun `/match admin teardown`. Teardown archives and locks channels rather than deleting them, and refuses while any active match or cleanup owns the guild slot.
 
@@ -34,20 +34,20 @@ Administrative confirmations expire after five minutes and require the same init
 
 ## Match creation is rejected
 
-- Run `/match admin status` and `/match admin diagnostics`.
+- Run `/match config status` and `/match admin diagnostics`.
 - The guild must be enabled with a default profile and accessible configured lobby text channel.
 - Only configured privileged, moderator, or administrator roles can create a match.
 - PostgreSQL permits exactly one active guild slot. If an old terminal match still owns it, finish cleanup rather than manually creating another match.
 
 ## The panel did not appear where the command was run
 
-This is expected when `/10man create` is invoked outside the configured lobby text channel. The persistent panel is always sent to the configured lobby channel. The command response identifies that channel.
+This is expected when match creation is triggered outside the configured lobby text channel. The persistent panel is always sent to the configured lobby channel. The command response identifies that channel.
 
 If publication fails, creation is compensated to a failed non-active match. Fix channel existence and bot permissions, run diagnostics, and create again.
 
 ## Panel controls are stale or fail
 
-Component IDs are signed and bound to a match version. Any roster, profile, team, map, or state change can invalidate an older component. Use the refreshed persistent panel or `/10man status`.
+Component IDs are signed and bound to a match version. Any roster, profile, team, map, or state change can invalidate an older component. Use the refreshed persistent panel or `/match admin diagnostics`.
 
 Team assignment is two-step: select a participant, then use the ephemeral Team 1 or Team 2 buttons. If the participant leaves or the match version changes between those steps, select again.
 

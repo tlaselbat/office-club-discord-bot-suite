@@ -14,14 +14,14 @@
 
 - [ ] Bot has required Guilds, Members, Messages, and Voice States intents
 - [ ] Bot has permissions to manage configured channels, messages, and voice
-- [ ] `/10man-config configure`, `/10man-config setup`, and `/10man-admin diagnostics` succeed
+- [ ] `/match config configure`, `/match config setup`, and `/match admin diagnostics` succeed
 - [ ] Setup creates only the managed category and expected children
 - [ ] Teardown rejects an active or cleanup-held match and never removes manual channels
 - [ ] Administrative confirmations reject another actor, expiration, and stale generation
 
 ## Queue and formation
 
-- [ ] `/10man queue` creates or repairs one durable queue panel
+- [ ] `/match admin queue-panel` creates or repairs one durable queue panel
 - [ ] Ten Steam-assigned test users join; duplicate user and Steam identity are rejected or disputed
 - [ ] Concurrent final joins create exactly one `READY_CHECK` match and timeout job
 - [ ] Ready interactions reject stale components; deadline cancellation returns players safely

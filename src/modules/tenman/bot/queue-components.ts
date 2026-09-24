@@ -24,11 +24,11 @@ export function leaveQueueButton(guildId: string, version: number, secret: strin
     .setStyle(ButtonStyle.Danger);
 }
 
-export function myTenManButton(
+export function matchCenterButton(
   guildId: string,
   actorDiscordUserId: string,
   secret: string,
-  label = 'Lobby Status',
+  label = 'Match Center',
 ): ButtonBuilder {
   return new ButtonBuilder()
     .setCustomId(createPlayerHubCustomId({ action: 'HUB', guildId, actorDiscordUserId }, secret))
@@ -74,7 +74,7 @@ export function buildQueueControls(
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       joinQueueButton(guildId, version, secret),
-      myTenManButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+      matchCenterButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       steamAccountButton(guildId, secret),
@@ -96,7 +96,7 @@ export function buildLockedQueueControls(
         .setLabel('Queue Locked')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(true),
-      myTenManButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+      matchCenterButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       steamAccountButton(guildId, secret),

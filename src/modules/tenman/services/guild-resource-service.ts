@@ -46,14 +46,14 @@ export interface ManagedPreview {
 }
 
 const resources = [
-  { step: 'CATEGORY' as const, name: '10Man', type: ChannelType.GuildCategory },
-  { step: 'LOBBY_TEXT' as const, name: '10man-lobby', type: ChannelType.GuildText },
-  { step: 'LOBBY_VOICE' as const, name: 'Lobby', type: ChannelType.GuildVoice },
+  { step: 'CATEGORY' as const, name: 'Competitive', type: ChannelType.GuildCategory },
+  { step: 'LOBBY_TEXT' as const, name: 'match-queue', type: ChannelType.GuildText },
+  { step: 'LOBBY_VOICE' as const, name: 'Match Lobby', type: ChannelType.GuildVoice },
   { step: 'TEAM1_VOICE' as const, name: 'Team 1', type: ChannelType.GuildVoice },
   { step: 'TEAM2_VOICE' as const, name: 'Team 2', type: ChannelType.GuildVoice },
 ] as const;
 
-const ARCHIVE_PREFIX = 'archived-10man-';
+const ARCHIVE_PREFIX = 'archived-competitive-';
 
 function archivedName(name: string): string {
   return name.startsWith(ARCHIVE_PREFIX) ? name : `${ARCHIVE_PREFIX}${name}`.slice(0, 100);
@@ -90,7 +90,7 @@ export class GuildResourceService {
           name: resource.name,
           type: resource.type,
           ...(resource.type === ChannelType.GuildCategory ? {} : { parent: categoryId }),
-          reason: `10Man managed setup by ${command.actorDiscordUserId}`,
+          reason: `Office Club Competitive managed setup by ${command.actorDiscordUserId}`,
         });
         if (resource.type === ChannelType.GuildCategory) categoryId = channel.id;
         else channelIds.push(channel.id);
@@ -178,7 +178,7 @@ export class GuildResourceService {
     ) {
       throw new PublicError(
         'ENABLE_REQUIRES_SETUP',
-        'Managed channels are not configured. Run `/10man-config setup`.',
+        'Managed channels are not configured. Run `/match config setup`.'
       );
     }
     await this.validateExisting(settings);
@@ -212,7 +212,7 @@ export class GuildResourceService {
     if (settings.managedResourceState === 'SETTING_UP') {
       throw new PublicError(
         'SETUP_IN_PROGRESS',
-        'Managed setup recovery is required. Run `/10man-config recover-setup`.',
+        'Managed setup recovery is required. Run `/match config recover-setup`.'
       );
     }
     await this.assertNoActiveMatch(guildId);
@@ -352,7 +352,7 @@ export class GuildResourceService {
     } catch {
       throw new PublicError(
         'PROFILE_UNAVAILABLE',
-        'The selected game profile is not supported by the competitive 10man release.',
+        'The selected game profile is not supported by the competitive release.'
       );
     }
     return {
@@ -697,7 +697,7 @@ export class GuildResourceService {
     guild: Guild,
     actorDiscordUserId: string,
   ): Promise<void> {
-    const reason = `10Man managed archive by ${actorDiscordUserId}; manual deletion required`;
+    const reason = `Office Club Competitive managed archive by ${actorDiscordUserId}; manual deletion required`;
     await channel.edit({ name: archivedName(channel.name), reason });
     await (channel as GuildChannel).permissionOverwrites.edit(guild.roles.everyone, {
       ViewChannel: false,

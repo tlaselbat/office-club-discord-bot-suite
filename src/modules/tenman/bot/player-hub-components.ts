@@ -11,7 +11,7 @@ import { createResultDisputeCustomId } from './match-result-dispute-custom-id.js
 import type { PlayerStatus } from '../services/player-status-service.js';
 import { matchPhaseLabel } from './presentation.js';
 
-export function buildPlayerHubResponse(
+export function buildMatchCenterResponse(
   status: PlayerStatus,
   guildId: string,
   discordUserId: string,
@@ -20,7 +20,7 @@ export function buildPlayerHubResponse(
   matchPhaseGeneration: number,
   secret: string,
 ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
-  const base = new EmbedBuilder().setTitle('Your 10man').setColor(0x5865f2);
+  const base = new EmbedBuilder().setTitle('Match Center').setColor(0x5865f2);
   const nav = navRow(guildId, discordUserId, secret);
 
   switch (status.kind) {
@@ -29,7 +29,7 @@ export function buildPlayerHubResponse(
         embeds: [
           base
             .setDescription(
-              'Welcome to 10man. Assign the Steam account you intend to use, then join the queue when there are enough players.',
+              'Welcome to Office Club Competitive. Assign the Steam account you intend to use, then join the Match Queue when there are enough players.',
             )
             .addFields(
               { name: 'Steam account', value: 'Not assigned', inline: true },
@@ -164,7 +164,7 @@ export function buildPlayerHubResponse(
       return {
         embeds: [
           base
-            .setDescription('You have an active 10man match.')
+            .setDescription('You have an active competitive match.')
             .addFields(
               { name: 'Phase', value: matchPhaseLabel(status.state), inline: true },
               { name: 'Map', value: status.selectedMap ?? 'Pending', inline: true },
@@ -269,7 +269,7 @@ function navRow(
       .setCustomId(
         createPlayerHubCustomId({ action: 'HISTORY', guildId, actorDiscordUserId }, secret),
       )
-      .setLabel('History')
+      .setLabel('Match History')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(

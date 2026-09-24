@@ -51,7 +51,7 @@ export function buildAdminMatchPanel(
       secret,
     );
   const embed = new EmbedBuilder()
-    .setTitle(`10man Admin — Match ${match.id.slice(0, 8)}`)
+    .setTitle(`Match Admin — Match ${match.id.slice(0, 8)}`)
     .setColor(0xed4245)
     .setDescription(
       [
@@ -175,7 +175,7 @@ export function buildAdminQueuePanel(
   return {
     embeds: [
       new EmbedBuilder()
-        .setTitle('10man Admin — Queue')
+        .setTitle('Match Admin — Queue')
         .setColor(0xed4245)
         .addFields(
           { name: 'Queue', value: queued },
@@ -249,10 +249,10 @@ export function buildAdminPlayersPanel(
   return {
     embeds: [
       new EmbedBuilder()
-        .setTitle('10man Admin — Players')
+        .setTitle('Match Admin — Players')
         .setColor(0xed4245)
         .setDescription(
-          'Pick a player to reset their 10man stats. You will be asked to confirm before anything changes.',
+          'Pick a player to reset their competitive stats. You will be asked to confirm before anything changes.',
         ),
     ],
     components: [
@@ -301,7 +301,7 @@ export function buildAdminDisputesPanel(
 ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
   const embeds: EmbedBuilder[] = [
     new EmbedBuilder()
-      .setTitle('10man Admin — Disputes')
+      .setTitle('Match Admin — Disputes')
       .setColor(0xed4245)
       .addFields(
         {
@@ -442,9 +442,9 @@ export function buildHistoryResponse(
     return {
       embeds: [
         new EmbedBuilder()
-          .setTitle('10man History')
+          .setTitle('Match History')
           .setColor(0x5865f2)
-          .setDescription(`No finished 10man matches for <@${targetDiscordUserId}> yet.`),
+          .setDescription(`No finished matches for <@${targetDiscordUserId}> yet.`),
       ],
       components: [],
     };
@@ -500,7 +500,7 @@ export function buildHistoryResponse(
   return {
     embeds: [
       new EmbedBuilder()
-        .setTitle(`10man History — <@${targetDiscordUserId}>`)
+        .setTitle(`Match History — <@${targetDiscordUserId}>`)
         .setColor(0x5865f2)
         .setDescription(lines.join('\n')),
     ],

@@ -33,7 +33,7 @@ If UFW is already active, the script allows OpenSSH and TCP 80/443; it does not 
 
 This release is a fresh-database baseline: deploy it only to an empty PostgreSQL database. Do not apply its initial migration to an existing installation or manually alter `_prisma_migrations`; create and test a separate import or upgrade process first. Take and restore-test a backup before any destructive database operation.
 
-For database-backed rewards and 10man invariant checks, create an isolated migrated test database and run `TEST_DATABASE_URL=postgresql://... corepack pnpm test:database`. The tests create uniquely named rows and remove them afterward. Never point `TEST_DATABASE_URL` at production.
+For database-backed rewards and Office Club Competitive invariant checks, create an isolated migrated test database and run `TEST_DATABASE_URL=postgresql://... corepack pnpm test:database`. The tests create uniquely named rows and remove them afterward. Never point `TEST_DATABASE_URL` at production.
 
 Deploy with:
 
@@ -115,7 +115,7 @@ Do not manually release the slot while a bot-owned disposable server may remain.
 
 ## Managed setup and teardown recovery
 
-`SETTING_UP/RESERVED` with no IDs can be cleared through `/10man-config recover-setup`. A `*_CREATE_IN_FLIGHT` step means Discord may have accepted a create before its ID was persisted. Inspect Discord and its audit log, manually remove any untracked resource from that attempt, then use the signed recovery acknowledgement. Never adopt or delete by name.
+`SETTING_UP/RESERVED` with no IDs can be cleared through `/match config recover-setup`. A `*_CREATE_IN_FLIGHT` step means Discord may have accepted a create before its ID was persisted. Inspect Discord and its audit log, manually remove any untracked resource from that attempt, then use the signed recovery acknowledgement. Never adopt or delete by name.
 
 Partial tracked setup rollback and `TEARING_DOWN` retain unresolved persisted IDs. Restore Manage Channels/network access and rerun recovery or teardown. Every Discord operation occurs outside PostgreSQL transactions; state/attempt/version checks serialize phases. All instances must share the same persistent `MATCH_TOKEN_SIGNING_SECRET` for confirmations to survive restarts.
 
@@ -134,4 +134,4 @@ or channel by name.
 
 ## Steam relinking
 
-Users can run `/10man account` to replace their assigned SteamID64. The reassignment invalidates the prior active identity in the same transaction that records the new one. Changes are rejected while that Discord identity is queued or protected by a locked, provisioning, loaded, warmup, live, or paused match. Duplicate Steam IDs are reported to staff as assignment disputes.
+Users can run `/match account` to replace their assigned SteamID64. The reassignment invalidates the prior active identity in the same transaction that records the new one. Changes are rejected while that Discord identity is queued or protected by a locked, provisioning, loaded, warmup, live, or paused match. Duplicate Steam IDs are reported to staff as assignment disputes.

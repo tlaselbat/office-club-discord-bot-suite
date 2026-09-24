@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../../src/database/prisma.js', () => ({ createPrismaClient: () => mocks.prisma }));
 vi.mock('../../src/bot/client.js', () => ({ createDiscordClient: () => mocks.discord }));
-vi.mock('../../src/modules/tenman/module.js', () => ({ createTenManModule: () => ({}) }));
+vi.mock('../../src/modules/tenman/module.js', () => ({ createCompetitiveModule: () => ({}) }));
 vi.mock('../../src/modules/rewards/module.js', () => ({ createRewardsModule: () => ({}) }));
 vi.mock('../../src/modules/tenman/services/startup-recovery.js', () => ({
   StartupRecovery: class {

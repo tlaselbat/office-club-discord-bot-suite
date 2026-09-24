@@ -77,7 +77,7 @@ describe('GuildResourceService lifecycle guards', () => {
     const permissionEdit = vi.fn().mockResolvedValue(undefined);
     const deleteChannel = vi.fn().mockResolvedValue(undefined);
     const channel = {
-      name: '10man-lobby',
+      name: 'match-queue',
       edit,
       delete: deleteChannel,
       permissionOverwrites: { edit: permissionEdit },
@@ -98,7 +98,7 @@ describe('GuildResourceService lifecycle guards', () => {
     ).archiveTracked('123456789012345678', '223456789012345678', 'correlation');
 
     expect(edit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'archived-10man-10man-lobby' }),
+      expect.objectContaining({ name: 'archived-competitive-match-queue' }),
     );
     expect(permissionEdit).toHaveBeenCalledWith(
       { id: 'everyone' },

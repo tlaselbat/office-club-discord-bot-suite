@@ -92,7 +92,7 @@ export class MatchResultReceiptService {
     ratingChanges: Array<{ discordUserId: string; delta: number; ratingAfter: number }>;
     demoReferences: Array<{ status: string }>;
   }): EmbedBuilder {
-    const embed = new EmbedBuilder().setTitle('10man Match Result').setTimestamp();
+    const embed = new EmbedBuilder().setTitle('Competitive Match Result').setTimestamp();
 
     if (match.state === 'CANCELED') {
       embed.setDescription('This match was canceled.').setColor(0x808080);

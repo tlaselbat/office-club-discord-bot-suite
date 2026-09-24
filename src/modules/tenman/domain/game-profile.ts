@@ -31,7 +31,7 @@ export const gameProfileSchema = z
 export type GameProfile = z.infer<typeof gameProfileSchema>;
 
 /**
- * The first 10man release intentionally supports one competitive contract only.
+ * The first Office Club Competitive release intentionally supports one competitive contract only.
  * Keep this separate from the broad storage schema so future modes require an
  * explicit implementation rather than silently inheriting 5v5 assumptions.
  */
@@ -44,7 +44,7 @@ export function assertCompetitiveBo1FiveVFive(profile: GameProfile): void {
     profile.serverSlots !== 11 ||
     profile.mapAllowlist.length < 2
   ) {
-    throw new Error('10man first release supports only BO1 5v5 with 11 server slots');
+    throw new Error('Office Club Competitive first release supports only BO1 5v5 with 11 server slots');
   }
   if (
     profile.matchzy.wingman ||
@@ -52,6 +52,6 @@ export function assertCompetitiveBo1FiveVFive(profile: GameProfile): void {
     !profile.matchzy.knifeRound ||
     profile.matchzy.mapSide !== 'knife'
   ) {
-    throw new Error('10man first release requires a 10-player competitive ready check');
+    throw new Error('Office Club Competitive first release requires a 10-player competitive ready check');
   }
 }

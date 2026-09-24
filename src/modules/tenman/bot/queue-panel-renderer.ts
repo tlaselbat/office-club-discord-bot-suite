@@ -72,7 +72,7 @@ function buildThumbnailAttachment(): AttachmentBuilder {
 function buildHeaderSection(): SectionBuilder {
   return new SectionBuilder()
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('# CS2 10man'),
+      new TextDisplayBuilder().setContent('# Match Queue'),
       new TextDisplayBuilder().setContent('Private 5v5 CS2 matchmaking.'),
     )
     .setThumbnailAccessory(new ThumbnailBuilder().setURL(`attachment://${THUMBNAIL_FILE_NAME}`));

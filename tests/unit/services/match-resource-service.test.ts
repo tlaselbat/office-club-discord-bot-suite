@@ -141,7 +141,7 @@ describe('MatchResourceService durable creation recovery', () => {
 
     await new MatchResourceService(prisma, client as never).archiveOwnedChannel('resource-1');
 
-    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ name: 'archived-10man-match-42' }));
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ name: 'archived-competitive-match-42' }));
     expect(permissionEdit).toHaveBeenCalledWith(
       { id: 'everyone' },
       expect.objectContaining({ ViewChannel: false, SendMessages: false }),

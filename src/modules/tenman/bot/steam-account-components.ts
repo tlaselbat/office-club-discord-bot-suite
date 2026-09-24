@@ -119,8 +119,8 @@ export function buildDuplicateAssignmentResponse(
 export function buildLockedAssignmentResponse(reason: 'QUEUED' | 'MATCH'): string {
   const context =
     reason === 'QUEUED'
-      ? 'You are currently in the 10man queue.'
-      : 'You are currently part of an active 10man roster.';
+      ? 'You are currently in the Match Queue.'
+      : 'You are currently part of an active competitive roster.';
   return `Steam account can't be changed right now. ${context} Leave the queue or finish the current match first.`;
 }
 

@@ -19,7 +19,7 @@ import type { SteamProfileService } from '../modules/tenman/services/steam-profi
 import { PlayerStatusService } from '../modules/tenman/services/player-status-service.js';
 import { SteamAdminService } from '../modules/tenman/services/steam-admin-service.js';
 import { GuildSettingsService } from '../modules/tenman/services/guild-settings-service.js';
-import { buildPlayerHubResponse } from '../modules/tenman/bot/player-hub-components.js';
+import { buildMatchCenterResponse } from '../modules/tenman/bot/player-hub-components.js';
 import { MatchResultDisputeService } from '../modules/tenman/services/match-result-dispute-service.js';
 import { QueueAlertService } from '../modules/tenman/services/queue-alert-service.js';
 import type { DatHostClient } from '../modules/tenman/integrations/dathost/client.js';
@@ -35,7 +35,7 @@ import {
 import { adminGeneration } from '../modules/tenman/bot/admin-custom-id.js';
 import { buildAdminConfirmationControls } from '../modules/tenman/bot/admin-components.js';
 import { ModuleRegistry } from '../core/modules/registry.js';
-import { createTenManModule } from '../modules/tenman/module.js';
+import { createCompetitiveModule } from '../modules/tenman/module.js';
 import { RewardService } from '../modules/rewards/services/reward-service.js';
 import { TextActivityService } from '../modules/rewards/services/text-activity-service.js';
 import { createRewardsModule } from '../modules/rewards/module.js';
@@ -180,7 +180,7 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
     dependencies.logger,
   );
   const ephemeralReplies = new EphemeralReplyManager();
-  const tenManComponentRouter = new TenManComponentInteractionRouter(
+  const competitiveComponentRouter = new TenManComponentInteractionRouter(
     {
       prisma: dependencies.prisma,
       componentSigningSecret: dependencies.componentSigningSecret,
@@ -201,7 +201,7 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
   );
   const modules = new ModuleRegistry([
     {
-      ...createTenManModule(),
+      ...createCompetitiveModule(),
       handleInteraction: async ({ interaction }) => {
         if (interaction.isChatInputCommand()) {
           await handleCommand(
@@ -213,7 +213,7 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
             ephemeralReplies,
           );
         } else {
-          await tenManComponentRouter.handle(interaction);
+          await competitiveComponentRouter.handle(interaction);
         }
       },
     },
@@ -278,10 +278,11 @@ async function handleCommand(
   await ephemeralReplies.replace(interaction, () =>
     interaction.deferReply({ flags: MessageFlags.Ephemeral }),
   );
+  const subcommandGroup = interaction.options.getSubcommandGroup(false);
   const subcommand = interaction.options.getSubcommand();
 
-  if (interaction.commandName === '10man') {
-    if (subcommand === 'hub') {
+  if (interaction.commandName === 'match' && subcommandGroup === null) {
+    if (subcommand === 'center') {
       const [status, queue, match] = await Promise.all([
         new PlayerStatusService(dependencies.prisma).getStatus(
           interaction.guildId,
@@ -297,7 +298,7 @@ async function handleCommand(
           orderBy: { createdAt: 'desc' },
         }),
       ]);
-      const { embeds, components } = buildPlayerHubResponse(
+      const { embeds, components } = buildMatchCenterResponse(
         status,
         interaction.guildId,
         interaction.user.id,
@@ -343,7 +344,7 @@ async function handleCommand(
           guildId_discordUserId: { guildId: interaction.guildId, discordUserId: target.id },
         },
       });
-      const embed = new EmbedBuilder().setTitle('10man Stats').setColor(0x5865f2);
+      const embed = new EmbedBuilder().setTitle('Match Stats').setColor(0x5865f2);
       if (stats === null) {
         embed.setDescription(`<@${target.id}> has no match statistics yet.`);
       } else {
@@ -360,7 +361,7 @@ async function handleCommand(
       await interaction.editReply({ embeds: [embed] });
       return;
     }
-    if (subcommand === 'party') {
+    if (subcommand === 'team') {
       const partyService = new PartyService(dependencies.prisma);
       const state = await partyService.getPanelState(interaction.guildId, interaction.user.id);
       await interaction.editReply(
@@ -387,7 +388,7 @@ async function handleCommand(
     }
   }
 
-  if (interaction.commandName === '10man-admin') {
+  if (interaction.commandName === 'match' && subcommandGroup === 'admin') {
     if (subcommand === 'match') {
       const actor = await createGuildAdminActor(interaction, dependencies.prisma);
       assertAuthorized('VIEW_ADMIN', actor);
@@ -490,7 +491,7 @@ async function handleCommand(
         where: { guildId: interaction.guildId },
       });
       if (settings === null || !settings.enabled) {
-        throw new Error('10man is not enabled for this server');
+        throw new Error('Office Club Competitive is not enabled for this server');
       }
       if (settings.lobbyTextChannelId === null)
         throw new Error('Lobby text channel is not configured');
@@ -508,12 +509,12 @@ async function handleCommand(
         client,
         dependencies.componentSigningSecret,
       ).reconcile(interaction.guildId, channel);
-      await interaction.editReply({ content: `10man queue panel is ready in <#${channel.id}>.` });
+      await interaction.editReply({ content: `Match Queue panel is ready in <#${channel.id}>.` });
       return;
     }
   }
 
-  if (interaction.commandName === '10man-config') {
+  if (interaction.commandName === 'match' && subcommandGroup === 'config') {
     if (subcommand === 'status') {
       const adminActor = await createGuildAdminActor(interaction, dependencies.prisma);
       assertAuthorized('CONFIGURE_GUILD', adminActor);
@@ -522,13 +523,13 @@ async function handleCommand(
       });
       if (settings === null) {
         await interaction.editReply({
-          content: 'This server is not configured. Use `/10man-config configure`.',
+          content: 'This server is not configured. Use `/match config configure`.',
         });
         return;
       }
       await interaction.editReply({
         content:
-          `10man configured: ${settings.enabled ? 'enabled' : 'disabled'}\n` +
+          `Office Club Competitive configured: ${settings.enabled ? 'enabled' : 'disabled'}\n` +
           `Template: ${settings.dathostTemplateServerId ?? 'unset'}\n` +
           `Location: ${settings.defaultServerLocation ?? 'unset'}\n` +
           `Profile: ${settings.defaultGameProfileKey ?? 'unset'}\n` +
@@ -573,7 +574,7 @@ async function handleCommand(
             }),
       });
       await interaction.editReply({
-        content: `Managed 10man channels created in <#${result.categoryId ?? ''}>. Run \`/10man-admin diagnostics\` to verify setup.`,
+        content: `Managed competitive channels created in <#${result.categoryId ?? ''}>. Run \`/match admin diagnostics\` to verify setup.`,
       });
       return;
     }
@@ -586,7 +587,7 @@ async function handleCommand(
         interaction.id,
       );
       await interaction.editReply({
-        content: changed ? 'New 10man creation is disabled.' : 'This server is already disabled.',
+        content: changed ? 'New competitive match creation is disabled.' : 'This server is already disabled.',
       });
       return;
     }
@@ -599,7 +600,7 @@ async function handleCommand(
         interaction.id,
       );
       await interaction.editReply({
-        content: changed ? '10man creation is enabled.' : 'This server is already enabled.',
+        content: changed ? 'Competitive match creation is enabled.' : 'This server is already enabled.',
       });
       return;
     }
@@ -679,7 +680,7 @@ async function handleCommand(
         ...(teamSelectionMode === undefined ? {} : { teamSelectionMode }),
         ...(mapSelectionMode === undefined ? {} : { mapSelectionMode }),
       });
-      await interaction.editReply({ content: '10man configuration saved.' });
+      await interaction.editReply({ content: 'Competitive configuration saved.' });
       return;
     }
   }
@@ -732,7 +733,7 @@ function formatDiagnosticsReport(report: {
     } | null;
   };
 }): string {
-  if (!report.configured) return 'This server is not configured. Use `/10man-config configure`.';
+  if (!report.configured) return 'This server is not configured. Use `/match config configure`.';
   const status = (ok: boolean) => (ok ? 'OK' : 'FAIL');
   const lines = [`Configuration: ${report.enabled ? 'enabled' : 'disabled'}`];
   lines.push('Channels:');
@@ -768,7 +769,7 @@ function formatDiagnosticsReport(report: {
     );
   }
   if (report.tenMan !== undefined) {
-    lines.push('10man queue:');
+    lines.push('Match Queue:');
     lines.push(
       report.tenMan.queue === null
         ? '  not initialized'

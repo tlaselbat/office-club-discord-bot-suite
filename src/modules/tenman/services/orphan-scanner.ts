@@ -45,7 +45,7 @@ export class OrphanScanner {
     };
 
     if (userData === null || !userData.startsWith(OWNERSHIP_PREFIX)) {
-      return { ...base, disposition: 'unknown', reason: 'No tenman ownership marker' };
+      return { ...base, disposition: 'unknown', reason: 'No competitive ownership marker' };
     }
 
     const parts = userData.split(':');

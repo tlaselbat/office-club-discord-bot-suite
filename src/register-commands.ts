@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { registerCommands } from './bot/client.js';
 import { ModuleRegistry } from './core/modules/registry.js';
-import { createTenManModule } from './modules/tenman/module.js';
+import { createCompetitiveModule } from './modules/tenman/module.js';
 import { createRewardsModule } from './modules/rewards/module.js';
 
 const environment = z
@@ -11,7 +11,7 @@ const environment = z
   })
   .parse(process.env);
 
-const registry = new ModuleRegistry([createTenManModule(), createRewardsModule()]);
+const registry = new ModuleRegistry([createCompetitiveModule(), createRewardsModule()]);
 
 registerCommands(environment.DISCORD_TOKEN, environment.DISCORD_CLIENT_ID, registry.commands())
   .then(() => process.stdout.write('Discord slash commands registered.\n'))

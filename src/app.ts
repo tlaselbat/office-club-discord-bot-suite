@@ -23,7 +23,7 @@ import { createArtifactStorage } from './modules/tenman/services/artifact-storag
 import { MatchArtifactService } from './modules/tenman/services/match-artifact-service.js';
 import { WorkerRunner } from './jobs/runner.js';
 import { ModuleRegistry } from './core/modules/registry.js';
-import { createTenManModule } from './modules/tenman/module.js';
+import { createCompetitiveModule } from './modules/tenman/module.js';
 import { createRewardsModule } from './modules/rewards/module.js';
 
 export interface Application {
@@ -99,7 +99,7 @@ export async function createApplication(
     },
   });
   const modules = new ModuleRegistry([
-    createTenManModule({
+    createCompetitiveModule({
       prisma,
       dathost,
       discord,

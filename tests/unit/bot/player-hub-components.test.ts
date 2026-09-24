@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlayerHubResponse } from '../../../src/modules/tenman/bot/player-hub-components.js';
+import { buildMatchCenterResponse } from '../../../src/modules/tenman/bot/player-hub-components.js';
 import { parseQueueCustomId } from '../../../src/modules/tenman/bot/queue-custom-id.js';
 import { parseMatchCustomId } from '../../../src/modules/tenman/bot/match-custom-id.js';
 import type { PlayerStatus } from '../../../src/modules/tenman/services/player-status-service.js';
@@ -10,7 +10,7 @@ const userId = '223456789012345678';
 const matchId = '123e4567-e89b-12d3-a456-426614174000';
 
 function render(status: PlayerStatus) {
-  return buildPlayerHubResponse(status, guildId, userId, 5, 3, 2, secret);
+  return buildMatchCenterResponse(status, guildId, userId, 5, 3, 2, secret);
 }
 
 function embed(response: ReturnType<typeof render>) {
@@ -36,10 +36,10 @@ function labels(response: ReturnType<typeof render>) {
   return buttons(response).map((button) => button.label);
 }
 
-describe('Lobby Status personal interface', () => {
+describe('Match Center personal interface', () => {
   it('new player: no Steam account, not queued, direct assign action', () => {
     const response = render({ kind: 'NEW_PLAYER' });
-    expect(embed(response).title).toBe('Your 10man');
+    expect(embed(response).title).toBe('Match Center');
     const fieldNames = (embed(response).fields ?? []).map((field) => field.name);
     expect(fieldNames).toEqual(['Steam account', 'Queue']);
     expect(embed(response).fields?.[0]?.value).toBe('Not assigned');
@@ -52,7 +52,7 @@ describe('Lobby Status personal interface', () => {
     expect(embed(response).fields?.map((field) => field.value)).toContain('4 / 10 players');
     const all = buttons(response);
     expect(labels(response)).toEqual(
-      expect.arrayContaining(['Join Queue', 'Steam Account', 'How It Works', 'Refresh']),
+      expect.arrayContaining(['Join Queue', 'Steam Account', 'How It Works', 'Refresh', 'Match History']),
     );
     const join = all.find((button) => button.label === 'Join Queue');
     expect(parseQueueCustomId(join?.customId ?? '', secret)).toEqual({

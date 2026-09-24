@@ -1,4 +1,4 @@
-# 10man competitive QoL implementation plan
+# Office Club Competitive QoL implementation plan
 
 ## Purpose and release boundary
 

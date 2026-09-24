@@ -128,7 +128,7 @@ describe('queue panel renderer (Components V2)', () => {
     const summaryText = textDisplays(summary(payload))
       .map((display) => display.content)
       .join('\n');
-    expect(summaryText).toContain('# CS2 10man');
+    expect(summaryText).toContain('# Match Queue');
     expect(summaryText).toContain('Private 5v5 CS2 matchmaking.');
     expect(summaryText).toContain('## 1 / 10 players');
     expect(summaryText).toContain('Waiting for **9 more players**');
@@ -203,7 +203,7 @@ describe('queue panel renderer (Components V2)', () => {
     const labels = buttonLabels(payload);
     expect(labels).not.toContain('Join Queue');
     expect(labels).toEqual(
-      expect.arrayContaining(['Lobby Status', 'Steam Account', 'How It Works', 'Refresh']),
+      expect.arrayContaining(['Match Center', 'Steam Account', 'How It Works', 'Refresh']),
     );
   });
 
@@ -235,7 +235,7 @@ describe('queue panel renderer (Components V2)', () => {
     const payload = renderQueuePanel(view(), secret);
     expect(buttonLabels(payload)).toEqual([
       'Join Queue',
-      'Lobby Status',
+      'Match Center',
       'Steam Account',
       'How It Works',
       'Refresh',
@@ -244,10 +244,10 @@ describe('queue panel renderer (Components V2)', () => {
     expect(buttonLabels(payload)).not.toContain('My 10man');
   });
 
-  it('keeps Join Queue as success and Lobby Status as primary', () => {
+  it('keeps Join Queue as success and Match Center as primary', () => {
     const payload = renderQueuePanel(view(), secret);
     const join = buttons(payload).find((component) => component.label === 'Join Queue');
-    const lobby = buttons(payload).find((component) => component.label === 'Lobby Status');
+    const lobby = buttons(payload).find((component) => component.label === 'Match Center');
     expect(join?.style).toBe(ButtonStyle.Success);
     expect(lobby?.style).toBe(ButtonStyle.Primary);
   });

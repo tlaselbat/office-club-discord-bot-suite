@@ -17,7 +17,7 @@ The bot uses configured Discord role IDs for normal authorization. Discord's nat
 
 | Action                                       | Participant | Leader | Privileged | Moderator                           | Administrator              |
 | -------------------------------------------- | ----------- | ------ | ---------- | ----------------------------------- | -------------------------- |
-| View `/10man hub`                            | yes         | yes    | yes        | yes                                 | yes                        |
+| View `/match center`                            | yes         | yes    | yes        | yes                                 | yes                        |
 | Get private connect information              | yes         | yes    | yes        | only if also participant/privileged | yes                        |
 | Join when not already participating          | yes         | yes    | yes        | yes                                 | yes                        |
 | Leave / ready                                | yes         | yes    | no         | only if participating               | yes                        |

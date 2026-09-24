@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ModuleRegistry } from '../../../../src/core/modules/registry.js';
 import type { SuiteModule } from '../../../../src/core/modules/types.js';
 import type { JobHandler } from '../../../../src/jobs/worker.js';
-import { createTenManModule } from '../../../../src/modules/tenman/module.js';
+import { createCompetitiveModule } from '../../../../src/modules/tenman/module.js';
 
 const command = (name: string) => ({ name });
 const collisionHandler: JobHandler = async () => undefined;
@@ -80,10 +80,10 @@ describe('ModuleRegistry', () => {
   });
 
   it.each(['tmo:', 'tqb:', 'tpy:'])(
-    'dispatches the %s 10man component namespace',
+    'dispatches the %s competitive component namespace',
     async (prefix) => {
       const handleInteraction = vi.fn().mockResolvedValue(undefined);
-      const registry = new ModuleRegistry([{ ...createTenManModule(), handleInteraction }]);
+      const registry = new ModuleRegistry([{ ...createCompetitiveModule(), handleInteraction }]);
       const component = { isChatInputCommand: () => false, customId: `${prefix}signed-payload` };
 
       await expect(registry.dispatch(component as never)).resolves.toBe(true);
