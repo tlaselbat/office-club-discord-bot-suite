@@ -17,6 +17,12 @@ import { playersNeededLabel } from './presentation.js';
 const ACCENT_COLOR = 0x5865f2;
 const TEXT_DISPLAY_LIMIT = 4000;
 const NAME_LIMIT = 48;
+// Discord Components V2 does not expose a width property. A non-breaking-space suffix
+// is the only client-rendered width hint available to a TextDisplay. Keep this shared
+// target on meaningful existing lines so the summary and roster request the same
+// desktop footprint without adding dummy components or media.
+const PANEL_WIDTH_TARGET = 96;
+const WIDTH_SPACER_CHARACTER = '\u00a0';
 const THUMBNAIL_FILE_NAME = 'office-club-cs2-10man-thumbnail-512.png';
 const THUMBNAIL_ASSET_PATH = resolve(process.cwd(), 'assets', 'tenman', THUMBNAIL_FILE_NAME);
 
@@ -83,6 +89,16 @@ function buildContentSeparator(): SeparatorBuilder {
   return new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small);
 }
 
+function addPanelWidthSpacer(content: string): string {
+  return content
+    .split('\n')
+    .map(
+      (line) =>
+        `${line}${WIDTH_SPACER_CHARACTER.repeat(Math.max(0, PANEL_WIDTH_TARGET - line.length))}`,
+    )
+    .join('\n');
+}
+
 function buildSummaryContainer(view: QueuePanelView): ContainerBuilder {
   const playersNeeded = Math.max(0, view.queueCapacity - view.queueCount);
   const queueMetric =
@@ -94,17 +110,19 @@ function buildSummaryContainer(view: QueuePanelView): ContainerBuilder {
     .setAccentColor(ACCENT_COLOR)
     .addSectionComponents(buildHeaderSection())
     .addSeparatorComponents(buildContentSeparator())
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(queueMetric))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(addPanelWidthSpacer(queueMetric)))
     .addSeparatorComponents(buildContentSeparator())
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `**Next**\nReady Check when the queue reaches ${String(view.queueCapacity)}`,
+        addPanelWidthSpacer(
+          `**Next**\nReady Check when the queue reaches ${String(view.queueCapacity)}`,
+        ),
       ),
     );
 }
 
 function buildRosterContainer(view: QueuePanelView): ContainerBuilder {
-  const heading = `**Queued Players · ${String(view.queueCount)}**`;
+  const heading = addPanelWidthSpacer(`**Queued Players · ${String(view.queueCount)}**`);
 
   return new ContainerBuilder()
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(heading))

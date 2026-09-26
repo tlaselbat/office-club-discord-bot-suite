@@ -10,6 +10,14 @@ import {
 
 const secret = 'renderer-test-secret';
 const guildId = '123456789012345678';
+const panelWidthTarget = 96;
+
+function withPanelWidthSpacer(content: string): string {
+  return content
+    .split('\n')
+    .map((line) => `${line}${'\u00a0'.repeat(Math.max(0, panelWidthTarget - line.length))}`)
+    .join('\n');
+}
 
 function view(overrides: Partial<Parameters<typeof renderQueuePanel>[0]> = {}) {
   return {
@@ -135,11 +143,11 @@ describe('queue panel renderer (Components V2)', () => {
     );
     expect(summaryContainer.components?.[1]).toMatchObject({ divider: true, spacing: 1 });
     expect(summaryContainer.components?.[2]?.content).toBe(
-      '**1 / 10 players**\n-# Waiting for 9 more players',
+      withPanelWidthSpacer('**1 / 10 players**\n-# Waiting for 9 more players'),
     );
     expect(summaryContainer.components?.[3]).toMatchObject({ divider: true, spacing: 1 });
     expect(summaryContainer.components?.[4]?.content).toBe(
-      '**Next**\nReady Check when the queue reaches 10',
+      withPanelWidthSpacer('**Next**\nReady Check when the queue reaches 10'),
     );
   });
 
@@ -181,6 +189,25 @@ describe('queue panel renderer (Components V2)', () => {
     expect(rosterText).not.toMatch(/(^|\n)#{1,6}\s/);
     expect(rosterText).toContain('`01` tablet.');
     expect(rosterText).not.toContain('[tablet.]');
+    expect(rosterContainer.components?.[0]?.content).toBe(
+      withPanelWidthSpacer('**Queued Players · 1**'),
+    );
+  });
+
+  it('uses a shared intrinsic-width target for both Containers', () => {
+    const payload = renderQueuePanel(
+      view({ queueCount: 1, playerDisplayNames: ['tablet.'] }),
+      secret,
+    );
+    const summaryContainer = summary(payload);
+    const rosterContainer = roster(payload);
+    const summaryWidthHint = summaryContainer.components?.[2]?.content ?? '';
+    const rosterWidthHint = rosterContainer.components?.[0]?.content ?? '';
+
+    expect(summaryWidthHint.length).toBeGreaterThanOrEqual(panelWidthTarget);
+    expect(rosterWidthHint.length).toBeGreaterThanOrEqual(panelWidthTarget);
+    expect(summaryWidthHint).toContain('\u00a0');
+    expect(rosterWidthHint).toContain('\u00a0');
   });
 
   it('does not render a redundant Needed section', () => {
