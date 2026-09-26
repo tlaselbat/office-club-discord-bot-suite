@@ -48,6 +48,22 @@ corepack pnpm start
 
 Run `discord:register` after the first deployment and whenever slash command definitions change. Normal startup does not register commands.
 
+### Docker Compose update order
+
+When updating an existing Compose deployment, rebuild the migration image before
+running it. `docker compose run` can reuse a previously built `db-tools` image;
+that image may not contain migrations introduced by the revision just pulled.
+
+```bash
+sudo git -C /opt/office-club-discord-bot-suite pull --ff-only origin master
+sudo docker compose --project-directory /opt/office-club-discord-bot-suite --profile tools build db-tools
+sudo docker compose --project-directory /opt/office-club-discord-bot-suite --profile tools run --rm db-tools
+sudo docker compose --project-directory /opt/office-club-discord-bot-suite up -d --build app
+```
+
+Confirm the migration command reports every expected migration before restarting
+the application. Do not rely on a successful run of a stale `db-tools` image.
+
 ## Startup and shutdown
 
 Startup connects Prisma, starts the HTTP listener, logs in to Discord, runs recovery, and starts the worker. Recovery:

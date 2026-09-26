@@ -734,7 +734,9 @@ sudo docker compose logs -f postgres
 # Restart only the application
 sudo docker compose restart app
 
-# Reapply pending migrations
+# Rebuild the migration image, then apply pending migrations. Rebuilding is
+# required after a source update so Prisma sees newly committed migrations.
+sudo docker compose --profile tools build db-tools
 sudo docker compose --profile tools run --rm db-tools
 
 # Reseed game profiles
