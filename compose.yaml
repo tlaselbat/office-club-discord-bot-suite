@@ -19,6 +19,11 @@ services:
       context: .
       target: runtime
     env_file: ${ENV_FILE:-.env}
+    # The host uses systemd-resolved's loopback stub (127.0.0.53), which is
+    # unreachable from this container. Use the verified LAN resolver directly
+    # so Discord gateway DNS remains available after an app recreation.
+    dns:
+      - 192.168.1.1
     ports:
       - '127.0.0.1:3000:3000'
     depends_on:
