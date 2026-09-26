@@ -89,7 +89,7 @@ function buildHeaderSection(): SectionBuilder {
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent('## Match Queue'),
       new TextDisplayBuilder().setContent(
-        '-# Private 5v5 CS2 matchmaking for competitive, balanced games with your friends.',
+        '-# Queue up for organized **CS2 competitive matches** with other Office Club members. Join the queue, get matched into teams, and play on automatically configured community servers—all managed directly through Discord.',
       ),
     )
     .setThumbnailAccessory(new ThumbnailBuilder().setURL(`attachment://${THUMBNAIL_FILE_NAME}`));
