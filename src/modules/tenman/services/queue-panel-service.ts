@@ -28,7 +28,7 @@ export class QueuePanelService {
         ? null
         : await this.prisma.match.findFirst({
             where: { guildId, guildSlotActive: true },
-            select: { state: true },
+            select: { id: true, state: true, version: true, phaseGeneration: true },
           });
     const payload = renderQueuePanel(
       {
@@ -39,6 +39,15 @@ export class QueuePanelService {
         queueCapacity: settings.queueSize,
         playerDisplayNames: queue.entries.map((entry) => entry.displayNameSnapshot),
         activeMatchState: activeMatch?.state ?? null,
+        ...(activeMatch?.state === 'READY_CHECK'
+          ? {
+              readyCheck: {
+                matchId: activeMatch.id,
+                version: activeMatch.version,
+                phaseGeneration: activeMatch.phaseGeneration,
+              },
+            }
+          : {}),
       },
       this.secret,
     );

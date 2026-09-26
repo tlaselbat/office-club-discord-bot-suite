@@ -11,7 +11,11 @@ import {
   ThumbnailBuilder,
 } from 'discord.js';
 import type { ActionRowBuilder, ButtonBuilder } from 'discord.js';
-import { buildLockedQueueControls, buildQueueControls } from './queue-components.js';
+import {
+  buildLockedQueueControls,
+  buildQueueControls,
+  type ReadyCheckControl,
+} from './queue-components.js';
 import { playersNeededLabel } from './presentation.js';
 
 const ACCENT_COLOR = 0x5865f2;
@@ -35,6 +39,8 @@ export interface QueuePanelView {
   playerDisplayNames: string[];
   /** Internal state of the guild's active match, when one exists. */
   activeMatchState?: string | null;
+  /** Ready-check identifiers are present only while the full lobby is awaiting confirmation. */
+  readyCheck?: ReadyCheckControl;
 }
 
 export interface QueuePanelPayload {
@@ -65,7 +71,7 @@ function renderLocked(view: QueuePanelView, secret: string): Omit<QueuePanelPayl
     flags: MessageFlags.IsComponentsV2,
     components: [
       buildLockedSummaryContainer(view),
-      ...buildLockedQueueControls(view.guildId, view.version, secret),
+      ...buildLockedQueueControls(view.guildId, view.version, secret, view.readyCheck),
     ],
   };
 }

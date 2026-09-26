@@ -2,6 +2,7 @@ import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js';
 import { describe, expect, it } from 'vitest';
 import { renderQueuePanel } from '../../../src/modules/tenman/bot/queue-panel-renderer.js';
 import { parseQueueCustomId } from '../../../src/modules/tenman/bot/queue-custom-id.js';
+import { parseMatchCustomId } from '../../../src/modules/tenman/bot/match-custom-id.js';
 import { parseSteamAccountCustomId } from '../../../src/modules/tenman/bot/steam-account-custom-id.js';
 import {
   matchPhaseLabel,
@@ -300,6 +301,7 @@ describe('queue panel renderer (Components V2)', () => {
     const payload = renderQueuePanel(view(), secret);
     expect(buttonLabels(payload)).toEqual([
       'Join Queue',
+      'Ready',
       'Match Center',
       'Steam Account',
       'How It Works',
@@ -307,6 +309,36 @@ describe('queue panel renderer (Components V2)', () => {
     ]);
     // No legacy "My 10man" label may survive on the public panel.
     expect(buttonLabels(payload)).not.toContain('My 10man');
+  });
+
+  it('keeps Ready disabled until the full lobby becomes an active ready check', () => {
+    const incomplete = renderQueuePanel(view({ queueCount: 9 }), secret);
+    expect(buttons(incomplete).find((button) => button.label === 'Ready')).toMatchObject({
+      disabled: true,
+      style: ButtonStyle.Success,
+    });
+
+    const payload = renderQueuePanel(
+      view({
+        queueOpen: false,
+        activeMatchState: 'READY_CHECK',
+        readyCheck: {
+          matchId: '123e4567-e89b-12d3-a456-426614174000',
+          version: 4,
+          phaseGeneration: 2,
+        },
+      }),
+      secret,
+    );
+    const ready = buttons(payload).find((button) => button.label === 'Ready');
+    expect(ready).toMatchObject({ style: ButtonStyle.Success });
+    expect(ready?.disabled).not.toBe(true);
+    expect(parseMatchCustomId(ready?.custom_id ?? '', secret)).toMatchObject({
+      action: 'READY',
+      matchId: '123e4567-e89b-12d3-a456-426614174000',
+      version: 4,
+      phaseGeneration: 2,
+    });
   });
 
   it('keeps Join Queue as success and Match Center as primary', () => {

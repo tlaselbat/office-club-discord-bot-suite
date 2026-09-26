@@ -1,9 +1,16 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { createMatchCustomId } from './match-custom-id.js';
 import { createQueueCustomId } from './queue-custom-id.js';
 import { createPlayerHubCustomId } from './player-hub-custom-id.js';
 import { createSteamAccountCustomId } from './steam-account-custom-id.js';
 
 const PANEL_ACTOR_PLACEHOLDER = '00000000000000000000';
+
+export interface ReadyCheckControl {
+  matchId: string;
+  version: number;
+  phaseGeneration: number;
+}
 
 export function joinQueueButton(
   guildId: string,
@@ -66,6 +73,20 @@ export function queueRefreshButton(
     .setStyle(ButtonStyle.Secondary);
 }
 
+function readyButton(secret: string, readyCheck?: ReadyCheckControl): ButtonBuilder {
+  if (readyCheck === undefined) {
+    return new ButtonBuilder()
+      .setCustomId('tmq:ready-unavailable')
+      .setLabel('Ready')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(true);
+  }
+  return new ButtonBuilder()
+    .setCustomId(createMatchCustomId({ action: 'READY', ...readyCheck }, secret))
+    .setLabel('Ready')
+    .setStyle(ButtonStyle.Success);
+}
+
 export function buildQueueControls(
   guildId: string,
   version: number,
@@ -74,6 +95,7 @@ export function buildQueueControls(
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       joinQueueButton(guildId, version, secret),
+      readyButton(secret),
       matchCenterButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -88,9 +110,11 @@ export function buildLockedQueueControls(
   guildId: string,
   version: number,
   secret: string,
+  readyCheck?: ReadyCheckControl,
 ): ActionRowBuilder<ButtonBuilder>[] {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
+      readyButton(secret, readyCheck),
       new ButtonBuilder()
         .setCustomId(createQueueCustomId({ action: 'REFRESH', guildId, version }, secret))
         .setLabel('Queue Locked')
