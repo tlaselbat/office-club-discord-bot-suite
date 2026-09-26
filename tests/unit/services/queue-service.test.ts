@@ -38,6 +38,7 @@ function createPrisma(options?: {
         captainPolicy: 'RANDOM',
         teamSelectionMode: 'CAPTAINS',
         mapSelectionMode: 'CAPTAIN_VETO',
+        activeMapPool: [],
         dathostTemplateServerId: 'template-server',
         defaultServerLocation: 'virginia',
       }),

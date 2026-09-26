@@ -37,6 +37,11 @@ interface ResolvedSetup {
   defaultGameProfileKey: string;
 }
 
+type LegacyManagedSetup = TenManSettings & {
+  adminChannelId: null;
+  managedCategoryId: string;
+};
+
 export interface ManagedPreview {
   settingsVersion: number;
   attemptId: string | null;
@@ -73,8 +78,10 @@ export class GuildResourceService {
     const existing = await this.prisma.tenManSettings.findUnique({
       where: { guildId: command.guildId },
     });
-    this.assertSetupAvailable(existing);
     const resolved = await this.resolveSetup(command, existing, guild);
+    if (this.requiresAdminChannelUpgrade(existing))
+      return this.addAdminChannelToLegacySetup(command, existing, guild, resolved);
+    this.assertSetupAvailable(existing);
     const attemptId = randomUUID();
     let version = await this.reserveSetup(command, resolved, attemptId, existing?.version);
     let categoryId: string | null = null;
@@ -389,6 +396,77 @@ export class GuildResourceService {
         'SETUP_ALREADY_CONFIGURED',
         'This server is already configured or requires managed-resource recovery.',
       );
+  }
+
+  /** Adds the Admin surface to installations created before that managed resource existed. */
+  private requiresAdminChannelUpgrade(
+    settings: TenManSettings | null,
+  ): settings is LegacyManagedSetup {
+    return (
+      settings !== null &&
+      settings.enabled &&
+      settings.managedResourceState === 'ACTIVE' &&
+      settings.adminChannelId === null &&
+      settings.managedCategoryId !== null &&
+      settings.managedChannelIds.length === 4 &&
+      [
+        settings.lobbyTextChannelId,
+        settings.lobbyVoiceChannelId,
+        settings.team1VoiceChannelId,
+        settings.team2VoiceChannelId,
+      ].every((id) => id !== null)
+    );
+  }
+
+  private async addAdminChannelToLegacySetup(
+    command: ManagedSetupCommand,
+    settings: TenManSettings,
+    guild: Guild,
+    resolved: ResolvedSetup,
+  ): Promise<ManagedPreview> {
+    const adminChannel = await this.createManagedResource(
+      guild,
+      resources[1],
+      settings.managedCategoryId,
+      resolved,
+      command.actorDiscordUserId,
+    );
+    await this.validateCreatedChannels(guild, [adminChannel.id, ...settings.managedChannelIds]);
+    const updated = await this.prisma.tenManSettings.updateMany({
+      where: {
+        guildId: command.guildId,
+        version: settings.version,
+        managedResourceState: 'ACTIVE',
+        adminChannelId: null,
+      },
+      data: {
+        adminChannelId: adminChannel.id,
+        managedChannelIds: { push: adminChannel.id },
+        version: { increment: 1 },
+      },
+    });
+    if (updated.count !== 1)
+      throw new PublicError(
+        'STALE_CONFIGURATION',
+        'Configuration changed while adding the Admin channel; run setup again.',
+      );
+    await this.prisma.auditEvent.create({
+      data: {
+        guildId: command.guildId,
+        actorDiscordUserId: command.actorDiscordUserId,
+        eventType: 'guild_admin_channel_upgraded',
+        result: 'success',
+        correlationId: command.correlationId,
+        metadata: { adminChannelId: adminChannel.id },
+      },
+    });
+    return {
+      settingsVersion: settings.version + 1,
+      attemptId: settings.managedAttemptId,
+      categoryId: settings.managedCategoryId,
+      channelIds: [adminChannel.id, ...settings.managedChannelIds],
+      setupStep: null,
+    };
   }
 
   private async reserveSetup(

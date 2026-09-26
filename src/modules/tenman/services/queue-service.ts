@@ -263,9 +263,7 @@ export class QueueService {
           dathostTemplateServerId: settings.dathostTemplateServerId,
           serverLocation: settings.defaultServerLocation ?? 'dallas',
           mapAllowlist:
-            settings.activeMapPool !== undefined && settings.activeMapPool.length > 0
-              ? settings.activeMapPool
-              : profile.mapAllowlist,
+            settings.activeMapPool.length > 0 ? settings.activeMapPool : profile.mapAllowlist,
         },
         command.correlationId,
       );
