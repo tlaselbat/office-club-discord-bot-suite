@@ -377,6 +377,18 @@ describe('queue panel renderer (Components V2)', () => {
       expect(component.custom_id).not.toContain('password123');
     }
   });
+
+  it('uses unique custom IDs for every rendered control, including disabled controls', () => {
+    for (const payload of [
+      renderQueuePanel(view(), secret),
+      renderQueuePanel(view({ queueOpen: false, queueEverOpened: true }), secret),
+    ]) {
+      const customIds = buttons(payload)
+        .map((component) => component.custom_id)
+        .filter((customId): customId is string => customId !== undefined);
+      expect(new Set(customIds).size).toBe(customIds.length);
+    }
+  });
 });
 
 describe('presentation labels', () => {

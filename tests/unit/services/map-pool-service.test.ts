@@ -109,6 +109,9 @@ describe('MapPoolService', () => {
       'Workshop maps',
     );
     expect(() => canonicalWorkshopMapName('workshop/123/example')).toThrow('Workshop maps');
+    expect(() => canonicalWorkshopMapName(`workshop/123/de_${'a'.repeat(90)}`)).toThrow(
+      'Workshop maps',
+    );
     expect(() => canonicalOfficialMapName('DE_MIRAGE')).toThrow('Official maps');
   });
 

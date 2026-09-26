@@ -41,4 +41,25 @@ describe('map pool components', () => {
     expect(poolSelect.components[0]?.options).toHaveLength(25);
     expect(response.components[2]?.toJSON().components[2]?.disabled).toBe(false);
   });
+
+  it('renders a valid disabled pool selector when no maps are available', () => {
+    const response = buildMapPoolManagement(
+      {
+        ...basePayload,
+        activePool: { mapNames: [], source: 'PROFILE_DEFAULT' },
+        officialMaps: [],
+        workshopMaps: [],
+      },
+      secret,
+    );
+    const poolSelect = response.components[0]?.toJSON().components[0] as {
+      disabled?: boolean;
+      max_values?: number;
+      options?: Array<{ label: string; value: string }>;
+    };
+    expect(poolSelect).toMatchObject({ disabled: true, max_values: 1 });
+    expect(poolSelect.options).toEqual([
+      expect.objectContaining({ label: 'No maps available', value: 'none' }),
+    ]);
+  });
 });

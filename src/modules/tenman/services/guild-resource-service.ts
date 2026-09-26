@@ -78,10 +78,23 @@ export class GuildResourceService {
     const existing = await this.prisma.tenManSettings.findUnique({
       where: { guildId: command.guildId },
     });
-    const resolved = await this.resolveSetup(command, existing, guild);
-    if (this.requiresAdminChannelUpgrade(existing))
+    if (this.requiresAdminChannelUpgrade(existing)) {
+      // An upgrade adds only the missing channel. It must preserve the stored
+      // roles/template/profile rather than silently applying optional setup
+      // arguments to a single channel's permission overwrites.
+      const resolved = await this.resolveSetup(
+        {
+          guildId: command.guildId,
+          actorDiscordUserId: command.actorDiscordUserId,
+          correlationId: command.correlationId,
+        },
+        existing,
+        guild,
+      );
       return this.addAdminChannelToLegacySetup(command, existing, guild, resolved);
+    }
     this.assertSetupAvailable(existing);
+    const resolved = await this.resolveSetup(command, existing, guild);
     const attemptId = randomUUID();
     let version = await this.reserveSetup(command, resolved, attemptId, existing?.version);
     let categoryId: string | null = null;

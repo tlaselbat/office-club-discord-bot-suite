@@ -49,6 +49,7 @@ export function buildMapPoolManagement(view: MapPoolManagementView, secret: stri
   const pageWorkshopMaps = page.items.filter((candidate) =>
     candidate.mapName.startsWith('workshop/'),
   );
+  const hasPoolCandidates = page.items.length > 0;
   return {
     embeds: [
       new EmbedBuilder()
@@ -78,14 +79,17 @@ export function buildMapPoolManagement(view: MapPoolManagementView, secret: stri
           .setCustomId(id('POOL'))
           .setPlaceholder('Choose active pool maps on this page')
           .setMinValues(0)
-          .setMaxValues(page.items.length)
+          .setMaxValues(hasPoolCandidates ? page.items.length : 1)
+          .setDisabled(!hasPoolCandidates)
           .addOptions(
-            page.items.map((candidate) => ({
-              label: candidate.label.slice(0, 100),
-              value: candidate.mapName,
-              description: candidate.description.slice(0, 100),
-              default: active.has(candidate.mapName),
-            })),
+            hasPoolCandidates
+              ? page.items.map((candidate) => ({
+                  label: candidate.label.slice(0, 100),
+                  value: candidate.mapName,
+                  description: candidate.description.slice(0, 100),
+                  default: active.has(candidate.mapName),
+                }))
+              : [{ label: 'No maps available', value: 'none' }],
           ),
       ),
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(

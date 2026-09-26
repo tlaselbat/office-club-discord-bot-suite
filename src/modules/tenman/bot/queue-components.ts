@@ -116,7 +116,10 @@ export function buildLockedQueueControls(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       readyButton(secret, readyCheck),
       new ButtonBuilder()
-        .setCustomId(createQueueCustomId({ action: 'REFRESH', guildId, version }, secret))
+        // Discord requires every component custom ID in a message to be unique,
+        // including disabled controls. The usable Refresh button below owns the
+        // signed REFRESH ID.
+        .setCustomId('tmq:queue-locked')
         .setLabel('Queue Locked')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(true),

@@ -3,6 +3,7 @@ import type { PrismaClient } from '../../../generated/prisma/client.js';
 const officialMapPattern = /^de_[a-z0-9_]+$/;
 const workshopMapPattern = /^workshop\/[1-9][0-9]*\/de_[a-z0-9_]+$/;
 const maxSelectOptions = 25;
+const maxDiscordSelectValueLength = 100;
 
 export interface AddWorkshopMapCommand {
   guildId: string;
@@ -50,7 +51,11 @@ export function canonicalOfficialMapName(mapName: string): string {
 
 export function canonicalWorkshopMapName(mapName: string): string {
   const canonical = mapName.trim().toLowerCase();
-  if (mapName !== canonical || !workshopMapPattern.test(canonical)) {
+  if (
+    mapName !== canonical ||
+    canonical.length > maxDiscordSelectValueLength ||
+    !workshopMapPattern.test(canonical)
+  ) {
     throw new Error('Workshop maps must use workshop/<numeric-id>/de_<map-name> identifiers');
   }
   return canonical;

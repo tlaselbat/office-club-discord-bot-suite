@@ -137,9 +137,9 @@ describe('queue component interactions', () => {
       createQueueCustomId({ action: 'REFRESH', guildId, version: 0 }, secret),
     );
     await router(prisma).handle(event as never);
-    expect(event.deferUpdate).toHaveBeenCalledOnce();
-    expect(event.deferReply).not.toHaveBeenCalled();
-    expect(event.editReply).not.toHaveBeenCalled();
+    expect(event.deferUpdate).not.toHaveBeenCalled();
+    expect(event.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(event.editReply).toHaveBeenCalledWith({ content: 'Match Queue panel refreshed.' });
   });
 
   it('returns a rich ephemeral summary on join success', async () => {

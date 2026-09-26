@@ -785,8 +785,12 @@ export class TenManComponentInteractionRouter {
       return;
     }
     if (payload.action === 'REFRESH') {
-      await interaction.deferUpdate();
+      // Do not defer an update for a public singleton panel. If reconciliation
+      // fails, the global error handler would otherwise replace that panel with
+      // an error and remove its controls.
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       await this.queuePanelService.reconcile(payload.guildId);
+      await interaction.editReply({ content: 'Match Queue panel refreshed.' });
       return;
     }
 
