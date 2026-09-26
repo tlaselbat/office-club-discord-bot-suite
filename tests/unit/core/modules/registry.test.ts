@@ -79,7 +79,7 @@ describe('ModuleRegistry', () => {
     expect(specific).toHaveBeenCalledTimes(2);
   });
 
-  it.each(['tmo:', 'tqb:', 'tpy:'])(
+  it.each(['tmo:', 'tqb:', 'tqc:', 'tqm:', 'tqmp:', 'tqa:', 'tpy:'])(
     'dispatches the %s competitive component namespace',
     async (prefix) => {
       const handleInteraction = vi.fn().mockResolvedValue(undefined);
