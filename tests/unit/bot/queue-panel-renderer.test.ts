@@ -135,7 +135,7 @@ describe('queue panel renderer (Components V2)', () => {
     const header = summaryContainer.components?.[0];
     expect(header?.components?.map((component) => component.content)).toEqual([
       '## Match Queue',
-      '-# Private 5v5 CS2 matchmaking.',
+      '-# Private 5v5 CS2 matchmaking for competitive, balanced games with your friends.',
     ]);
     expect(header?.accessory?.type).toBe(ComponentType.Thumbnail);
     expect(header?.accessory?.media?.url).toBe(
@@ -160,7 +160,9 @@ describe('queue panel renderer (Components V2)', () => {
       .map((display) => display.content)
       .join('\n');
     expect(summaryText).toContain('## Match Queue');
-    expect(summaryText).toContain('-# Private 5v5 CS2 matchmaking.');
+    expect(summaryText).toContain(
+      '-# Private 5v5 CS2 matchmaking for competitive, balanced games with your friends.',
+    );
     expect(summaryText).toContain('**1 / 10 players**');
     expect(summaryText).toContain('-# Waiting for 9 more players');
     expect(summaryText).toContain('**Next**');

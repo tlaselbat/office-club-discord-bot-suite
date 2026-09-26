@@ -80,7 +80,9 @@ function buildHeaderSection(): SectionBuilder {
   return new SectionBuilder()
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent('## Match Queue'),
-      new TextDisplayBuilder().setContent('-# Private 5v5 CS2 matchmaking.'),
+      new TextDisplayBuilder().setContent(
+        '-# Private 5v5 CS2 matchmaking for competitive, balanced games with your friends.',
+      ),
     )
     .setThumbnailAccessory(new ThumbnailBuilder().setURL(`attachment://${THUMBNAIL_FILE_NAME}`));
 }
