@@ -7,7 +7,7 @@ const baseMatch = {
   guildId: 'guild-1',
   state: 'READY_CHECK',
   version: 4,
-  guild: { readyTimeoutSeconds: 90 },
+  readyTimeoutSeconds: 90,
   players: [
     { discordUserId: 'outgoing', steamId64: 'steam-old', readyState: 'READY' },
     { discordUserId: 'other', steamId64: 'steam-other', readyState: 'NOT_READY' },

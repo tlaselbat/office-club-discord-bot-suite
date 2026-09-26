@@ -34,6 +34,12 @@ function createPrisma(options?: {
         defaultGameProfileKey: 'cs2-5v5',
         queueSize: 10,
         readyTimeoutSeconds: 90,
+        version: 7,
+        captainPolicy: 'RANDOM',
+        teamSelectionMode: 'CAPTAINS',
+        mapSelectionMode: 'CAPTAIN_VETO',
+        dathostTemplateServerId: 'template-server',
+        defaultServerLocation: 'virginia',
       }),
     },
     gameProfile: {
@@ -62,7 +68,7 @@ function createPrisma(options?: {
     user: { upsert: vi.fn().mockResolvedValue(undefined) },
     tenManQueue: {
       upsert: vi.fn().mockResolvedValue({ status: 'OPEN' }),
-      findUnique: vi.fn().mockResolvedValue({ entries: [] }),
+      findUnique: vi.fn().mockResolvedValue({ status: 'OPEN', entries: [] }),
       update: vi.fn().mockResolvedValue(undefined),
     },
     tenManQueueEntry: {
@@ -200,6 +206,14 @@ describe('QueueService party joins', () => {
     expect(transaction.match.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          settingsVersion: 7,
+          readyTimeoutSeconds: 90,
+          captainPolicy: 'RANDOM',
+          teamSelectionMode: 'CAPTAINS',
+          mapSelectionMode: 'CAPTAIN_VETO',
+          dathostTemplateServerId: 'template-server',
+          serverLocation: 'virginia',
+          mapAllowlist: ['de_mirage', 'de_inferno'],
           players: { create: expect.arrayContaining(partyEntries) },
         }),
       }),

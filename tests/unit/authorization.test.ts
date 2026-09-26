@@ -26,6 +26,9 @@ describe('authorization policy', () => {
     expect(isAuthorized('QUEUE_BAN', moderator, match)).toBe(true);
     expect(isAuthorized('ROLLBACK_MATCH', moderator, match)).toBe(true);
     expect(isAuthorized('RESOLVE_DISPUTE', moderator)).toBe(true);
+    expect(isAuthorized('OPERATE_QUEUE', moderator)).toBe(true);
+    expect(isAuthorized('REPAIR_QUEUE_PANEL', moderator)).toBe(true);
+    expect(isAuthorized('MANAGE_MATCH_MODERATORS', moderator)).toBe(false);
   });
 
   it('denies non-moderators moderation actions', () => {

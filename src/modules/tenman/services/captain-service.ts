@@ -20,9 +20,6 @@ export class CaptainService {
         where: { id: matchId },
         include: {
           players: true,
-          guild: {
-            select: { captainPolicy: true, teamSelectionMode: true, mapSelectionMode: true },
-          },
         },
       });
       if (match === null || match.state !== 'TEAM_SELECTION') {
@@ -30,8 +27,8 @@ export class CaptainService {
       }
       if (match.version !== expectedVersion)
         throw new PublicError('STALE_COMPONENT', 'This control is stale.');
-      assertSupportedFormationPolicy(match.guild);
-      if (match.guild.teamSelectionMode !== 'CAPTAINS') {
+      assertSupportedFormationPolicy(match);
+      if (match.teamSelectionMode !== 'CAPTAINS') {
         throw new PublicError(
           'CAPTAINS_NOT_REQUIRED',
           'Captains cannot be selected when this match uses random teams.',

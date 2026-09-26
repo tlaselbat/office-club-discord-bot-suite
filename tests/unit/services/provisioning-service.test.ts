@@ -28,12 +28,16 @@ function createMatch(overrides: object = {}) {
     guildId: 'guild-1',
     selectedMap: 'de_dust2',
     selectedGameProfileKey: 'competitive_5v5',
+    settingsVersion: 4,
+    readyTimeoutSeconds: 90,
+    captainPolicy: 'RANDOM',
+    teamSelectionMode: 'CAPTAINS',
+    mapSelectionMode: 'CAPTAIN_VETO',
+    dathostTemplateServerId: 'template-1',
+    serverLocation: 'virginia',
+    mapAllowlist: ['de_dust2', 'de_mirage'],
     matchzyMatchId: 1,
     dathostServerId: null,
-    guild: {
-      dathostTemplateServerId: 'template-1',
-      defaultServerLocation: 'dallas',
-    },
     profile: {
       key: 'competitive_5v5',
       enabled: true,
@@ -108,7 +112,9 @@ describe('ProvisioningService', () => {
 
     await service.runProvisionJob(matchId);
 
-    expect(orchestrator.provision).toHaveBeenCalled();
+    expect(orchestrator.provision).toHaveBeenCalledWith(
+      expect.objectContaining({ templateServerId: 'template-1', location: 'virginia' }),
+    );
     expect(dathost.updateServer).toHaveBeenCalledWith('server-1', expect.any(Object));
     expect(dathost.startServer).toHaveBeenCalledWith('server-1');
     expect(prisma.job.create).toHaveBeenCalledWith(

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PermissionFlagsBits } from 'discord.js';
 import { GuildResourceService } from '../../../src/modules/tenman/services/guild-resource-service.js';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 
@@ -41,6 +42,45 @@ const managedSettings = {
 };
 
 describe('GuildResourceService lifecycle guards', () => {
+  it('makes the Admin channel private to staff roles and the bot', () => {
+    const { service } = createService(null);
+    (service as unknown as { client: object }).client = { user: { id: 'bot-user' } };
+    const overwrites = (
+      service as unknown as {
+        adminChannelPermissionOverwrites: (
+          guild: object,
+          resolved: object,
+        ) => Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
+      }
+    ).adminChannelPermissionOverwrites(
+      { roles: { everyone: { id: 'everyone' } }, members: { me: null } },
+      { moderatorRoleIds: ['moderator'], administratorRoleIds: ['administrator'] },
+    );
+
+    expect(overwrites).toEqual([
+      {
+        id: 'everyone',
+        deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+      },
+      expect.objectContaining({
+        id: 'moderator',
+        allow: expect.arrayContaining([PermissionFlagsBits.ViewChannel]),
+      }),
+      expect.objectContaining({
+        id: 'administrator',
+        allow: expect.arrayContaining([PermissionFlagsBits.ViewChannel]),
+      }),
+      expect.objectContaining({
+        id: 'bot-user',
+        allow: expect.arrayContaining([
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.EmbedLinks,
+        ]),
+      }),
+    ]);
+  });
+
   it('soft-disables without clearing managed resources', async () => {
     const { service, transaction } = createService(managedSettings);
     await expect(

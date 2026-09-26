@@ -31,6 +31,11 @@ enum TenManQueueStatus {
   DISABLED
 }
 
+enum MatchModeratorStatus {
+  ACTIVE
+  SUSPENDED_STEAM_INVALID
+}
+
 enum MatchDiscordResourceType {
   MATCH_TEXT_CHANNEL
   MATCH_DASHBOARD_MESSAGE
@@ -154,6 +159,8 @@ enum ManagedSetupStep {
   RESERVED
   CATEGORY_CREATE_IN_FLIGHT
   CATEGORY_CREATED
+  ADMIN_TEXT_CREATE_IN_FLIGHT
+  ADMIN_TEXT_CREATED
   LOBBY_TEXT_CREATE_IN_FLIGHT
   LOBBY_TEXT_CREATED
   LOBBY_VOICE_CREATE_IN_FLIGHT
@@ -188,6 +195,7 @@ model User {
   playerStats     PlayerGuildStats[]
   rewardMembers   RewardMember[]
   assignmentDisputes SteamAssignmentDispute[]
+  matchModeratorMemberships MatchModerator[]
 
   @@map("users")
 }
@@ -272,6 +280,8 @@ model GuildSettings {
 
 model TenManSettings {
   guildId                 String   @id @map("guild_id")
+  adminChannelId          String?  @map("admin_channel_id")
+  adminPanelMessageId     String?  @map("admin_panel_message_id")
   lobbyTextChannelId      String?  @map("lobby_text_channel_id")
   lobbyVoiceChannelId     String?  @map("lobby_voice_channel_id")
   team1VoiceChannelId     String?  @map("team1_voice_channel_id")
@@ -290,6 +300,7 @@ model TenManSettings {
   captainPolicy              CaptainPolicy        @default(RANDOM) @map("captain_policy")
   teamSelectionMode          TeamSelectionMode    @default(CAPTAINS) @map("team_selection_mode")
   mapSelectionMode           MapSelectionMode     @default(CAPTAIN_VETO) @map("map_selection_mode")
+  activeMapPool              String[]             @default([]) @map("active_map_pool")
   managedResourceState       ManagedResourceState @default(NONE) @map("managed_resource_state")
   managedSetupStep           ManagedSetupStep?    @map("managed_setup_step")
   managedAttemptId           String?               @map("managed_attempt_id") @db.Uuid
@@ -304,9 +315,44 @@ model TenManSettings {
   queueBans                TenManQueueBan[]
   parties                  TenManParty[]
   playerStats              PlayerGuildStats[]
+  matchModerators          MatchModerator[]
+  workshopMaps             GuildWorkshopMap[]
   suite                    GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@map("guild_settings")
+}
+
+/**
+ * Per-guild Workshop entries deliberately store the canonical MatchZy map
+ * identifier. Display text is advisory only; matches and pool snapshots use
+ * mapName exclusively.
+ */
+model GuildWorkshopMap {
+  guildId              String          @map("guild_id")
+  mapName              String          @map("map_name")
+  displayName          String          @map("display_name")
+  addedByDiscordUserId String          @map("added_by_discord_user_id")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+  guild                TenManSettings  @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@id([guildId, mapName])
+  @@map("guild_workshop_maps")
+}
+
+model MatchModerator {
+  guildId              String               @map("guild_id")
+  discordUserId        String               @map("discord_user_id")
+  status               MatchModeratorStatus @default(ACTIVE)
+  addedByDiscordUserId String               @map("added_by_discord_user_id")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+  guild                TenManSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  user                 User                  @relation(fields: [discordUserId], references: [discordUserId], onDelete: Cascade)
+
+  @@id([guildId, discordUserId])
+  @@index([guildId, status])
+  @@map("match_moderators")
 }
 
 model RewardSettings {
@@ -445,6 +491,14 @@ model Match {
   guildSlotActive          Boolean               @default(true) @map("guild_slot_active")
   selectedMap              String?               @map("selected_map")
   selectedGameProfileKey   String                @map("selected_game_profile_key")
+  settingsVersion          Int                   @map("settings_version")
+  readyTimeoutSeconds      Int                   @map("ready_timeout_seconds")
+  captainPolicy            CaptainPolicy         @map("captain_policy")
+  teamSelectionMode        TeamSelectionMode     @map("team_selection_mode")
+  mapSelectionMode         MapSelectionMode      @map("map_selection_mode")
+  dathostTemplateServerId  String?               @map("dathost_template_server_id")
+  serverLocation           String                @map("server_location")
+  mapAllowlist             String[]              @map("map_allowlist")
   dathostServerId          String?               @unique @map("dathost_server_id")
   dathostIp                String?               @map("dathost_ip")
   dathostPort              Int?                  @map("dathost_port")
@@ -511,8 +565,9 @@ model MatchPlayer {
 
 model TenManQueue {
   guildId             String            @id @map("guild_id")
-  status              TenManQueueStatus @default(OPEN)
+  status              TenManQueueStatus @default(DISABLED)
   version             Int               @default(0)
+  enrollmentOpenedAt  DateTime?         @map("enrollment_opened_at")
   panelChannelId      String?           @map("panel_channel_id")
   panelMessageId      String?           @map("panel_message_id")
   lastQueueAlertCount Int               @default(0) @map("last_queue_alert_count")

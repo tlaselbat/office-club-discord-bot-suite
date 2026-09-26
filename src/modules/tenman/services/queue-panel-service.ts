@@ -35,6 +35,7 @@ export class QueuePanelService {
         guildId,
         version: queue.version,
         queueOpen: queue.status === 'OPEN',
+        queueEverOpened: queue.enrollmentOpenedAt !== null,
         queueCount: queue.entries.length,
         queueCapacity: settings.queueSize,
         playerDisplayNames: queue.entries.map((entry) => entry.displayNameSnapshot),

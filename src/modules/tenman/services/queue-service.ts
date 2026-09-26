@@ -34,6 +34,12 @@ export interface QueueLeaveResult {
   wasParty: boolean;
 }
 
+export interface QueueEnrollmentCommand {
+  guildId: string;
+  actorDiscordUserId: string;
+  correlationId: string;
+}
+
 export interface QueueStatus {
   playersInQueue: number;
   queueSize: number;
@@ -60,7 +66,12 @@ export class QueueService {
       const settings = await transaction.tenManSettings.findUnique({
         where: { guildId: command.guildId },
       });
-      if (settings === null || !settings.enabled || settings.defaultGameProfileKey === null) {
+      if (
+        settings === null ||
+        !settings.enabled ||
+        settings.defaultGameProfileKey === null ||
+        settings.dathostTemplateServerId === null
+      ) {
         return { status: 'queue_unavailable' };
       }
       const profile = await transaction.gameProfile.findUnique({
@@ -209,14 +220,8 @@ export class QueueService {
         update: { displayName: command.displayName },
         create: { discordUserId: command.discordUserId, displayName: command.displayName },
       });
-      const queue = await transaction.tenManQueue.upsert({
-        where: { guildId: command.guildId },
-        update: {},
-        create: { guildId: command.guildId },
-      });
-      if (queue.status !== 'OPEN') {
-        return { status: 'active_match', matchId: '' };
-      }
+      if (currentQueue === null || currentQueue.status !== 'OPEN')
+        return { status: 'queue_unavailable' };
       const entryCount = await transaction.tenManQueueEntry.count({
         where: { guildId: command.guildId },
       });
@@ -249,7 +254,19 @@ export class QueueService {
         command.guildId,
         settings.queueSize,
         settings.defaultGameProfileKey,
-        settings.readyTimeoutSeconds,
+        {
+          settingsVersion: settings.version,
+          readyTimeoutSeconds: settings.readyTimeoutSeconds,
+          captainPolicy: settings.captainPolicy,
+          teamSelectionMode: settings.teamSelectionMode,
+          mapSelectionMode: settings.mapSelectionMode,
+          dathostTemplateServerId: settings.dathostTemplateServerId,
+          serverLocation: settings.defaultServerLocation ?? 'dallas',
+          mapAllowlist:
+            settings.activeMapPool !== undefined && settings.activeMapPool.length > 0
+              ? settings.activeMapPool
+              : profile.mapAllowlist,
+        },
         command.correlationId,
       );
       await transaction.auditEvent.create({
@@ -311,6 +328,72 @@ export class QueueService {
     });
   }
 
+  /** Opens player enrollment without changing the Competitive installation state. */
+  public async openEnrollment(command: QueueEnrollmentCommand): Promise<void> {
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${command.guildId}, 0))`;
+      const [settings, activeMatch] = await Promise.all([
+        transaction.tenManSettings.findUnique({ where: { guildId: command.guildId } }),
+        transaction.match.findFirst({
+          where: { guildId: command.guildId, guildSlotActive: true },
+          select: { id: true },
+        }),
+      ]);
+      if (settings === null || !settings.enabled || settings.defaultGameProfileKey === null)
+        throw new PublicError('QUEUE_UNAVAILABLE', 'Competitive configuration must be enabled first.');
+      if (activeMatch !== null)
+        throw new PublicError('QUEUE_UNAVAILABLE', 'A match is already forming or in progress.');
+      const queue = await transaction.tenManQueue.upsert({
+        where: { guildId: command.guildId },
+        update: {},
+        create: { guildId: command.guildId, status: 'DISABLED' },
+      });
+      if (queue.status === 'LOCKED')
+        throw new PublicError('QUEUE_UNAVAILABLE', 'The queue is locked by an active match.');
+      await transaction.tenManQueue.update({
+        where: { guildId: command.guildId },
+        data: { status: 'OPEN', enrollmentOpenedAt: new Date(), version: { increment: 1 } },
+      });
+      await queuePanelRefresh(transaction, command.guildId);
+      await transaction.auditEvent.create({
+        data: {
+          guildId: command.guildId,
+          actorDiscordUserId: command.actorDiscordUserId,
+          eventType: 'queue_enrollment_opened',
+          result: 'success',
+          correlationId: command.correlationId,
+          metadata: {},
+        },
+      });
+    });
+  }
+
+  /** Closes new enrollment while retaining the current roster for staff action. */
+  public async closeEnrollment(command: QueueEnrollmentCommand): Promise<void> {
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${command.guildId}, 0))`;
+      const queue = await transaction.tenManQueue.findUnique({ where: { guildId: command.guildId } });
+      if (queue === null) throw new PublicError('QUEUE_UNAVAILABLE', 'The queue has not been created.');
+      if (queue.status === 'LOCKED')
+        throw new PublicError('QUEUE_UNAVAILABLE', 'The queue is locked by an active match.');
+      await transaction.tenManQueue.update({
+        where: { guildId: command.guildId },
+        data: { status: 'DISABLED', version: { increment: 1 } },
+      });
+      await queuePanelRefresh(transaction, command.guildId);
+      await transaction.auditEvent.create({
+        data: {
+          guildId: command.guildId,
+          actorDiscordUserId: command.actorDiscordUserId,
+          eventType: 'queue_enrollment_closed',
+          result: 'success',
+          correlationId: command.correlationId,
+          metadata: {},
+        },
+      });
+    });
+  }
+
   public async getStatus(guildId: string): Promise<QueueStatus> {
     const [settings, queue] = await Promise.all([
       this.prisma.tenManSettings.findUnique({ where: { guildId }, select: { queueSize: true } }),
@@ -332,7 +415,16 @@ export class QueueService {
     guildId: string,
     queueSize: number,
     profileKey: string,
-    readyTimeoutSeconds: number,
+    snapshot: {
+      settingsVersion: number;
+      readyTimeoutSeconds: number;
+      captainPolicy: 'RANDOM' | 'VOLUNTEER' | 'HIGHEST_RATING' | 'ADMIN_SELECTED';
+      teamSelectionMode: 'RANDOM' | 'CAPTAINS' | 'BALANCED' | 'ADMIN_ASSIGNED';
+      mapSelectionMode: 'CAPTAIN_VETO' | 'RANDOM' | 'ADMIN_SELECTED' | 'PRESELECTED';
+      dathostTemplateServerId: string;
+      serverLocation: string;
+      mapAllowlist: string[];
+    },
     correlationId: string,
   ): Promise<string | undefined> {
     const entries = await transaction.tenManQueueEntry.findMany({
@@ -344,7 +436,7 @@ export class QueueService {
       where: { guildId, guildSlotActive: true },
     });
     if (existing !== null) return undefined;
-    const deadline = new Date(Date.now() + readyTimeoutSeconds * 1000);
+    const deadline = new Date(Date.now() + snapshot.readyTimeoutSeconds * 1000);
     const leader = entries.at(0);
     if (leader === undefined) throw new Error('Queue promotion requires a leader');
     const match = await transaction.match.create({
@@ -352,6 +444,14 @@ export class QueueService {
         guildId,
         leaderDiscordUserId: leader.discordUserId,
         selectedGameProfileKey: profileKey,
+        settingsVersion: snapshot.settingsVersion,
+        readyTimeoutSeconds: snapshot.readyTimeoutSeconds,
+        captainPolicy: snapshot.captainPolicy,
+        teamSelectionMode: snapshot.teamSelectionMode,
+        mapSelectionMode: snapshot.mapSelectionMode,
+        dathostTemplateServerId: snapshot.dathostTemplateServerId,
+        serverLocation: snapshot.serverLocation,
+        mapAllowlist: snapshot.mapAllowlist,
         state: 'READY_CHECK',
         phaseDeadlineAt: deadline,
         players: {

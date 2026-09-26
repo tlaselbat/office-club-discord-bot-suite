@@ -43,6 +43,7 @@ import { LevelRoleService } from '../modules/rewards/services/level-role-service
 import { VoiceActivityService } from '../modules/rewards/services/voice-activity-service.js';
 import { TagLoyaltyService } from '../modules/rewards/services/tag-loyalty-service.js';
 import { QueuePanelService } from '../modules/tenman/services/queue-panel-service.js';
+import { AdminPanelService } from '../modules/tenman/services/admin-panel-service.js';
 import {
   EphemeralReplyManager,
   TenManComponentInteractionRouter,
@@ -60,6 +61,7 @@ import {
 } from '../modules/tenman/bot/admin-panels.js';
 import type { CredentialCipher } from '../modules/tenman/services/credential-cipher.js';
 import { MatchParticipantInfoService } from '../modules/tenman/services/match-participant-info-service.js';
+import { MatchModeratorService } from '../modules/tenman/services/match-moderator-service.js';
 
 export interface BotDependencies {
   token: string;
@@ -502,13 +504,18 @@ async function handleCommand(
       await dependencies.prisma.tenManQueue.upsert({
         where: { guildId: interaction.guildId },
         update: {},
-        create: { guildId: interaction.guildId },
+        create: { guildId: interaction.guildId, status: 'DISABLED' },
       });
       await new QueuePanelService(
         dependencies.prisma,
         client,
         dependencies.componentSigningSecret,
       ).reconcile(interaction.guildId, channel);
+      await new AdminPanelService(
+        dependencies.prisma,
+        client,
+        dependencies.componentSigningSecret,
+      ).reconcile(interaction.guildId);
       await interaction.editReply({ content: `Match Queue panel is ready in <#${channel.id}>.` });
       return;
     }
@@ -573,6 +580,30 @@ async function handleCommand(
               defaultGameProfileKey: interaction.options.getString('default_game_profile', true),
             }),
       });
+      const settings = await dependencies.prisma.tenManSettings.findUnique({
+        where: { guildId: interaction.guildId },
+        select: { lobbyTextChannelId: true },
+      });
+      if (settings?.lobbyTextChannelId !== null && settings?.lobbyTextChannelId !== undefined) {
+        const lobby = await client.channels.fetch(settings.lobbyTextChannelId);
+        if (lobby !== null && lobby.isTextBased() && !lobby.isDMBased()) {
+          await dependencies.prisma.tenManQueue.upsert({
+            where: { guildId: interaction.guildId },
+            update: {},
+            create: { guildId: interaction.guildId, status: 'DISABLED' },
+          });
+          await new QueuePanelService(
+            dependencies.prisma,
+            client,
+            dependencies.componentSigningSecret,
+          ).reconcile(interaction.guildId, lobby);
+        }
+      }
+      await new AdminPanelService(
+        dependencies.prisma,
+        client,
+        dependencies.componentSigningSecret,
+      ).reconcile(interaction.guildId);
       await interaction.editReply({
         content: `Managed competitive channels created in <#${result.categoryId ?? ''}>. Run \`/match admin diagnostics\` to verify setup.`,
       });
@@ -805,19 +836,16 @@ async function createGuildAdminActor(
       : roles instanceof GuildMemberRoleManager
         ? [...roles.cache.keys()]
         : roles;
-  return {
+  return new MatchModeratorService(prisma).resolveActor(interaction.guildId, {
     discordUserId: interaction.user.id,
     isParticipant: false,
     isPrivilegedMember:
       settings !== null && memberRoles.some((role) => settings.privilegedRoleIds.includes(role)),
-    isModerator:
-      nativeAdministrator ||
-      (settings !== null && memberRoles.some((role) => settings.moderatorRoleIds.includes(role))),
     isAdministrator:
       nativeAdministrator ||
       (settings !== null &&
         memberRoles.some((role) => settings.administratorRoleIds.includes(role))),
-  };
+  });
 }
 
 async function renderSteamAccountStatus(
@@ -858,11 +886,12 @@ async function createActorContext(
         : roles;
   const hasRole = (configured: readonly string[]): boolean =>
     memberRoles.some((role) => configured.includes(role));
-  return {
+  const nativeAdministrator =
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
+  return new MatchModeratorService(prisma).resolveActor(interaction.guildId, {
     discordUserId: interaction.user.id,
     isParticipant: participant !== null,
     isPrivilegedMember: hasRole(settings.privilegedRoleIds),
-    isModerator: hasRole(settings.moderatorRoleIds),
-    isAdministrator: hasRole(settings.administratorRoleIds),
-  };
+    isAdministrator: nativeAdministrator || hasRole(settings.administratorRoleIds),
+  });
 }

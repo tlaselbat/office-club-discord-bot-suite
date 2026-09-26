@@ -33,23 +33,14 @@ export class DraftService {
         include: {
           players: true,
           draftPicks: true,
-          guild: {
-            select: {
-              readyTimeoutSeconds: true,
-              captainPolicy: true,
-              teamSelectionMode: true,
-              mapSelectionMode: true,
-            },
-          },
-          profile: { select: { mapAllowlist: true } },
         },
       });
       if (match === null || match.state !== 'TEAM_SELECTION')
         throw new PublicError('DRAFT_UNAVAILABLE', 'Drafting is no longer active.');
       if (match.version !== expectedVersion)
         throw new PublicError('STALE_COMPONENT', 'This control is stale.');
-      assertSupportedFormationPolicy(match.guild);
-      if (match.guild.teamSelectionMode !== 'CAPTAINS') {
+      assertSupportedFormationPolicy(match);
+      if (match.teamSelectionMode !== 'CAPTAINS') {
         throw new PublicError(
           'DRAFT_UNAVAILABLE',
           'This match uses random teams, not a captain draft.',
@@ -77,12 +68,12 @@ export class DraftService {
         data: { team, draftOrder: pickNumber },
       });
       const isComplete = pickNumber === draftOrder.length;
-      const randomMap = isComplete && match.guild.mapSelectionMode === 'RANDOM';
+      const randomMap = isComplete && match.mapSelectionMode === 'RANDOM';
       const deadline =
         isComplete && !randomMap
-          ? new Date(Date.now() + match.guild.readyTimeoutSeconds * 1000)
+          ? new Date(Date.now() + match.readyTimeoutSeconds * 1000)
           : match.phaseDeadlineAt;
-      const selectedMap = randomMap ? pickRandomMap(match.profile.mapAllowlist) : null;
+      const selectedMap = randomMap ? pickRandomMap(match.mapAllowlist) : null;
       const nextState = isComplete ? (randomMap ? 'TEAMS_LOCKED' : 'MAP_VETO') : 'TEAM_SELECTION';
       const updated = await transaction.match.updateMany({
         where: { id: matchId, version: expectedVersion, state: 'TEAM_SELECTION' },

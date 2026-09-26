@@ -34,6 +34,8 @@ export interface QueuePanelView {
   guildId: string;
   version: number;
   queueOpen: boolean;
+  /** Whether staff have opened enrollment at least once for this queue. */
+  queueEverOpened?: boolean;
   queueCount: number;
   queueCapacity: number;
   playerDisplayNames: string[];
@@ -51,7 +53,7 @@ export interface QueuePanelPayload {
 
 export function renderQueuePanel(view: QueuePanelView, secret: string): QueuePanelPayload {
   const attachment = buildThumbnailAttachment();
-  const payload = view.queueOpen ? renderOpen(view, secret) : renderLocked(view, secret);
+  const payload = view.queueOpen ? renderOpen(view, secret) : renderUnavailable(view, secret);
   return { ...payload, files: [attachment] };
 }
 
@@ -66,11 +68,11 @@ function renderOpen(view: QueuePanelView, secret: string): Omit<QueuePanelPayloa
   };
 }
 
-function renderLocked(view: QueuePanelView, secret: string): Omit<QueuePanelPayload, 'files'> {
+function renderUnavailable(view: QueuePanelView, secret: string): Omit<QueuePanelPayload, 'files'> {
   return {
     flags: MessageFlags.IsComponentsV2,
     components: [
-      buildLockedSummaryContainer(view),
+      buildUnavailableSummaryContainer(view),
       ...buildLockedQueueControls(view.guildId, view.version, secret, view.readyCheck),
     ],
   };
@@ -140,14 +142,17 @@ function buildRosterContainer(view: QueuePanelView): ContainerBuilder {
     );
 }
 
-function buildLockedSummaryContainer(view: QueuePanelView): ContainerBuilder {
+function buildUnavailableSummaryContainer(view: QueuePanelView): ContainerBuilder {
   const phase = view.activeMatchState;
   let heading: string;
   let subtext: string;
 
   if (phase === null || phase === undefined) {
-    heading = '**Queue unavailable**';
-    subtext = 'A match is currently being formed.';
+    heading = view.queueEverOpened === true ? '**Match Queue Closed**' : '**Match Queue Not Started**';
+    subtext =
+      view.queueEverOpened === true
+        ? 'Player enrollment is currently closed by staff.'
+        : 'An administrator has not opened the next queue yet. Check back soon.';
   } else if (phase === 'FINISHED' || phase === 'CANCELED' || phase === 'FAILED') {
     heading = '**Queue reopening**';
     subtext = 'Cleanup is finishing before the next queue opens.';

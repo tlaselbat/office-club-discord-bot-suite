@@ -16,6 +16,7 @@ import { ReadyCheckService } from '../services/ready-check-service.js';
 import { PhaseTimeoutService } from '../services/phase-timeout-service.js';
 import { MatchResourceService } from '../services/match-resource-service.js';
 import { QueuePanelService } from '../services/queue-panel-service.js';
+import { AdminPanelService } from '../services/admin-panel-service.js';
 import { MatchDashboardService } from '../services/match-dashboard-service.js';
 import { MatchResultReceiptService } from '../services/match-result-receipt-service.js';
 import type { MatchArtifactService } from '../services/match-artifact-service.js';
@@ -83,6 +84,11 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
     dependencies.discord,
     dependencies.componentSigningSecret,
   );
+  const adminPanel = new AdminPanelService(
+    dependencies.prisma,
+    dependencies.discord,
+    dependencies.componentSigningSecret,
+  );
   const dashboard = new MatchDashboardService(
     dependencies.prisma,
     dependencies.discord,
@@ -137,6 +143,7 @@ export function createJobHandlers(dependencies: WorkerDependencies): Map<string,
       async (job: LeasedJob) => {
         const { guildId } = job.payload as { guildId: string };
         await queuePanel.reconcile(guildId);
+        await adminPanel.reconcile(guildId);
       },
     ],
     [

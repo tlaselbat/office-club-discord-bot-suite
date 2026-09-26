@@ -32,6 +32,20 @@ export interface UpdateGuildSettingsCommand {
   expectedVersion?: number | null;
 }
 
+/**
+ * The Admin panel is allowed to adjust queue semantics after managed setup.
+ * Infrastructure changes remain on the full update path above.
+ */
+export interface UpdateQueueOptionsCommand {
+  guildId: string;
+  actorDiscordUserId: string;
+  correlationId: string;
+  expectedVersion: number;
+  defaultServerLocation: 'dallas' | 'los_angeles' | 'virginia';
+  teamSelectionMode: 'CAPTAINS' | 'RANDOM';
+  mapSelectionMode: 'CAPTAIN_VETO' | 'RANDOM';
+}
+
 interface ChannelPermissionCheck {
   channel: GuildBasedChannel;
   required: bigint[];
@@ -254,6 +268,59 @@ export class GuildSettingsService {
             queueSize: command.queueSize,
             partyEnabled: command.partyEnabled,
             readyTimeoutSeconds: command.readyTimeoutSeconds,
+            teamSelectionMode: command.teamSelectionMode,
+            mapSelectionMode: command.mapSelectionMode,
+          },
+        },
+      });
+    });
+  }
+
+  public async updateQueueOptions(command: UpdateQueueOptionsCommand): Promise<void> {
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${command.guildId}, 0))`;
+      const settings = await transaction.tenManSettings.findUnique({
+        where: { guildId: command.guildId },
+      });
+      if (settings === null || settings.managedResourceState !== 'ACTIVE')
+        throw new Error('Managed competitive setup must be active before configuring the queue');
+      if (settings.version !== command.expectedVersion)
+        throw new Error('Configuration changed; reload and try again');
+
+      const profileKey = settings.defaultGameProfileKey ?? 'competitive_5v5';
+      const profile = await transaction.gameProfile.findUnique({ where: { key: profileKey } });
+      if (profile === null || !profile.enabled)
+        throw new Error(`Game profile ${profileKey} does not exist or is disabled`);
+      try {
+        assertCompetitiveBo1FiveVFive(
+          gameProfileSchema.parse({
+            ...profile,
+            matchzy: { ...(profile.matchzyOptions as object), cvars: profile.allowedCvars },
+          }),
+        );
+      } catch {
+        throw new Error('The selected game profile is not supported by the competitive release');
+      }
+
+      await transaction.tenManSettings.update({
+        where: { guildId: command.guildId },
+        data: {
+          defaultServerLocation: command.defaultServerLocation,
+          teamSelectionMode: command.teamSelectionMode,
+          mapSelectionMode: command.mapSelectionMode,
+          version: { increment: 1 },
+        },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          guildId: command.guildId,
+          actorDiscordUserId: command.actorDiscordUserId,
+          eventType: 'queue_options_updated',
+          result: 'success',
+          correlationId: command.correlationId,
+          metadata: {
+            defaultGameProfileKey: profileKey,
+            defaultServerLocation: command.defaultServerLocation,
             teamSelectionMode: command.teamSelectionMode,
             mapSelectionMode: command.mapSelectionMode,
           },

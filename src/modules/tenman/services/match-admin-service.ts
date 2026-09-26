@@ -32,10 +32,10 @@ export class MatchAdminService {
       await lockMatch(transaction, matchId);
       const match = await transaction.match.findUnique({
         where: { id: matchId },
-        include: { guild: { select: { readyTimeoutSeconds: true } }, players: true },
+        include: { players: true },
       });
       assertCurrentState(match, 'READY_CHECK', expectedVersion);
-      const deadline = deadlineFrom(match.guild.readyTimeoutSeconds);
+      const deadline = deadlineFrom(match.readyTimeoutSeconds);
       const updated = await transaction.match.updateMany({
         where: {
           id: matchId,
@@ -92,7 +92,7 @@ export class MatchAdminService {
       await lockMatch(transaction, command.matchId);
       const match = await transaction.match.findUnique({
         where: { id: command.matchId },
-        include: { guild: { select: { readyTimeoutSeconds: true } }, players: true },
+        include: { players: true },
       });
       assertCurrentState(match, 'READY_CHECK', command.expectedVersion);
       if (command.outgoingDiscordUserId === command.incomingDiscordUserId)
@@ -133,7 +133,7 @@ export class MatchAdminService {
       if (match.players.some((player) => player.steamId64 === identity.steamId64))
         throw new PublicError('DUPLICATE_STEAM', 'That Steam account is already in this match.');
 
-      const deadline = deadlineFrom(match.guild.readyTimeoutSeconds);
+      const deadline = deadlineFrom(match.readyTimeoutSeconds);
       const updated = await transaction.match.updateMany({
         where: {
           id: command.matchId,
@@ -197,7 +197,6 @@ export class MatchAdminService {
       await lockMatch(transaction, matchId);
       const match = await transaction.match.findUnique({
         where: { id: matchId },
-        include: { guild: { select: { readyTimeoutSeconds: true } } },
       });
       if (match === null || !isFormingState(match.state))
         throw new PublicError(
@@ -205,7 +204,7 @@ export class MatchAdminService {
           'This match is not in a restartable forming phase.',
         );
       if (match.version !== expectedVersion) throw stale();
-      const deadline = deadlineFrom(match.guild.readyTimeoutSeconds);
+      const deadline = deadlineFrom(match.readyTimeoutSeconds);
       if (match.state === 'READY_CHECK') {
         await transaction.matchPlayer.updateMany({
           where: { matchId },

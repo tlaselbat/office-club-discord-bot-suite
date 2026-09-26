@@ -4,6 +4,9 @@ import {
   ButtonStyle,
   EmbedBuilder,
   MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   type ChatInputCommandInteraction,
   type Client,
   type InteractionReplyOptions,
@@ -22,6 +25,8 @@ import { MatchHistoryService } from '../services/match-history-service.js';
 import { MatchAdminService } from '../services/match-admin-service.js';
 import type { GuildResourceService } from '../services/guild-resource-service.js';
 import { QueuePanelService } from '../services/queue-panel-service.js';
+import { AdminPanelService } from '../services/admin-panel-service.js';
+import { GuildSettingsService } from '../services/guild-settings-service.js';
 import { PlayerStatusService } from '../services/player-status-service.js';
 import type { SteamAccountService } from '../services/steam-account-service.js';
 import { SteamAdminService } from '../services/steam-admin-service.js';
@@ -31,6 +36,18 @@ import { QueueAlertService } from '../services/queue-alert-service.js';
 import { adminGeneration, parseAdminCustomId } from './admin-custom-id.js';
 import { parseMatchCustomId } from './match-custom-id.js';
 import { createQueueCustomId, parseQueueCustomId } from './queue-custom-id.js';
+import { parseAdminPanelCustomId } from './admin-panel-custom-id.js';
+import { parseMatchModeratorCustomId } from './match-moderator-custom-id.js';
+import { buildMatchModeratorPanel } from './match-moderator-components.js';
+import { MatchModeratorService } from '../services/match-moderator-service.js';
+import { MapPoolService } from '../services/map-pool-service.js';
+import { buildMapPoolManagement } from './map-pool-components.js';
+import { createMapPoolCustomId, parseMapPoolCustomId } from './map-pool-custom-id.js';
+import { parseAdminQueueConfigCustomId } from './admin-queue-config-custom-id.js';
+import {
+  buildAdminQueueConfiguration,
+  configurationDraftFromSettings,
+} from './admin-queue-config-components.js';
 import {
   joinQueueButton,
   leaveQueueButton,
@@ -283,6 +300,10 @@ export class TenManComponentInteractionRouter {
   private readonly match: MatchInteractionRouter;
   private readonly queueService: QueueService;
   private readonly queuePanelService: QueuePanelService;
+  private readonly adminPanelService: AdminPanelService;
+  private readonly matchModeratorService: MatchModeratorService;
+  private readonly mapPoolService: MapPoolService;
+  private readonly guildSettingsService: GuildSettingsService;
   private readonly matchHistory: MatchHistoryService;
   private readonly matchAdmin: MatchAdminService;
   private readonly playerStatusService: PlayerStatusService;
@@ -302,6 +323,14 @@ export class TenManComponentInteractionRouter {
       options.discord,
       options.componentSigningSecret,
     );
+    this.adminPanelService = new AdminPanelService(
+      options.prisma,
+      options.discord,
+      options.componentSigningSecret,
+    );
+    this.matchModeratorService = new MatchModeratorService(options.prisma);
+    this.mapPoolService = new MapPoolService(options.prisma);
+    this.guildSettingsService = new GuildSettingsService(options.prisma, options.discord);
     this.matchHistory = new MatchHistoryService(options.prisma);
     this.matchAdmin = new MatchAdminService(options.prisma);
     this.playerStatusService = new PlayerStatusService(options.prisma);
@@ -320,6 +349,11 @@ export class TenManComponentInteractionRouter {
     if (interaction.customId.startsWith('tma2:')) return this.handleMatchAdmin(interaction);
     if (interaction.customId.startsWith('tmo:')) return this.handleMatchOps(interaction);
     if (interaction.customId.startsWith('tqb:')) return this.handleQueueAdmin(interaction);
+    if (interaction.customId.startsWith('tqc:'))
+      return this.handleAdminQueueConfiguration(interaction);
+    if (interaction.customId.startsWith('tqm:')) return this.handleMatchModerators(interaction);
+    if (interaction.customId.startsWith('tqmp:')) return this.handleMapPool(interaction);
+    if (interaction.customId.startsWith('tqa:')) return this.handleAdminPanel(interaction);
     if (interaction.customId.startsWith('tpy:')) return this.handleParty(interaction);
     if (interaction.customId.startsWith('tmm:')) return this.match.handle(interaction);
     if (interaction.customId.startsWith('tmq:')) return this.handleQueue(interaction);
@@ -386,6 +420,37 @@ export class TenManComponentInteractionRouter {
           });
           return;
       }
+    }
+    if (interaction.customId.startsWith('tqmp:')) {
+      const payload = parseMapPoolCustomId(
+        interaction.customId,
+        this.options.componentSigningSecret,
+      );
+      if (
+        payload.action !== 'ADD_SUBMIT' ||
+        payload.guildId !== interaction.guildId ||
+        payload.actorDiscordUserId !== interaction.user.id
+      ) {
+        throw new Error('Map catalog modal does not belong to this interaction');
+      }
+      const actor = await this.options.adminActorFor(interaction);
+      assertAuthorized('CONFIGURE_GUILD', actor);
+      const settings = await this.options.prisma.tenManSettings.findUnique({
+        where: { guildId: payload.guildId },
+        select: { version: true },
+      });
+      if (settings === null || settings.version !== payload.settingsVersion)
+        throw new Error('Configuration changed; reload and try again');
+      await this.mapPoolService.addWorkshopMap({
+        guildId: payload.guildId,
+        mapName: interaction.fields.getTextInputValue('workshop_map_name'),
+        displayName: interaction.fields.getTextInputValue('workshop_display_name'),
+        actorDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+      });
+      const content = await this.buildMapPoolResponse(payload.guildId, interaction.user.id, 0);
+      await this.ephemeralReplies.reply(interaction, { ...content, flags: MessageFlags.Ephemeral });
+      return;
     }
     if (interaction.customId.startsWith('tmd:')) {
       const payload = parseResultDisputeCustomId(
@@ -1122,6 +1187,389 @@ export class TenManComponentInteractionRouter {
       components: [],
       embeds: [],
     });
+  }
+
+  private async handleAdminPanel(interaction: MessageComponentInteraction): Promise<void> {
+    if (interaction.guildId === null) throw new Error('Guild interaction required');
+    const payload = parseAdminPanelCustomId(
+      interaction.customId,
+      this.options.componentSigningSecret,
+    );
+    if (payload.guildId !== interaction.guildId)
+      throw new Error('Admin panel control does not belong to this guild');
+    const actor = await this.options.adminActorFor(interaction);
+    assertAuthorized(
+      payload.action === 'CONFIGURE' || payload.action === 'MAPS'
+        ? 'CONFIGURE_GUILD'
+        : payload.action === 'MODERATORS'
+          ? 'MANAGE_MATCH_MODERATORS'
+          : 'OPERATE_QUEUE',
+      actor,
+    );
+    if (payload.action === 'CONFIGURE') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const settings = await this.options.prisma.tenManSettings.findUnique({
+        where: { guildId: payload.guildId },
+        select: {
+          version: true,
+          teamSelectionMode: true,
+          mapSelectionMode: true,
+          defaultServerLocation: true,
+        },
+      });
+      if (settings === null) throw new Error('Competitive configuration is not available');
+      const draft = configurationDraftFromSettings(settings);
+      await interaction.editReply(
+        buildAdminQueueConfiguration(
+          { guildId: payload.guildId, actorDiscordUserId: interaction.user.id, ...draft },
+          this.options.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (payload.action === 'MODERATORS') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await interaction.editReply(
+        buildMatchModeratorPanel(
+          payload.guildId,
+          interaction.user.id,
+          await this.matchModeratorService.list(payload.guildId),
+          this.options.componentSigningSecret,
+        ),
+      );
+      return;
+    }
+    if (payload.action === 'MAPS') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await interaction.editReply(
+        await this.buildMapPoolResponse(payload.guildId, interaction.user.id, 0),
+      );
+      return;
+    }
+    const queue = await this.options.prisma.tenManQueue.findUnique({
+      where: { guildId: payload.guildId },
+      select: { version: true },
+    });
+    if (payload.action !== 'REFRESH' && payload.version !== (queue?.version ?? 0))
+      throw new Error('Admin panel is stale; refresh and try again.');
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (payload.action === 'OPEN') {
+      await this.queueService.openEnrollment({
+        guildId: payload.guildId,
+        actorDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+      });
+      await this.reconcileLobbyQueuePanel(payload.guildId);
+      await this.adminPanelService.reconcile(payload.guildId);
+      await interaction.editReply({ content: 'Player enrollment is open.' });
+      return;
+    }
+    if (payload.action === 'CLOSE') {
+      await this.queueService.closeEnrollment({
+        guildId: payload.guildId,
+        actorDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+      });
+      await this.reconcileLobbyQueuePanel(payload.guildId);
+      await this.adminPanelService.reconcile(payload.guildId);
+      await interaction.editReply({ content: 'Player enrollment is closed.' });
+      return;
+    }
+    if (payload.action === 'REPAIR') {
+      const settings = await this.options.prisma.tenManSettings.findUnique({
+        where: { guildId: payload.guildId },
+        select: { lobbyTextChannelId: true },
+      });
+      if (settings?.lobbyTextChannelId === null || settings?.lobbyTextChannelId === undefined)
+        throw new Error('Lobby text channel is not configured');
+      const channel = await this.options.discord.channels.fetch(settings.lobbyTextChannelId);
+      if (channel === null || !channel.isTextBased() || channel.isDMBased())
+        throw new Error('Configured lobby text channel is unavailable');
+      await this.options.prisma.tenManQueue.upsert({
+        where: { guildId: payload.guildId },
+        update: {},
+        create: { guildId: payload.guildId, status: 'DISABLED' },
+      });
+      await this.queuePanelService.reconcile(payload.guildId, channel);
+      await this.adminPanelService.reconcile(payload.guildId);
+      await interaction.editReply({ content: 'Match Queue panel repaired.' });
+      return;
+    }
+    await this.adminPanelService.reconcile(payload.guildId);
+    await interaction.editReply({ content: 'Match Queue Control refreshed.' });
+  }
+
+  private async handleMatchModerators(interaction: MessageComponentInteraction): Promise<void> {
+    if (interaction.guildId === null || !interaction.isUserSelectMenu())
+      throw new Error('Guild user selection required');
+    const payload = parseMatchModeratorCustomId(
+      interaction.customId,
+      this.options.componentSigningSecret,
+    );
+    if (
+      payload.guildId !== interaction.guildId ||
+      payload.actorDiscordUserId !== interaction.user.id
+    )
+      throw new Error('Match Moderator control does not belong to this interaction');
+    const actor = await this.options.adminActorFor(interaction);
+    assertAuthorized('MANAGE_MATCH_MODERATORS', actor);
+    const target = interaction.values[0];
+    if (target === undefined) throw new Error('Match Moderator selection is missing');
+    await interaction.deferUpdate();
+    if (payload.action === 'ADD') {
+      await this.matchModeratorService.add({
+        guildId: payload.guildId,
+        discordUserId: target,
+        addedByDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+      });
+    } else {
+      await this.matchModeratorService.remove({
+        guildId: payload.guildId,
+        discordUserId: target,
+        actorDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+      });
+    }
+    await this.adminPanelService.reconcile(payload.guildId);
+    await interaction.editReply(
+      buildMatchModeratorPanel(
+        payload.guildId,
+        interaction.user.id,
+        await this.matchModeratorService.list(payload.guildId),
+        this.options.componentSigningSecret,
+      ),
+    );
+  }
+
+  private async handleMapPool(interaction: MessageComponentInteraction): Promise<void> {
+    if (interaction.guildId === null) throw new Error('Guild interaction required');
+    const payload = parseMapPoolCustomId(interaction.customId, this.options.componentSigningSecret);
+    if (
+      payload.guildId !== interaction.guildId ||
+      payload.actorDiscordUserId !== interaction.user.id
+    ) {
+      throw new Error('Map-pool control does not belong to this interaction');
+    }
+    const actor = await this.options.adminActorFor(interaction);
+    assertAuthorized('CONFIGURE_GUILD', actor);
+    const settings = await this.options.prisma.tenManSettings.findUnique({
+      where: { guildId: payload.guildId },
+      select: { version: true },
+    });
+    if (settings === null || settings.version !== payload.settingsVersion)
+      throw new Error('Configuration changed; reload and try again');
+
+    if (payload.action === 'ADD') {
+      const modalId = createMapPoolCustomId(
+        { ...payload, action: 'ADD_SUBMIT' },
+        this.options.componentSigningSecret,
+      );
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Add Workshop Map')
+          // eslint-disable-next-line @typescript-eslint/no-deprecated
+          .addComponents(
+            new ActionRowBuilder<TextInputBuilder>().addComponents(
+              new TextInputBuilder()
+                .setCustomId('workshop_map_name')
+                // eslint-disable-next-line @typescript-eslint/no-deprecated
+                .setLabel('Canonical workshop map identifier')
+                .setPlaceholder('workshop/123456789/de_example')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true),
+            ),
+            new ActionRowBuilder<TextInputBuilder>().addComponents(
+              new TextInputBuilder()
+                .setCustomId('workshop_display_name')
+                // eslint-disable-next-line @typescript-eslint/no-deprecated
+                .setLabel('Display name')
+                .setPlaceholder('Example Workshop Map')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true),
+            ),
+          ),
+      );
+      return;
+    }
+    if (payload.action === 'PREVIOUS' || payload.action === 'NEXT') {
+      await interaction.update(
+        await this.buildMapPoolResponse(payload.guildId, interaction.user.id, payload.page),
+      );
+      return;
+    }
+    if (payload.action === 'REMOVE') {
+      if (!interaction.isStringSelectMenu()) throw new Error('Workshop map selection is missing');
+      const mapName = interaction.values[0];
+      if (mapName === undefined || mapName === 'none')
+        throw new Error('Workshop map selection is missing');
+      await interaction.deferUpdate();
+      await this.mapPoolService.removeWorkshopMap({
+        guildId: payload.guildId,
+        mapName,
+        actorDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+      });
+      await this.adminPanelService.reconcile(payload.guildId);
+      await interaction.editReply(
+        await this.buildMapPoolResponse(payload.guildId, interaction.user.id, payload.page),
+      );
+      return;
+    }
+    if (payload.action === 'POOL') {
+      if (!interaction.isStringSelectMenu()) throw new Error('Map pool selection is missing');
+      const view = await this.getMapPoolView(payload.guildId, interaction.user.id, payload.page);
+      const candidates = [...view.officialMaps, ...view.workshopMaps.map((map) => map.mapName)];
+      const pageSize = 25;
+      const pageCandidates = candidates.slice(
+        payload.page * pageSize,
+        (payload.page + 1) * pageSize,
+      );
+      const selected = new Set(interaction.values);
+      const nextPool = [
+        ...view.activePool.mapNames.filter((mapName) => !pageCandidates.includes(mapName)),
+        ...pageCandidates.filter((mapName) => selected.has(mapName)),
+      ];
+      await interaction.deferUpdate();
+      await this.mapPoolService.saveActiveMapPool({
+        guildId: payload.guildId,
+        mapNames: nextPool,
+        expectedVersion: payload.settingsVersion,
+        actorDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+      });
+      await this.adminPanelService.reconcile(payload.guildId);
+      await interaction.editReply(
+        await this.buildMapPoolResponse(payload.guildId, interaction.user.id, payload.page),
+      );
+      return;
+    }
+    throw new Error('Unsupported map-pool control');
+  }
+
+  private async buildMapPoolResponse(guildId: string, actorDiscordUserId: string, page: number) {
+    return buildMapPoolManagement(
+      await this.getMapPoolView(guildId, actorDiscordUserId, page),
+      this.options.componentSigningSecret,
+    );
+  }
+
+  private async getMapPoolView(guildId: string, actorDiscordUserId: string, page: number) {
+    const settings = await this.options.prisma.tenManSettings.findUnique({
+      where: { guildId },
+      select: { version: true, defaultGameProfileKey: true },
+    });
+    if (settings === null) throw new Error('Competitive configuration is missing');
+    const profile = await this.options.prisma.gameProfile.findUnique({
+      where: { key: settings.defaultGameProfileKey ?? 'competitive_5v5' },
+      select: { mapAllowlist: true },
+    });
+    if (profile === null) throw new Error('Configured game profile is missing');
+    const workshopMaps = await this.mapPoolService.listWorkshopCatalog(guildId);
+    const candidateCount =
+      profile.mapAllowlist.filter((mapName) => mapName.startsWith('de_')).length +
+      workshopMaps.length;
+    const safePage = Math.min(page, Math.max(0, Math.ceil(candidateCount / 25) - 1));
+    return {
+      guildId,
+      actorDiscordUserId,
+      settingsVersion: settings.version,
+      activePool: await this.mapPoolService.getActiveMapPool(guildId),
+      officialMaps: profile.mapAllowlist.filter((mapName) => mapName.startsWith('de_')),
+      workshopMaps,
+      page: safePage,
+    };
+  }
+
+  private async handleAdminQueueConfiguration(
+    interaction: MessageComponentInteraction,
+  ): Promise<void> {
+    if (interaction.guildId === null) throw new Error('Guild interaction required');
+    const payload = parseAdminQueueConfigCustomId(
+      interaction.customId,
+      this.options.componentSigningSecret,
+    );
+    if (
+      payload.guildId !== interaction.guildId ||
+      payload.actorDiscordUserId !== interaction.user.id
+    )
+      throw new Error('Queue configuration control does not belong to this interaction');
+    const actor = await this.options.adminActorFor(interaction);
+    assertAuthorized('CONFIGURE_GUILD', actor);
+
+    if (payload.action === 'CANCEL') {
+      await interaction.update({
+        content: 'Queue configuration canceled.',
+        embeds: [],
+        components: [],
+      });
+      return;
+    }
+    if (payload.action === 'SAVE') {
+      await interaction.deferUpdate();
+      await this.guildSettingsService.updateQueueOptions({
+        guildId: payload.guildId,
+        actorDiscordUserId: interaction.user.id,
+        correlationId: interaction.id,
+        expectedVersion: payload.settingsVersion,
+        defaultServerLocation:
+          payload.location === 'L'
+            ? 'los_angeles'
+            : payload.location === 'V'
+              ? 'virginia'
+              : 'dallas',
+        teamSelectionMode: payload.team === 'S' ? 'RANDOM' : 'CAPTAINS',
+        mapSelectionMode: payload.map === 'R' ? 'RANDOM' : 'CAPTAIN_VETO',
+      });
+      await this.adminPanelService.reconcile(payload.guildId);
+      await interaction.editReply({
+        content: 'Queue configuration saved for future queues.',
+        embeds: [],
+        components: [],
+      });
+      return;
+    }
+    if (!interaction.isStringSelectMenu())
+      throw new Error('Queue configuration selection is missing');
+    const selected = interaction.values[0];
+    if (selected === undefined) throw new Error('Queue configuration selection is missing');
+    const draft = { ...payload };
+    if (payload.action === 'TEAM' && (selected === 'C' || selected === 'S')) draft.team = selected;
+    else if (payload.action === 'MAP' && (selected === 'V' || selected === 'R'))
+      draft.map = selected;
+    else if (
+      payload.action === 'LOCATION' &&
+      (selected === 'D' || selected === 'L' || selected === 'V')
+    )
+      draft.location = selected;
+    else throw new Error('Invalid queue configuration selection');
+    await interaction.update(
+      buildAdminQueueConfiguration(
+        {
+          guildId: draft.guildId,
+          actorDiscordUserId: draft.actorDiscordUserId,
+          settingsVersion: draft.settingsVersion,
+          team: draft.team,
+          map: draft.map,
+          location: draft.location,
+        },
+        this.options.componentSigningSecret,
+      ),
+    );
+  }
+
+  private async reconcileLobbyQueuePanel(guildId: string): Promise<void> {
+    const settings = await this.options.prisma.tenManSettings.findUnique({
+      where: { guildId },
+      select: { lobbyTextChannelId: true },
+    });
+    if (settings?.lobbyTextChannelId === null || settings?.lobbyTextChannelId === undefined)
+      throw new Error('Lobby text channel is not configured');
+    const channel = await this.options.discord.channels.fetch(settings.lobbyTextChannelId);
+    if (channel === null || !channel.isTextBased() || channel.isDMBased())
+      throw new Error('Configured lobby text channel is unavailable');
+    await this.queuePanelService.reconcile(guildId, channel);
   }
 
   private async handleQueueAdmin(interaction: MessageComponentInteraction): Promise<void> {

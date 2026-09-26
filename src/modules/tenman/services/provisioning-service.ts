@@ -23,7 +23,7 @@ export class ProvisioningService {
   public async runProvisionJob(matchId: string): Promise<void> {
     const match = await this.prisma.match.findUnique({
       where: { id: matchId },
-      include: { players: true, profile: true, guild: true },
+      include: { players: true, profile: true },
     });
     if (match === null) throw new Error('Match not found');
     if (!['TEAMS_LOCKED', 'SERVER_PROVISIONING'].includes(match.state)) {
@@ -33,15 +33,15 @@ export class ProvisioningService {
       );
       return;
     }
-
-    if (match.guild.dathostTemplateServerId === null) {
-      throw new Error('Guild has no DatHost template server configured');
+    if (match.dathostTemplateServerId === null) {
+      throw new Error('Match is missing its DatHost template snapshot');
     }
+
     const context = {
       matchId,
       guildId: match.guildId,
-      templateServerId: match.guild.dathostTemplateServerId,
-      location: match.guild.defaultServerLocation ?? 'dallas',
+      templateServerId: match.dathostTemplateServerId,
+      location: match.serverLocation,
       slots: match.profile.serverSlots,
     };
 
@@ -119,7 +119,7 @@ export class ProvisioningService {
   public async runBootPollJob(matchId: string, serverId: string, startedAt: number): Promise<void> {
     const match = await this.prisma.match.findUnique({
       where: { id: matchId },
-      include: { players: true, profile: true, guild: true },
+      include: { players: true, profile: true },
     });
     if (match === null) throw new Error('Match not found');
     if (match.dathostServerId !== serverId) throw new Error('Boot poll server ID mismatch');
@@ -172,7 +172,7 @@ export class ProvisioningService {
       playersPerTeam: match.profile.playersPerTeam,
       numMaps: match.profile.numMaps,
       serverSlots: match.profile.serverSlots,
-      mapAllowlist: match.profile.mapAllowlist,
+      mapAllowlist: match.mapAllowlist,
       matchzy: {
         ...(match.profile.matchzyOptions as object),
         cvars: match.profile.allowedCvars,

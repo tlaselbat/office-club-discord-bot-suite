@@ -19,6 +19,11 @@ export const matchActions = [
   'QUEUE_BAN',
   'QUEUE_UNBAN',
   'RESOLVE_DISPUTE',
+  'VIEW_QUEUE_OPERATIONS',
+  'OPERATE_QUEUE',
+  'OPERATE_MATCH',
+  'REPAIR_QUEUE_PANEL',
+  'MANAGE_MATCH_MODERATORS',
 ] as const;
 
 export type MatchAction = (typeof matchActions)[number];
@@ -27,6 +32,7 @@ export interface ActorContext {
   discordUserId: string;
   isParticipant: boolean;
   isPrivilegedMember: boolean;
+  /** True only for an individual, active Steam-eligible Match Moderator. */
   isModerator: boolean;
   isAdministrator: boolean;
 }
@@ -50,6 +56,10 @@ const moderatorActions = new Set<MatchAction>([
   'QUEUE_BAN',
   'QUEUE_UNBAN',
   'RESOLVE_DISPUTE',
+  'VIEW_QUEUE_OPERATIONS',
+  'OPERATE_QUEUE',
+  'OPERATE_MATCH',
+  'REPAIR_QUEUE_PANEL',
 ]);
 
 export function isAuthorized(

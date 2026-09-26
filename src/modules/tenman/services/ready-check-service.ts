@@ -23,14 +23,6 @@ export class ReadyCheckService {
         include: {
           players: true,
           profile: { select: { playersPerTeam: true, mapAllowlist: true } },
-          guild: {
-            select: {
-              readyTimeoutSeconds: true,
-              captainPolicy: true,
-              teamSelectionMode: true,
-              mapSelectionMode: true,
-            },
-          },
         },
       });
       if (match === null || match.state !== 'READY_CHECK') {
@@ -54,18 +46,18 @@ export class ReadyCheckService {
         player.discordUserId === discordUserId ? ready : player.readyState === 'READY',
       );
       if (!allReady) return;
-      assertSupportedFormationPolicy(match.guild);
+      assertSupportedFormationPolicy(match);
       if (match.players.length !== match.profile.playersPerTeam * 2) {
         throw new PublicError(
           'INVALID_ROSTER',
           'The ready roster does not match the game profile.',
         );
       }
-      const deadline = new Date(Date.now() + match.guild.readyTimeoutSeconds * 1000);
-      const randomTeams = match.guild.teamSelectionMode === 'RANDOM';
-      const randomMap = match.guild.mapSelectionMode === 'RANDOM';
+      const deadline = new Date(Date.now() + match.readyTimeoutSeconds * 1000);
+      const randomTeams = match.teamSelectionMode === 'RANDOM';
+      const randomMap = match.mapSelectionMode === 'RANDOM';
       const nextState = randomTeams ? (randomMap ? 'TEAMS_LOCKED' : 'MAP_VETO') : 'TEAM_SELECTION';
-      const selectedMap = randomMap ? pickRandomMap(match.profile.mapAllowlist) : null;
+      const selectedMap = randomMap ? pickRandomMap(match.mapAllowlist) : null;
       if (randomTeams) {
         const assignment = new RandomTeamBalancer().generate(match.players);
         await transaction.matchPlayer.updateMany({

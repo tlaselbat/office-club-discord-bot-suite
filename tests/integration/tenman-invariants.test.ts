@@ -122,6 +122,14 @@ suite('10man database invariants', () => {
       guildId,
       leaderDiscordUserId: firstUserId,
       selectedGameProfileKey: profileKey,
+      settingsVersion: 0,
+      readyTimeoutSeconds: 90,
+      captainPolicy: 'RANDOM' as const,
+      teamSelectionMode: 'CAPTAINS' as const,
+      mapSelectionMode: 'CAPTAIN_VETO' as const,
+      dathostTemplateServerId: 'template-server',
+      serverLocation: 'dallas',
+      mapAllowlist: ['de_mirage', 'de_inferno'],
     };
     const results = await Promise.allSettled([
       prisma.match.create({ data }),

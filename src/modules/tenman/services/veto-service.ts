@@ -21,25 +21,21 @@ export class VetoService {
         where: { id: matchId },
         include: {
           players: true,
-          profile: true,
           vetoActions: true,
-          guild: {
-            select: { captainPolicy: true, teamSelectionMode: true, mapSelectionMode: true },
-          },
         },
       });
       if (match === null || match.state !== 'MAP_VETO')
         throw new PublicError('VETO_UNAVAILABLE', 'Map veto is no longer active.');
       if (match.version !== expectedVersion)
         throw new PublicError('STALE_COMPONENT', 'This control is stale.');
-      assertSupportedFormationPolicy(match.guild);
-      if (match.guild.mapSelectionMode !== 'CAPTAIN_VETO') {
+      assertSupportedFormationPolicy(match);
+      if (match.mapSelectionMode !== 'CAPTAIN_VETO') {
         throw new PublicError('VETO_UNAVAILABLE', 'This match does not use a captain map veto.');
       }
       if (match.phaseDeadlineAt === null || match.phaseDeadlineAt <= new Date())
         throw new PublicError('STALE_COMPONENT', 'Map veto has expired.');
       if (
-        !match.profile.mapAllowlist.includes(mapName) ||
+        !match.mapAllowlist.includes(mapName) ||
         match.vetoActions.some((action) => action.mapName === mapName)
       )
         throw new PublicError('MAP_UNAVAILABLE', 'That map is unavailable.');
@@ -51,7 +47,7 @@ export class VetoService {
       await transaction.matchVetoAction.create({
         data: { matchId, sequence, actorTeam: expectedTeam, action: 'BAN', mapName },
       });
-      const remaining = match.profile.mapAllowlist.filter(
+      const remaining = match.mapAllowlist.filter(
         (candidate) =>
           candidate !== mapName &&
           !match.vetoActions.some((action) => action.mapName === candidate),

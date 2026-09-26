@@ -20,8 +20,6 @@ export class MatchDashboardService {
         discordResources: true,
         draftPicks: true,
         vetoActions: true,
-        profile: true,
-        guild: { select: { teamSelectionMode: true, captainPolicy: true, mapSelectionMode: true } },
       },
     });
     if (match === null || !isReconcilable(match)) return;
@@ -59,10 +57,10 @@ export class MatchDashboardService {
         selectedMap: match.selectedMap,
         draftPickCount: match.draftPicks.length,
         vetoedMaps: match.vetoActions.map((action) => action.mapName),
-        allowedMaps: match.profile.mapAllowlist,
-        teamSelectionMode: match.guild.teamSelectionMode,
-        captainPolicy: match.guild.captainPolicy,
-        mapSelectionMode: match.guild.mapSelectionMode,
+        allowedMaps: match.mapAllowlist,
+        teamSelectionMode: match.teamSelectionMode,
+        captainPolicy: match.captainPolicy,
+        mapSelectionMode: match.mapSelectionMode,
         score: parseScore(match.score),
       },
       this.secret,

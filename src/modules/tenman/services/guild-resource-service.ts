@@ -47,6 +47,7 @@ export interface ManagedPreview {
 
 const resources = [
   { step: 'CATEGORY' as const, name: 'Competitive', type: ChannelType.GuildCategory },
+  { step: 'ADMIN_TEXT' as const, name: 'admin', type: ChannelType.GuildText },
   { step: 'LOBBY_TEXT' as const, name: 'match-queue', type: ChannelType.GuildText },
   { step: 'LOBBY_VOICE' as const, name: 'Match Lobby', type: ChannelType.GuildVoice },
   { step: 'TEAM1_VOICE' as const, name: 'Team 1', type: ChannelType.GuildVoice },
@@ -86,12 +87,13 @@ export class GuildResourceService {
           version,
           `${resource.step}_CREATE_IN_FLIGHT`,
         );
-        const channel: GuildBasedChannel = await guild.channels.create({
-          name: resource.name,
-          type: resource.type,
-          ...(resource.type === ChannelType.GuildCategory ? {} : { parent: categoryId }),
-          reason: `Office Club Competitive managed setup by ${command.actorDiscordUserId}`,
-        });
+        const channel = await this.createManagedResource(
+          guild,
+          resource,
+          categoryId,
+          resolved,
+          command.actorDiscordUserId,
+        );
         if (resource.type === ChannelType.GuildCategory) categoryId = channel.id;
         else channelIds.push(channel.id);
         version = await this.persistCreatedResource(
@@ -171,6 +173,7 @@ export class GuildResourceService {
     if (
       [
         settings.lobbyTextChannelId,
+        settings.adminChannelId,
         settings.lobbyVoiceChannelId,
         settings.team1VoiceChannelId,
         settings.team2VoiceChannelId,
@@ -285,6 +288,7 @@ export class GuildResourceService {
         data: {
           enabled: false,
           lobbyTextChannelId: null,
+          adminChannelId: null,
           lobbyVoiceChannelId: null,
           team1VoiceChannelId: null,
           team2VoiceChannelId: null,
@@ -375,6 +379,7 @@ export class GuildResourceService {
       settings.managedChannelIds.length === 0 &&
       [
         settings.lobbyTextChannelId,
+        settings.adminChannelId,
         settings.lobbyVoiceChannelId,
         settings.team1VoiceChannelId,
         settings.team2VoiceChannelId,
@@ -422,6 +427,7 @@ export class GuildResourceService {
           managedAttemptId: attemptId,
           managedCategoryId: null,
           managedChannelIds: [],
+          adminChannelId: null,
           managedResourcesCreatedAt: null,
           version: { increment: 1 },
         },
@@ -511,11 +517,17 @@ export class GuildResourceService {
     categoryId: string | null,
     channelIds: string[],
   ): Promise<void> {
-    if (categoryId === null || channelIds.length !== 4)
+    if (categoryId === null || channelIds.length !== 5)
       throw new Error('Managed setup resources are incomplete');
-    const [lobbyTextChannelId, lobbyVoiceChannelId, team1VoiceChannelId, team2VoiceChannelId] =
-      channelIds;
+    const [
+      adminChannelId,
+      lobbyTextChannelId,
+      lobbyVoiceChannelId,
+      team1VoiceChannelId,
+      team2VoiceChannelId,
+    ] = channelIds;
     if (
+      adminChannelId === undefined ||
       lobbyTextChannelId === undefined ||
       lobbyVoiceChannelId === undefined ||
       team1VoiceChannelId === undefined ||
@@ -533,6 +545,7 @@ export class GuildResourceService {
         },
         data: {
           lobbyTextChannelId,
+          adminChannelId,
           lobbyVoiceChannelId,
           team1VoiceChannelId,
           team2VoiceChannelId,
@@ -733,6 +746,7 @@ export class GuildResourceService {
     const channels = await Promise.all(channelIds.map((id) => guild.channels.fetch(id)));
     const expected = [
       ChannelType.GuildText,
+      ChannelType.GuildText,
       ChannelType.GuildVoice,
       ChannelType.GuildVoice,
       ChannelType.GuildVoice,
@@ -742,7 +756,7 @@ export class GuildResourceService {
         throw new PublicError('SETUP_VALIDATION_FAILED', 'A created channel has the wrong type.');
       const permissions = botMember.permissionsIn(channel);
       const required =
-        index === 0
+        index <= 1
           ? [
               PermissionFlagsBits.ViewChannel,
               PermissionFlagsBits.SendMessages,
@@ -767,6 +781,7 @@ export class GuildResourceService {
     const guild = await this.client.guilds.fetch(settings.guildId);
     const ids = [
       settings.lobbyTextChannelId,
+      settings.adminChannelId,
       settings.lobbyVoiceChannelId,
       settings.team1VoiceChannelId,
       settings.team2VoiceChannelId,
@@ -780,6 +795,7 @@ export class GuildResourceService {
         'One or more configured channels are missing. Run diagnostics.',
       );
     const expected = [
+      ChannelType.GuildText,
       ChannelType.GuildText,
       ChannelType.GuildVoice,
       ChannelType.GuildVoice,
@@ -829,12 +845,71 @@ export class GuildResourceService {
     ];
     for (const [index, channel] of channels.entries()) {
       const permissions = botMember.permissionsIn(channel as GuildBasedChannel);
-      for (const permission of required[index === 0 ? 0 : 1] ?? [])
+      for (const permission of required[index <= 1 ? 0 : 1] ?? [])
         if (!permissions.has(permission))
           throw new PublicError(
             'ENABLE_CONFIGURATION_INVALID',
             'The bot is missing required channel permissions.',
           );
     }
+  }
+
+  private async createManagedResource(
+    guild: Guild,
+    resource: (typeof resources)[number],
+    categoryId: string | null,
+    resolved: ResolvedSetup,
+    actorDiscordUserId: string,
+  ): Promise<GuildBasedChannel> {
+    const isAdminChannel = resource.step === 'ADMIN_TEXT';
+    return guild.channels.create({
+      name: resource.name,
+      type: resource.type,
+      ...(resource.type === ChannelType.GuildCategory ? {} : { parent: categoryId }),
+      ...(isAdminChannel
+        ? { permissionOverwrites: this.adminChannelPermissionOverwrites(guild, resolved) }
+        : {}),
+      reason: `Office Club Competitive managed setup by ${actorDiscordUserId}`,
+    });
+  }
+
+  private adminChannelPermissionOverwrites(guild: Guild, resolved: ResolvedSetup) {
+    const botUserId = guild.members.me?.id ?? this.client.user?.id;
+    if (botUserId === undefined)
+      throw new PublicError(
+        'SETUP_VALIDATION_FAILED',
+        'The bot identity is unavailable while creating the Admin channel.',
+      );
+    const staffRoleIds = [
+      ...new Set([...resolved.moderatorRoleIds, ...resolved.administratorRoleIds]),
+    ];
+    if (staffRoleIds.includes(guild.roles.everyone.id))
+      throw new PublicError(
+        'SETUP_MISSING_OPTIONS',
+        'The @everyone role cannot be used for Admin channel access.',
+      );
+    return [
+      {
+        id: guild.roles.everyone.id,
+        deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+      },
+      ...staffRoleIds.map((id) => ({
+        id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+        ],
+      })),
+      {
+        id: botUserId,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.EmbedLinks,
+          PermissionFlagsBits.ReadMessageHistory,
+        ],
+      },
+    ];
   }
 }
