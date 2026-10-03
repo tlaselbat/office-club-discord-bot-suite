@@ -313,8 +313,8 @@ describe('queue panel renderer (Components V2)', () => {
       'Stats',
       'Steam Account',
       'How It Works',
-      'Refresh',
       'Team Status',
+      'Refresh',
     ]);
     // No legacy "My 10man" label may survive on the public panel.
     expect(buttonLabels(payload)).not.toContain('My 10man');
@@ -350,16 +350,31 @@ describe('queue panel renderer (Components V2)', () => {
     });
   });
 
-  it('uses semantic styles for queue and personal controls', () => {
+  it('uses the CS2-panel action, navigation, and locked-state palette', () => {
     const payload = renderQueuePanel(view(), secret);
     const join = buttons(payload).find((component) => component.label === 'Join / Leave Queue');
     const history = buttons(payload).find((component) => component.label === 'Match History');
     const stats = buttons(payload).find((component) => component.label === 'Stats');
     const team = buttons(payload).find((component) => component.label === 'Team Status');
+    const refresh = buttons(payload).find((component) => component.label === 'Refresh');
     expect(join?.style).toBe(ButtonStyle.Success);
     expect(history?.style).toBe(ButtonStyle.Secondary);
     expect(stats?.style).toBe(ButtonStyle.Secondary);
-    expect(team?.style).toBe(ButtonStyle.Secondary);
+    expect(team?.style).toBe(ButtonStyle.Success);
+    expect(refresh?.style).toBe(ButtonStyle.Secondary);
+  });
+
+  it('keeps Refresh at the lower-right edge in both queue states', () => {
+    const openControls = buttonLabels(renderQueuePanel(view(), secret));
+    const lockedControls = buttonLabels(
+      renderQueuePanel(view({ queueOpen: false, activeMatchState: 'READY_CHECK' }), secret),
+    );
+    expect(openControls.at(-1)).toBe('Refresh');
+    expect(lockedControls.at(-1)).toBe('Refresh');
+    const locked = buttons(
+      renderQueuePanel(view({ queueOpen: false, activeMatchState: 'READY_CHECK' }), secret),
+    ).find((component) => component.label === 'Queue Locked');
+    expect(locked).toMatchObject({ style: ButtonStyle.Danger, disabled: true });
   });
 
   it('does not add visible separators between native Containers', () => {

@@ -6,6 +6,12 @@ import { createQueueCustomId } from './queue-custom-id.js';
 import { createSteamAccountCustomId } from './steam-account-custom-id.js';
 
 const PANEL_ACTOR_PLACEHOLDER = '00000000000000000000';
+// Discord supplies semantic button colors rather than arbitrary CSS colors. These map
+// cleanly onto the navy/orange CS2 panel artwork without introducing Discord blurple:
+// green for player actions, slate for reference/navigation, and red for a locked queue.
+const PLAYER_ACTION_STYLE = ButtonStyle.Success;
+const NAVIGATION_STYLE = ButtonStyle.Secondary;
+const LOCKED_QUEUE_STYLE = ButtonStyle.Danger;
 
 export interface ReadyCheckControl {
   matchId: string;
@@ -21,7 +27,7 @@ export function joinLeaveQueueButton(
   return new ButtonBuilder()
     .setCustomId(createQueueCustomId({ action: 'TOGGLE', guildId, version }, secret))
     .setLabel('Join / Leave Queue')
-    .setStyle(ButtonStyle.Success);
+    .setStyle(PLAYER_ACTION_STYLE);
 }
 
 export function matchHistoryButton(
@@ -34,7 +40,7 @@ export function matchHistoryButton(
       createPlayerHubCustomId({ action: 'HISTORY', guildId, actorDiscordUserId }, secret),
     )
     .setLabel('Match History')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(NAVIGATION_STYLE);
 }
 
 export function statsButton(
@@ -45,7 +51,7 @@ export function statsButton(
   return new ButtonBuilder()
     .setCustomId(createPlayerHubCustomId({ action: 'STATS', guildId, actorDiscordUserId }, secret))
     .setLabel('Stats')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(NAVIGATION_STYLE);
 }
 
 export function teamStatusButton(
@@ -56,7 +62,7 @@ export function teamStatusButton(
   return new ButtonBuilder()
     .setCustomId(createPartyCustomId({ action: 'PANEL', guildId, actorDiscordUserId }, secret))
     .setLabel('Team Status')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(PLAYER_ACTION_STYLE);
 }
 
 export function steamAccountButton(guildId: string, secret: string): ButtonBuilder {
@@ -68,14 +74,14 @@ export function steamAccountButton(guildId: string, secret: string): ButtonBuild
       ),
     )
     .setLabel('Steam Account')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(NAVIGATION_STYLE);
 }
 
 export function howItWorksButton(guildId: string, version: number, secret: string): ButtonBuilder {
   return new ButtonBuilder()
     .setCustomId(createQueueCustomId({ action: 'HOW_IT_WORKS', guildId, version }, secret))
     .setLabel('How It Works')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(NAVIGATION_STYLE);
 }
 
 export function queueRefreshButton(
@@ -86,7 +92,7 @@ export function queueRefreshButton(
   return new ButtonBuilder()
     .setCustomId(createQueueCustomId({ action: 'REFRESH', guildId, version }, secret))
     .setLabel('Refresh')
-    .setStyle(ButtonStyle.Secondary);
+    .setStyle(NAVIGATION_STYLE);
 }
 
 function readyButton(secret: string, readyCheck?: ReadyCheckControl): ButtonBuilder {
@@ -94,13 +100,13 @@ function readyButton(secret: string, readyCheck?: ReadyCheckControl): ButtonBuil
     return new ButtonBuilder()
       .setCustomId('tmq:ready-unavailable')
       .setLabel('Ready')
-      .setStyle(ButtonStyle.Success)
+      .setStyle(PLAYER_ACTION_STYLE)
       .setDisabled(true);
   }
   return new ButtonBuilder()
     .setCustomId(createMatchCustomId({ action: 'READY', ...readyCheck }, secret))
     .setLabel('Ready')
-    .setStyle(ButtonStyle.Success);
+    .setStyle(PLAYER_ACTION_STYLE);
 }
 
 export function buildQueueControls(
@@ -118,8 +124,8 @@ export function buildQueueControls(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       steamAccountButton(guildId, secret),
       howItWorksButton(guildId, version, secret),
-      queueRefreshButton(guildId, version, secret),
       teamStatusButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+      queueRefreshButton(guildId, version, secret),
     ),
   ];
 }
@@ -139,7 +145,7 @@ export function buildLockedQueueControls(
         // signed REFRESH ID.
         .setCustomId('tmq:queue-locked')
         .setLabel('Queue Locked')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(LOCKED_QUEUE_STYLE)
         .setDisabled(true),
       matchHistoryButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
       statsButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
@@ -147,8 +153,8 @@ export function buildLockedQueueControls(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       steamAccountButton(guildId, secret),
       howItWorksButton(guildId, version, secret),
-      queueRefreshButton(guildId, version, secret),
       teamStatusButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+      queueRefreshButton(guildId, version, secret),
     ),
   ];
 }
