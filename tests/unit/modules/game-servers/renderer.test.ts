@@ -121,10 +121,10 @@ describe('Game Server rendering', () => {
     expect(text).toContain('# 1v1 Arena');
     expect(text).toContain('🟢 **Online**');
     expect(text).toContain('👥 **0 / 16 players**');
+    expect(text).toContain('📍 Los Angeles');
     expect(text).toContain('**Current Map**');
     expect(text).toContain('`aim_map_office`');
-    expect(text).toContain('**Location**');
-    expect(text).toContain('Los Angeles');
+    expect(text).not.toContain('**Location**');
     expect(text).toContain('**Host**');
     expect(text).toContain('**Connect**');
     expect(text).toContain('`arena.example.com:27015`');
@@ -164,8 +164,8 @@ describe('Game Server rendering', () => {
   it('renders the map media gallery with the fallback arena image', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
     const components = containerComponents(container);
-    expect(components[2]?.type).toBe(12);
-    const gallery = components[2] as Record<string, unknown>;
+    expect(components[1]?.type).toBe(12);
+    const gallery = components[1] as Record<string, unknown>;
     const items = gallery.items as Record<string, unknown>[];
     expect(items).toHaveLength(1);
     expect((items[0]?.media as Record<string, unknown>).url).toContain('clickcs-arena.jpg');
@@ -214,7 +214,7 @@ describe('Game Server rendering', () => {
   it('resolves the configured server image URL as map fallback before the default arena image', () => {
     const view = { ...server, imageUrl: 'https://example.com/server-map.png' };
     const container = firstContainer(renderGameServerCard(view, secret));
-    const gallery = containerComponents(container)[2] as Record<string, unknown>;
+    const gallery = containerComponents(container)[1] as Record<string, unknown>;
     const items = gallery.items as Record<string, unknown>[];
     expect((items[0]?.media as Record<string, unknown>).url).toBe(
       'https://example.com/server-map.png',
@@ -227,6 +227,29 @@ describe('Game Server rendering', () => {
     );
     expect(url).toContain('aim_map_office');
     expect(url).not.toContain('fallback');
+  });
+
+  it('normalizes workshop map identifiers for display', () => {
+    const view = {
+      ...server,
+      snapshot: { ...baseSnapshot, map: 'workshop/3070244462/de_ancient' },
+    };
+    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
+    expect(text).toContain('`de_ancient`');
+    expect(text).not.toContain('workshop');
+  });
+
+  it('omits the location marker when no datacenter is available', () => {
+    const view = { ...server, snapshot: { ...baseSnapshot, datacenter: null } };
+    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
+    expect(text).toContain('🟢 **Online**');
+    expect(text).not.toContain('📍');
+  });
+
+  it('keeps metadata compact in one TextDisplay inside the header Section', () => {
+    const container = firstContainer(renderGameServerCard(server, secret));
+    const section = containerComponents(container)[0] as Record<string, unknown>;
+    expect(section.components as Record<string, unknown>[]).toHaveLength(3);
   });
 
   it('omits unavailable detail metrics instead of rendering N/A', () => {

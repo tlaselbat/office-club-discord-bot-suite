@@ -29,6 +29,7 @@ export const dathostServerSchema = z.looseObject({
     .looseObject({
       slots: z.number().int().positive().nullable().optional(),
       max_players: z.number().int().positive().nullable().optional(),
+      map: z.string().nullable().optional(),
     })
     .nullable()
     .optional(),
@@ -36,6 +37,7 @@ export const dathostServerSchema = z.looseObject({
     .looseObject({
       slots: z.number().int().positive().nullable().optional(),
       max_players: z.number().int().positive().nullable().optional(),
+      map: z.string().nullable().optional(),
     })
     .nullable()
     .optional(),

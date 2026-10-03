@@ -70,6 +70,15 @@ describe('DatHostGameServerProvider', () => {
     });
   });
 
+  it('reads the current map from server settings', async () => {
+    const client = reader(
+      { on: true, cs2_settings: { map: 'workshop/3070244462/de_ancient' } },
+      { player_ids: { players: [] } },
+    );
+    const result = await new DatHostGameServerProvider(client).observe('server-1', undefined, now);
+    expect(result.map).toBe('workshop/3070244462/de_ancient');
+  });
+
   it('falls back to the lagging server count when monitoring fails', async () => {
     const client = reader({ on: true, players_online: 3 });
     vi.mocked(client.getCsMonitoringMetrics).mockRejectedValue(new Error('outage'));

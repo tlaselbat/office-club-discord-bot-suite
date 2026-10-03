@@ -138,15 +138,21 @@ export function renderAddGameServersPanel(
 export function renderGameServerCard(server: ServerView, secret: string) {
   const snapshot = server.snapshot;
   const accentColor = containerAccentColor(snapshot);
-  const location = snapshot?.datacenter ?? 'Unknown';
-  const map = snapshot?.map ?? 'Unknown';
+  const location = snapshot?.datacenter ?? null;
+  const map = snapshot?.map ?? null;
+  const displayMap = displayMapName(map);
+
+  const metadataBlock = [
+    `**Current Map** \`${displayMap}\`  •  **Host** ${serverHost(server)}`,
+    `**Connect** \`${connectAddress(server) ?? 'Unavailable'}\``,
+  ].join('\n');
 
   const headerSection = {
     type: componentType.section,
     components: [
       textDisplay(`# ${server.displayName}`),
-      textDisplay(statusLine(snapshot)),
-      textDisplay(`-# ${location}`),
+      textDisplay(statusLine(snapshot, location)),
+      textDisplay(metadataBlock),
     ],
     accessory: {
       type: componentType.thumbnail,
@@ -154,19 +160,12 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     },
   };
 
-  const metadataBlock = [
-    `**Current Map** \n\`${map}\``,
-    `**Location** \n${location}`,
-    `**Host** \n${serverHost(server)}`,
-    `**Connect** \n\`${connectAddress(server) ?? 'Unavailable'}\``,
-  ].join('\n\n');
-
   const mapGallery = {
     type: componentType.mediaGallery,
     items: [
       {
         media: { url: resolveMapImageUrl(map, server.imageUrl) },
-        description: `Current map: ${map}`,
+        description: `Current map: ${displayMap}`,
       },
     ],
   };
@@ -178,7 +177,7 @@ export function renderGameServerCard(server: ServerView, secret: string) {
 
   const container: Record<string, unknown> = {
     type: componentType.container,
-    components: [headerSection, textDisplay(metadataBlock), mapGallery, actionRow],
+    components: [headerSection, mapGallery, actionRow],
   };
   if (accentColor !== null) container.accentColor = accentColor;
 
@@ -243,12 +242,13 @@ export function renderGameServerDetail(server: ServerView) {
 export function cardFingerprint(server: ServerView): CardFingerprint {
   const snapshot = server.snapshot;
   const map = snapshot?.map ?? null;
+  const displayMap = displayMapName(map);
   return {
     accentColor: containerAccentColor(snapshot),
     displayName: server.displayName,
     status: statusLabel(snapshot),
     players: playerCount(snapshot),
-    map,
+    map: displayMap,
     mapImageUrl: resolveMapImageUrl(map, server.imageUrl),
     location: snapshot?.datacenter ?? null,
     host: serverHost(server),
@@ -298,8 +298,9 @@ function containerAccentColor(snapshot: SnapshotView | null): number | null {
   return 0xed4245;
 }
 
-function statusLine(snapshot: SnapshotView | null): string {
-  return `${statusEmoji(snapshot)} **${statusLabel(snapshot)}**  \u2022  👥 **${playerCount(snapshot)}**`;
+function statusLine(snapshot: SnapshotView | null, location: string | null): string {
+  const locationSuffix = location === null ? '' : `  \u2022  \ud83d\udccd ${location}`;
+  return `${statusEmoji(snapshot)} **${statusLabel(snapshot)}**  \u2022  👥 **${playerCount(snapshot)}**${locationSuffix}`;
 }
 
 function statusEmoji(snapshot: SnapshotView | null): string {
@@ -350,11 +351,18 @@ export function resolveMapImageUrl(
   serverImageUrl: string | null,
   fileExists: (path: string) => boolean = existsSync,
 ): string {
-  if (map !== null) {
+  const displayMap = displayMapName(map);
+  if (displayMap !== 'Unknown') {
     for (const ext of ['webp', 'png', 'jpg']) {
-      const localPath = path.join(process.cwd(), 'assets', 'game-servers', 'maps', `${map}.${ext}`);
+      const localPath = path.join(
+        process.cwd(),
+        'assets',
+        'game-servers',
+        'maps',
+        `${displayMap}.${ext}`,
+      );
       if (fileExists(localPath)) {
-        return `${ASSET_BASE_URL}/maps/${map}.${ext}`;
+        return `${ASSET_BASE_URL}/maps/${displayMap}.${ext}`;
       }
     }
   }
@@ -364,6 +372,14 @@ export function resolveMapImageUrl(
 
 function serverIdentityIconUrl(): string {
   return `${ASSET_BASE_URL}/clickcs-1v1-arena/icon.jpg`;
+}
+
+export function displayMapName(map: string | null): string {
+  if (map === null) return 'Unknown';
+  const workshopMatch = /^workshop\/\d+\/(?<name>.+)$/.exec(map);
+  if (workshopMatch?.groups?.name !== undefined) return workshopMatch.groups.name;
+  const withoutExtension = map.replace(/\.bsp$/i, '');
+  return withoutExtension;
 }
 
 function color(snapshot: SnapshotView | null): number {

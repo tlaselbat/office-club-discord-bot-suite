@@ -54,7 +54,7 @@ export class DatHostGameServerProvider {
       port: server.ports?.game ?? null,
       datacenter: server.location ?? null,
       hostname: server.name || null,
-      map: null,
+      map: server.cs2_settings?.map ?? server.csgo_settings?.map ?? null,
       players: server.players_online ?? (previous?.players === undefined ? null : previous.players),
       maxPlayers:
         server.cs2_settings?.slots ??
