@@ -311,9 +311,9 @@ function displayLocation(location: string | null): string | null {
 function statusEmoji(snapshot: SnapshotView | null): string {
   if (snapshot === null) return '⚪';
   if (snapshot.stale) return '🟡';
-  if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE') return '🟢';
+  if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE') return '✅';
   if (snapshot.hostingState === 'STARTING' || snapshot.gameplayState === 'DEGRADED') return '🟡';
-  return '🔴';
+  return '❌';
 }
 
 function playerCount(snapshot: SnapshotView | null): string {
