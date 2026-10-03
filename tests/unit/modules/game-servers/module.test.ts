@@ -28,6 +28,7 @@ function mockPrisma(overrides: Record<string, unknown> = {}): PrismaClient {
         public: true,
         connectDomain: null,
         joinUrl: null,
+        imageUrl: null,
         sortOrder: 0,
         snapshot: null,
       }),
@@ -138,6 +139,7 @@ describe('Game Servers module interactions', () => {
         public: true,
         connectDomain: null,
         joinUrl: null,
+        imageUrl: null,
         sortOrder: 0,
         snapshot: null,
       },
@@ -152,11 +154,11 @@ describe('Game Servers module interactions', () => {
     expect(interaction.editReply).toHaveBeenCalledOnce();
     const replyPayload = ((interaction.editReply as unknown as ReturnType<typeof vi.fn>).mock
       .calls[0]?.[0] ?? {}) as {
-        components: [
-          { toJSON: () => { components: [{ options?: Array<{ default?: boolean }> }] } },
-          { toJSON: () => { components: [{ disabled?: boolean }] } },
-        ];
-      };
+      components: [
+        { toJSON: () => { components: [{ options?: Array<{ default?: boolean }> }] } },
+        { toJSON: () => { components: [{ disabled?: boolean }] } },
+      ];
+    };
     const selectRow = replyPayload.components[0].toJSON();
     const buttonRow = replyPayload.components[1].toJSON();
     expect(selectRow.components[0].options?.[0]?.default).toBe(true);
@@ -215,6 +217,104 @@ describe('Game Servers module interactions', () => {
     };
     await expect(module.handleInteraction?.({ interaction: interaction as never })).rejects.toThrow(
       'Administrator permission required',
+    );
+  });
+
+  it('replies with connection information when Connect is pressed without a join URL', async () => {
+    const dependencies = mockDependencies({
+      prisma: mockPrisma({
+        gameServer: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: gameServerId,
+            guildId,
+            displayName: '1v1 Arena',
+            joinUrl: null,
+            snapshot: { host: '192.0.2.1', port: 27015 },
+          }),
+        },
+      }),
+    });
+    const module = createGameServersModule(dependencies);
+    const interaction = componentInteraction(
+      createGameServerCustomId({ action: 'connect', value: gameServerId }, secret),
+    );
+    await module.handleInteraction?.({ interaction: interaction as never });
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: expect.any(Number) });
+    expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining('192.0.2.1:27015'));
+  });
+
+  it('replies with the join URL when Connect is pressed with a configured join URL', async () => {
+    const dependencies = mockDependencies({
+      prisma: mockPrisma({
+        gameServer: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: gameServerId,
+            guildId,
+            displayName: '1v1 Arena',
+            joinUrl: 'https://example.com/join',
+            snapshot: { host: '192.0.2.1', port: 27015 },
+          }),
+        },
+      }),
+    });
+    const module = createGameServersModule(dependencies);
+    const interaction = componentInteraction(
+      createGameServerCustomId({ action: 'connect', value: gameServerId }, secret),
+    );
+    await module.handleInteraction?.({ interaction: interaction as never });
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      expect.stringContaining('https://example.com/join'),
+    );
+  });
+
+  it('replies with map and rules when Map & Rules is pressed', async () => {
+    const dependencies = mockDependencies({
+      prisma: mockPrisma({
+        gameServer: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: gameServerId,
+            guildId,
+            displayName: '1v1 Arena',
+            description: 'No toxicity. Knife round enabled.',
+            snapshot: { map: 'de_dust2' },
+          }),
+        },
+      }),
+    });
+    const module = createGameServersModule(dependencies);
+    const interaction = componentInteraction(
+      createGameServerCustomId({ action: 'map-rules', value: gameServerId }, secret),
+    );
+    await module.handleInteraction?.({ interaction: interaction as never });
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: expect.any(Number) });
+    const reply = String(
+      (interaction.editReply as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0],
+    );
+    expect(reply).toContain('de_dust2');
+    expect(reply).toContain('No toxicity');
+  });
+
+  it('replies with no-rules message when Map & Rules is pressed without configured rules', async () => {
+    const dependencies = mockDependencies({
+      prisma: mockPrisma({
+        gameServer: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: gameServerId,
+            guildId,
+            displayName: '1v1 Arena',
+            description: null,
+            snapshot: { map: 'de_dust2' },
+          }),
+        },
+      }),
+    });
+    const module = createGameServersModule(dependencies);
+    const interaction = componentInteraction(
+      createGameServerCustomId({ action: 'map-rules', value: gameServerId }, secret),
+    );
+    await module.handleInteraction?.({ interaction: interaction as never });
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      expect.stringContaining('No server rules are configured.'),
     );
   });
 });

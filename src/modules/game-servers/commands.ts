@@ -58,6 +58,9 @@ export const gameServerCommands = [
             .addStringOption((option) =>
               option.setName('join-url').setDescription('HTTPS join URL'),
             )
+            .addStringOption((option) =>
+              option.setName('image-url').setDescription('Map/server thumbnail image URL'),
+            )
             .addIntegerOption((option) =>
               option.setName('sort-order').setDescription('Display order'),
             ),

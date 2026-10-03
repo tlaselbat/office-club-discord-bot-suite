@@ -25,7 +25,7 @@ import {
   schedulePanelRefresh,
 } from './poll-service.js';
 import { DatHostGameServerProvider } from './provider.js';
-import { renderAddGameServersPanel } from './renderer.js';
+import { connectAddress, renderAddGameServersPanel } from './renderer.js';
 
 export interface GameServersModuleDependencies {
   prisma: PrismaClient;
@@ -49,7 +49,11 @@ export function createGameServersModule(dependencies?: GameServersModuleDependen
     dependencies.discord,
     dependencies.componentSigningSecret,
   );
-  const cards = new GameServerCardService(dependencies.prisma, dependencies.discord);
+  const cards = new GameServerCardService(
+    dependencies.prisma,
+    dependencies.discord,
+    dependencies.componentSigningSecret,
+  );
   const polls = new GameServerPollService(
     dependencies.prisma,
     new DatHostGameServerProvider(dependencies.dathost),
@@ -179,8 +183,11 @@ async function handleCommand(
     const isPublic = interaction.options.getBoolean('public');
     const connectDomain = interaction.options.getString('connect-domain');
     const joinUrl = interaction.options.getString('join-url');
+    const imageUrl = interaction.options.getString('image-url');
     if (joinUrl !== null && !joinUrl.startsWith('https://'))
       throw new Error('Join URL must use HTTPS');
+    if (imageUrl !== null && !imageUrl.startsWith('https://'))
+      throw new Error('Image URL must use HTTPS');
     const sortOrder = interaction.options.getInteger('sort-order');
     await dependencies.prisma.gameServer.update({
       where: { id: existing.id },
@@ -191,6 +198,7 @@ async function handleCommand(
         ...(isPublic === null ? {} : { public: isPublic }),
         ...(connectDomain === null ? {} : { connectDomain: connectDomain || null }),
         ...(joinUrl === null ? {} : { joinUrl: joinUrl || null }),
+        ...(imageUrl === null ? {} : { imageUrl: imageUrl || null }),
         ...(sortOrder === null ? {} : { sortOrder }),
       },
     });
@@ -308,6 +316,62 @@ async function handleComponent(
     }
     await panel.reconcile(interaction.guildId);
     await interaction.editReply('Server status card added.');
+    return;
+  }
+  if (payload.action === 'connect') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (payload.value === undefined) {
+      await interaction.editReply('Server connection information is unavailable.');
+      return;
+    }
+    const server = await dependencies.prisma.gameServer.findFirst({
+      where: { id: payload.value, guildId: interaction.guildId },
+      include: { snapshot: true },
+    });
+    if (server === null) {
+      await interaction.editReply('Server registration not found.');
+      return;
+    }
+    const address = connectAddress(server);
+    const lines = [`**${server.displayName}**`];
+    if (server.joinUrl !== null) {
+      lines.push(`Connect: ${server.joinUrl}`);
+    }
+    if (address !== null) {
+      lines.push(`Console address: \`${address}\``);
+      lines.push('Use `connect `<address>`` in the CS2 console.');
+    }
+    if (server.joinUrl === null && address === null) {
+      lines.push('No connection address is configured for this server.');
+    }
+    await interaction.editReply(lines.join('\n'));
+    return;
+  }
+  if (payload.action === 'map-rules') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (payload.value === undefined) {
+      await interaction.editReply('Server map and rules information is unavailable.');
+      return;
+    }
+    const server = await dependencies.prisma.gameServer.findFirst({
+      where: { id: payload.value, guildId: interaction.guildId },
+      include: { snapshot: true },
+    });
+    if (server === null) {
+      await interaction.editReply('Server registration not found.');
+      return;
+    }
+    const lines = [
+      `**${server.displayName}**`,
+      '',
+      `**Current Map**\n${server.snapshot?.map ?? 'Unknown'}`,
+    ];
+    if (server.description !== null && server.description.trim().length > 0) {
+      lines.push('', `**Rules**\n${server.description}`);
+    } else {
+      lines.push('', 'No server rules are configured.');
+    }
+    await interaction.editReply(lines.join('\n'));
     return;
   }
   assertAdministrator(interaction);

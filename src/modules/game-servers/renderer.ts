@@ -3,9 +3,27 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  MessageFlags,
   StringSelectMenuBuilder,
 } from 'discord.js';
 import { createGameServerCustomId } from './custom-id.js';
+
+const componentType = {
+  actionRow: 1,
+  button: 2,
+  section: 9,
+  textDisplay: 10,
+  thumbnail: 11,
+  container: 17,
+} as const;
+
+const buttonStyle = {
+  primary: 1,
+  secondary: 2,
+  success: 3,
+  danger: 4,
+  link: 5,
+} as const;
 
 export interface SnapshotView {
   hostingState: string;
@@ -35,6 +53,7 @@ export interface ServerView {
   description: string | null;
   connectDomain: string | null;
   joinUrl: string | null;
+  imageUrl: string | null;
   enabled: boolean;
   public: boolean;
   sortOrder: number;
@@ -43,15 +62,16 @@ export interface ServerView {
 }
 
 export interface CardFingerprint {
-  hostingState: string;
-  gameplayState: string;
-  stale: boolean;
-  players: number | null;
-  maxPlayers: number | null;
+  accentColor: number | null;
+  displayName: string;
+  status: string;
+  players: string;
   map: string | null;
-  host: string | null;
-  datacenter: string | null;
+  location: string | null;
+  host: string;
   connectAddress: string | null;
+  hasJoinUrl: boolean;
+  hasImageUrl: boolean;
 }
 
 export function renderAddGameServersPanel(
@@ -101,41 +121,46 @@ export function renderAddGameServersPanel(
   return { embeds: [embed], components };
 }
 
-export function renderGameServerCard(server: ServerView) {
+export function renderGameServerCard(server: ServerView, secret: string) {
   const snapshot = server.snapshot;
-  const embed = new EmbedBuilder().setColor(color(snapshot)).setTitle(server.displayName);
-  if (server.description !== null) embed.setDescription(server.description);
-  embed.addFields({ name: 'Status', value: statusLabel(snapshot), inline: true });
-  if (snapshot?.players !== null && snapshot?.players !== undefined) {
-    embed.addFields({
-      name: 'Players',
-      value: `${String(snapshot.players)}${snapshot.maxPlayers === null ? '' : ` / ${String(snapshot.maxPlayers)}`}`,
-      inline: true,
-    });
+  const accentColor = containerAccentColor(snapshot);
+
+  const textDisplays = [
+    textDisplay(`# ${server.displayName}`),
+    textDisplay(statusLine(snapshot)),
+    textDisplay(`**Current Map**\n\`${snapshot?.map ?? 'Unknown'}\``),
+    textDisplay(`**Location**\n${snapshot?.datacenter ?? 'Unknown'}`),
+    textDisplay(`**Host**\n${serverHost(server)}`),
+    textDisplay(`**Connect**\n\`${connectAddress(server) ?? 'Unavailable'}\``),
+  ];
+
+  const section: Record<string, unknown> = {
+    type: componentType.section,
+    components: textDisplays,
+  };
+  const thumbnailUrl = server.imageUrl;
+  if (thumbnailUrl !== null) {
+    section.accessory = {
+      type: componentType.thumbnail,
+      media: { url: thumbnailUrl },
+    };
   }
-  if (snapshot?.map !== null && snapshot?.map !== undefined)
-    embed.addFields({ name: 'Map', value: snapshot.map, inline: true });
-  embed.addFields({
-    name: 'Host',
-    value: serverHost(server),
-    inline: true,
-  });
-  if (snapshot?.datacenter !== null && snapshot?.datacenter !== undefined)
-    embed.addFields({ name: 'Location', value: snapshot.datacenter, inline: true });
-  const address = connectAddress(server);
-  if (address !== null) embed.addFields({ name: 'Connect', value: `\`${address}\``, inline: true });
-  const components =
-    server.joinUrl === null
-      ? []
-      : [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setLabel('Connect')
-              .setStyle(ButtonStyle.Link)
-              .setURL(server.joinUrl),
-          ),
-        ];
-  return { embeds: [embed], components };
+
+  const actionRow = {
+    type: componentType.actionRow,
+    components: [connectButton(server, secret), mapRulesButton(server, secret)],
+  };
+
+  const container: Record<string, unknown> = {
+    type: componentType.container,
+    components: [section, actionRow],
+  };
+  if (accentColor !== null) container.accentColor = accentColor;
+
+  return {
+    components: [container] as unknown[],
+    flags: MessageFlags.IsComponentsV2 as number,
+  };
 }
 
 export function renderGameServerDetail(server: ServerView) {
@@ -180,29 +205,88 @@ export function renderGameServerDetail(server: ServerView) {
     server.joinUrl === null
       ? []
       : [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setLabel('Connect')
-              .setStyle(ButtonStyle.Link)
-              .setURL(server.joinUrl),
-          ),
-        ];
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setLabel('Connect')
+            .setStyle(ButtonStyle.Link)
+            .setURL(server.joinUrl),
+        ),
+      ];
   return { embeds: [embed], components };
 }
 
 export function cardFingerprint(server: ServerView): CardFingerprint {
   const snapshot = server.snapshot;
   return {
-    hostingState: snapshot?.hostingState ?? 'UNKNOWN',
-    gameplayState: snapshot?.gameplayState ?? 'UNKNOWN',
-    stale: snapshot?.stale ?? false,
-    players: snapshot?.players ?? null,
-    maxPlayers: snapshot?.maxPlayers ?? null,
+    accentColor: containerAccentColor(snapshot),
+    displayName: server.displayName,
+    status: statusLabel(snapshot),
+    players: playerCount(snapshot),
     map: snapshot?.map ?? null,
+    location: snapshot?.datacenter ?? null,
     host: serverHost(server),
-    datacenter: snapshot?.datacenter ?? null,
     connectAddress: connectAddress(server),
+    hasJoinUrl: server.joinUrl !== null,
+    hasImageUrl: server.imageUrl !== null,
   };
+}
+
+function connectButton(server: ServerView, secret: string): Record<string, unknown> {
+  const button: Record<string, unknown> = {
+    type: componentType.button,
+    style: server.joinUrl !== null ? buttonStyle.link : buttonStyle.success,
+    label: 'Connect',
+    emoji: { name: '▶' },
+  };
+  if (server.joinUrl !== null) {
+    button.url = server.joinUrl;
+  } else {
+    button.customId = createGameServerCustomId({ action: 'connect', value: server.id }, secret);
+  }
+  return button;
+}
+
+function mapRulesButton(server: ServerView, secret: string): Record<string, unknown> {
+  return {
+    type: componentType.button,
+    style: buttonStyle.secondary,
+    label: 'Map & Rules',
+    emoji: { name: '🗺' },
+    customId: createGameServerCustomId({ action: 'map-rules', value: server.id }, secret),
+  };
+}
+
+function textDisplay(content: string): Record<string, unknown> {
+  return { type: componentType.textDisplay, content };
+}
+
+function containerAccentColor(snapshot: SnapshotView | null): number | null {
+  if (snapshot === null) return null;
+  if (
+    snapshot.hostingState === 'RUNNING' &&
+    snapshot.gameplayState === 'AVAILABLE' &&
+    !snapshot.stale
+  )
+    return 0x23a55a;
+  return 0xed4245;
+}
+
+function statusLine(snapshot: SnapshotView | null): string {
+  return `${statusEmoji(snapshot)} ${statusLabel(snapshot)}  \u2022  ${playerCount(snapshot)}`;
+}
+
+function statusEmoji(snapshot: SnapshotView | null): string {
+  if (snapshot === null) return '⚪';
+  if (snapshot.stale) return '🟡';
+  if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE') return '🟢';
+  if (snapshot.hostingState === 'STARTING' || snapshot.gameplayState === 'DEGRADED') return '🟡';
+  return '🔴';
+}
+
+function playerCount(snapshot: SnapshotView | null): string {
+  if (snapshot === null || snapshot.players === null) return '👥 unknown';
+  const max = snapshot.maxPlayers;
+  return `👥 ${String(snapshot.players)}${max === null ? '' : ` / ${String(max)}`} players`;
 }
 
 function serverHost(server: ServerView): string {
@@ -221,7 +305,7 @@ function statusLabel(snapshot: SnapshotView | null): string {
   return 'Server unavailable';
 }
 
-function connectAddress(server: ServerView): string | null {
+export function connectAddress(server: ServerView): string | null {
   const snapshot = server.snapshot;
   const host = server.connectDomain ?? snapshot?.host;
   if (host === null || host === undefined) return null;

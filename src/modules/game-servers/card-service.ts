@@ -2,6 +2,8 @@ import {
   DiscordAPIError,
   RateLimitError,
   type Client,
+  type MessageCreateOptions,
+  type MessageEditOptions,
   type TextBasedChannel,
   type TextChannel,
 } from 'discord.js';
@@ -14,6 +16,7 @@ export class GameServerCardService {
   public constructor(
     private readonly prisma: PrismaClient,
     private readonly discord: Client,
+    private readonly secret: string,
   ) {}
 
   public async createCard(gameServerId: string, channel: TextBasedChannel): Promise<void> {
@@ -39,7 +42,7 @@ export class GameServerCardService {
       );
     }
 
-    const payload = renderGameServerCard(server);
+    const payload = renderGameServerCard(server, this.secret) as unknown as MessageCreateOptions;
     const text = channel as TextChannel;
     const message = await text.send(payload);
 
@@ -84,7 +87,9 @@ export class GameServerCardService {
     }
 
     try {
-      await message.edit(renderGameServerCard(card.gameServer));
+      await message.edit(
+        renderGameServerCard(card.gameServer, this.secret) as unknown as MessageEditOptions,
+      );
     } catch (error: unknown) {
       if (error instanceof RateLimitError) {
         const delayMs =
