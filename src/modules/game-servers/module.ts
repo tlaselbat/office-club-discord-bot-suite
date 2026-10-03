@@ -378,6 +378,28 @@ async function handleComponent(
     await interaction.editReply(lines.join('\n'));
     return;
   }
+  if (payload.action === 'copy-address') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (payload.value === undefined) {
+      await interaction.editReply('Server address information is unavailable.');
+      return;
+    }
+    const server = await dependencies.prisma.gameServer.findFirst({
+      where: { id: payload.value, guildId: interaction.guildId },
+      include: { snapshot: true },
+    });
+    if (server === null) {
+      await interaction.editReply('Server registration not found.');
+      return;
+    }
+    const address = connectAddress(server);
+    if (address === null) {
+      await interaction.editReply('No connect address is configured for this server.');
+      return;
+    }
+    await interaction.editReply(`**${server.displayName}**\n\`${address}\``);
+    return;
+  }
   assertAdministrator(interaction);
   if (payload.action === 'page') {
     if (payload.name === undefined || payload.value === undefined)

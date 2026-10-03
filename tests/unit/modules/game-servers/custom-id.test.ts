@@ -10,6 +10,14 @@ describe('Game Server custom IDs', () => {
     expect(parseGameServerCustomId(id, 'secret', 'someone')).toEqual({ action: 'add' });
   });
 
+  it('round-trips Copy Address controls', () => {
+    const id = createGameServerCustomId({ action: 'copy-address', value: 'server-1' }, 'secret');
+    expect(parseGameServerCustomId(id, 'secret', 'someone')).toEqual({
+      action: 'copy-address',
+      value: 'server-1',
+    });
+  });
+
   it('binds administrator mutations to their recipient', () => {
     const id = createGameServerCustomId(
       { action: 'confirm', value: 'server-1', name: 'Arena', ownerId: 'admin-1' },

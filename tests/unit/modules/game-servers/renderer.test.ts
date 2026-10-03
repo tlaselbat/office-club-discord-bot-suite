@@ -99,12 +99,12 @@ describe('Game Server rendering', () => {
     const transform = client.options.jsonTransformer;
     if (transform === undefined) throw new Error('Expected the default Discord JSON transformer');
     const api = transform(container) as APIContainerComponent;
-    expect(api.accent_color).toBe(0x23a55a);
+    expect(api.accent_color).toBe(0x2b8aef);
     expect(() => new ContainerBuilder(api).toJSON()).not.toThrow();
     const row = api.components.at(-1);
     expect(row?.type).toBe(1);
     if (row?.type === ComponentType.ActionRow) {
-      expect(row.components).toHaveLength(2);
+      expect(row.components).toHaveLength(3);
       expect(row.components[0]).toHaveProperty('custom_id', expect.stringMatching(/^gs:connect:/));
     }
   });
@@ -149,26 +149,28 @@ describe('Game Server rendering', () => {
     const text = textContents(container);
     expect(text).toContain('# 1v1 Arena');
     expect(text).toContain('🟢 **Online**');
-    expect(text).toContain('👥 **0 / 16 players**');
-    expect(text).toContain('📍 Los Angeles');
-    expect(text).toContain('**Current Map**');
+    expect(text).toContain(' Los Angeles');
+    expect(text).toContain('🗺️ **Current Map**');
     expect(text).toContain('`aim_map_office`');
-    expect(text).not.toContain('**Location**');
-    expect(text).toContain('**Host**');
-    expect(text).toContain('**Connect**');
+    expect(text).toContain('👥 **Players**');
+    expect(text).toContain('**0 / 16** players');
+    expect(text).toContain('🔗 **Connect Command**');
     expect(text).toContain('`arena.example.com:27015`');
+    expect(text).not.toContain('**Host**');
 
     const rowButtons = buttons(container);
-    expect(rowButtons).toHaveLength(2);
+    expect(rowButtons).toHaveLength(3);
     expect(rowButtons[0]?.label).toBe('Connect');
     expect(rowButtons[0]?.emoji).toEqual({ name: '▶' });
     expect(rowButtons[1]?.label).toBe('Map & Rules');
     expect(rowButtons[1]?.emoji).toEqual({ name: '🗺' });
+    expect(rowButtons[2]?.label).toBe('Copy Address');
+    expect(rowButtons[2]?.emoji).toEqual({ name: '📋' });
   });
 
-  it('uses green accent when online', () => {
+  it('uses blue accent when online', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
-    expect(container.accentColor).toBe(0x23a55a);
+    expect(container.accentColor).toBe(0x2b8aef);
   });
 
   it('uses red accent when offline', () => {
@@ -187,19 +189,19 @@ describe('Game Server rendering', () => {
     const section = components[0] as Record<string, unknown>;
     const accessory = section.accessory as Record<string, unknown>;
     expect(accessory.type).toBe(11);
-    expect((accessory.media as Record<string, unknown>).url).toContain('icon.jpg');
+    expect((accessory.media as Record<string, unknown>).url).toContain(
+      'clickcs-server-thumbnail.png',
+    );
   });
 
-  it('renders the map media gallery with the fallback arena image', () => {
+  it('renders the server banner media gallery', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
     const components = containerComponents(container);
-    expect(components[3]?.type).toBe(12);
-    const gallery = components[3] as Record<string, unknown>;
-    const items = gallery.items as Record<string, unknown>[];
+    const gallery = components.find((component) => component.type === 12);
+    expect(gallery).toBeDefined();
+    const items = (gallery as Record<string, unknown>).items as Record<string, unknown>[];
     expect(items).toHaveLength(1);
-    expect((items[0]?.media as Record<string, unknown>).url).toContain(
-      'clickcs-arena-banner-779a25c6.jpg',
-    );
+    expect((items[0]?.media as Record<string, unknown>).url).toContain('clickcs-server-banner.png');
   });
 
   it('renders link Connect button when join URL is configured', () => {
@@ -214,9 +216,29 @@ describe('Game Server rendering', () => {
   it('renders fallback interaction Connect button without join URL', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
     const connectButton = buttons(container)[0];
-    expect(connectButton?.style).toBe(3);
+    expect(connectButton?.style).toBe(1);
     expect(connectButton?.url).toBeUndefined();
     expect(connectButton?.customId).toMatch(/^gs:connect:/);
+  });
+
+  it('renders a Copy Address button with a signed custom ID', () => {
+    const container = firstContainer(renderGameServerCard(server, secret));
+    const copyButton = buttons(container)[2];
+    expect(copyButton?.label).toBe('Copy Address');
+    expect(copyButton?.emoji).toEqual({ name: '📋' });
+    expect(copyButton?.style).toBe(2);
+    expect(copyButton?.customId).toMatch(/^gs:copy-address:/);
+  });
+
+  it('renders an unavailable connect command when no address is configured', () => {
+    const view = {
+      ...server,
+      connectDomain: null,
+      snapshot: { ...baseSnapshot, host: null, port: null },
+    };
+    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
+    expect(text).toContain('🔗 **Connect Command**');
+    expect(text).toContain('`Unavailable`');
   });
 
   it('renders distinct online, offline, and starting states', () => {
@@ -225,7 +247,7 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, hostingState: 'STOPPED', gameplayState: 'UNAVAILABLE' },
     };
     expect(textContents(firstContainer(renderGameServerCard(stopped, secret)))).toContain(
-      '🔴 **Server stopped**',
+      '🔴 **Offline**',
     );
 
     const starting = {
@@ -239,16 +261,6 @@ describe('Game Server rendering', () => {
     const stale = { ...server, snapshot: { ...baseSnapshot, stale: true } };
     expect(textContents(firstContainer(renderGameServerCard(stale, secret)))).toContain(
       '🟡 **Status stale**',
-    );
-  });
-
-  it('resolves the configured server image URL as map fallback before the default arena image', () => {
-    const view = { ...server, imageUrl: 'https://example.com/server-map.png' };
-    const container = firstContainer(renderGameServerCard(view, secret));
-    const gallery = containerComponents(container)[3] as Record<string, unknown>;
-    const items = gallery.items as Record<string, unknown>[];
-    expect((items[0]?.media as Record<string, unknown>).url).toBe(
-      'https://example.com/server-map.png',
     );
   });
 
@@ -277,18 +289,24 @@ describe('Game Server rendering', () => {
     expect(text).not.toContain('📍');
   });
 
-  it('places compact metadata after a small native divider and before the banner/actions', () => {
+  it('places content in the approved Components V2 order with small native dividers', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
     const components = containerComponents(container);
-    expect(components.map((component) => component.type)).toEqual([9, 14, 10, 12, 1]);
+    expect(components.map((component) => component.type)).toEqual([
+      9, 14, 12, 10, 14, 10, 14, 10, 1,
+    ]);
     const section = components[0] as Record<string, unknown>;
     expect(section.components as Record<string, unknown>[]).toHaveLength(1);
     expect(components[1]).toEqual({ type: 14, divider: true, spacing: 1 });
-    expect(String(components[2]?.content).split('\n')).toEqual([
-      '🗺️ **Current Map** `aim_map_office`',
-      '🖥️ **Host** 1v1 Arena',
-      '🔗 **Connect** `arena.example.com:27015`',
-    ]);
+    expect(components[3]).toEqual({
+      type: 10,
+      content: '🗺️ **Current Map**\n`aim_map_office`',
+    });
+    expect(components[5]).toEqual({ type: 10, content: '👥 **Players**\n**0 / 16** players' });
+    expect(components[7]).toEqual({
+      type: 10,
+      content: '🔗 **Connect Command**\n`arena.example.com:27015`',
+    });
   });
 
   it('normalizes the location once in the header', () => {
@@ -318,25 +336,23 @@ describe('Game Server rendering', () => {
 
   it('preserves long values and full occupancy without alignment padding', () => {
     const map = `aim_${'long_map_'.repeat(12)}`;
-    const hostname = 'Long Host '.repeat(20).trim();
     const connectDomain = `${'long-address-'.repeat(8)}example.com`;
     const view = {
       ...server,
       connectDomain,
-      snapshot: { ...baseSnapshot, map, hostname, players: 16 },
+      snapshot: { ...baseSnapshot, map, players: 16 },
     };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
     expect(text).toContain(map);
-    expect(text).toContain(hostname);
     expect(text).toContain(connectDomain);
-    expect(text).toContain('16 / 16 players');
+    expect(text).toContain('**16 / 16** players');
     expect(text).not.toContain('\u00a0');
   });
 
   it('keeps the fingerprint stable when only observation times change', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
     expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
-    expect(cardFingerprint(view).layoutVersion).toBe(2);
+    expect(cardFingerprint(view).layoutVersion).toBe(3);
   });
 
   it('omits unavailable detail metrics instead of rendering N/A', () => {

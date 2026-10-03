@@ -13,6 +13,9 @@ import { createGameServerCustomId } from './custom-id.js';
 const ASSET_BASE_URL =
   'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers';
 
+const SERVER_INFO_ASSET_BASE_URL =
+  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info';
+
 // Discord caches external media by URL. Give revised artwork a new content-versioned
 // filename; replacing bytes at the old URL does not refresh already cached cards.
 const FALLBACK_BANNER = 'clickcs-arena-banner-779a25c6.jpg';
@@ -80,12 +83,11 @@ export interface CardFingerprint {
   status: string;
   players: string;
   map: string | null;
-  mapImageUrl: string;
   location: string | null;
-  host: string;
   connectAddress: string | null;
+  bannerImageUrl: string;
+  thumbnailImageUrl: string;
   hasJoinUrl: boolean;
-  hasImageUrl: boolean;
 }
 
 export function renderAddGameServersPanel(
@@ -148,12 +150,6 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
 
-  const metadataBlock = [
-    `🗺️ **Current Map** \`${displayMap}\``,
-    `🖥️ **Host** ${serverHost(server)}`,
-    `🔗 **Connect** \`${connectAddress(server) ?? 'Unavailable'}\``,
-  ].join('\n');
-
   const headerSection = {
     type: componentType.section,
     components: [textDisplay(`# ${server.displayName}\n${statusLine(snapshot, location)}`)],
@@ -163,19 +159,23 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     },
   };
 
-  const mapGallery = {
+  const bannerGallery = {
     type: componentType.mediaGallery,
     items: [
       {
-        media: { url: resolveMapImageUrl(map, server.imageUrl) },
-        description: `Current map: ${displayMap}`,
+        media: { url: serverBannerUrl() },
+        description: `${server.displayName} server banner`,
       },
     ],
   };
 
   const actionRow = {
     type: componentType.actionRow,
-    components: [connectButton(server, secret), mapRulesButton(server, secret)],
+    components: [
+      connectButton(server, secret),
+      mapRulesButton(server, secret),
+      copyAddressButton(server, secret),
+    ],
   };
 
   const container: Record<string, unknown> = {
@@ -183,8 +183,12 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     components: [
       headerSection,
       { type: componentType.separator, divider: true, spacing: 1 },
-      textDisplay(metadataBlock),
-      mapGallery,
+      bannerGallery,
+      textDisplay(`🗺️ **Current Map**\n\`${displayMap}\``),
+      { type: componentType.separator, divider: true, spacing: 1 },
+      textDisplay(`👥 **Players**\n${playerCount(snapshot)}`),
+      { type: componentType.separator, divider: true, spacing: 1 },
+      textDisplay(`🔗 **Connect Command**\n\`${connectAddress(server) ?? 'Unavailable'}\``),
       actionRow,
     ],
   };
@@ -253,25 +257,24 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 2,
+    layoutVersion: 3,
     accentColor: containerAccentColor(snapshot),
     displayName: server.displayName,
     status: statusLabel(snapshot),
     players: playerCount(snapshot),
     map: displayMap,
-    mapImageUrl: resolveMapImageUrl(map, server.imageUrl),
     location: displayLocation(snapshot?.datacenter ?? null),
-    host: serverHost(server),
     connectAddress: connectAddress(server),
+    bannerImageUrl: serverBannerUrl(),
+    thumbnailImageUrl: serverIdentityIconUrl(),
     hasJoinUrl: server.joinUrl !== null,
-    hasImageUrl: server.imageUrl !== null,
   };
 }
 
 function connectButton(server: ServerView, secret: string): Record<string, unknown> {
   const button: Record<string, unknown> = {
     type: componentType.button,
-    style: server.joinUrl !== null ? buttonStyle.link : buttonStyle.success,
+    style: server.joinUrl !== null ? buttonStyle.link : buttonStyle.primary,
     label: 'Connect',
     emoji: { name: '▶' },
   };
@@ -293,6 +296,16 @@ function mapRulesButton(server: ServerView, secret: string): Record<string, unkn
   };
 }
 
+function copyAddressButton(server: ServerView, secret: string): Record<string, unknown> {
+  return {
+    type: componentType.button,
+    style: buttonStyle.secondary,
+    label: 'Copy Address',
+    emoji: { name: '📋' },
+    customId: createGameServerCustomId({ action: 'copy-address', value: server.id }, secret),
+  };
+}
+
 function textDisplay(content: string): Record<string, unknown> {
   return { type: componentType.textDisplay, content };
 }
@@ -304,13 +317,13 @@ function containerAccentColor(snapshot: SnapshotView | null): number | null {
     snapshot.gameplayState === 'AVAILABLE' &&
     !snapshot.stale
   )
-    return 0x23a55a;
+    return 0x2b8aef;
   return 0xed4245;
 }
 
 function statusLine(snapshot: SnapshotView | null, location: string | null): string {
   const locationSuffix = location === null ? '' : `  \u2022  \ud83d\udccd ${location}`;
-  return `${statusEmoji(snapshot)} **${statusLabel(snapshot)}**  \u2022  👥 **${playerCount(snapshot)}**${locationSuffix}`;
+  return `${statusEmoji(snapshot)} **${statusLabel(snapshot)}**${locationSuffix}`;
 }
 
 function displayLocation(location: string | null): string | null {
@@ -328,19 +341,16 @@ function statusEmoji(snapshot: SnapshotView | null): string {
 }
 
 function playerCount(snapshot: SnapshotView | null): string {
-  if (snapshot === null || snapshot.players === null) return 'unknown';
+  if (snapshot === null || snapshot.players === null) return '**unknown** players';
   const max = snapshot.maxPlayers;
-  return `${String(snapshot.players)}${max === null ? '' : ` / ${String(max)}`} players`;
-}
-
-function serverHost(server: ServerView): string {
-  const snapshot = server.snapshot;
-  return snapshot?.hostname ?? snapshot?.host ?? server.connectDomain ?? 'Unknown';
+  return max === null
+    ? `**${String(snapshot.players)}** players`
+    : `**${String(snapshot.players)} / ${String(max)}** players`;
 }
 
 function statusLabel(snapshot: SnapshotView | null): string {
   if (snapshot === null) return 'Status pending';
-  if (snapshot.hostingState === 'STOPPED') return 'Server stopped';
+  if (snapshot.hostingState === 'STOPPED') return 'Offline';
   if (snapshot.hostingState === 'STARTING') return 'Server starting…';
   if (snapshot.stale) return 'Status stale';
   if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE')
@@ -387,8 +397,12 @@ export function resolveMapImageUrl(
   return `${ASSET_BASE_URL}/maps/fallback/${FALLBACK_BANNER}`;
 }
 
+function serverBannerUrl(): string {
+  return `${SERVER_INFO_ASSET_BASE_URL}/clickcs-server-banner.png`;
+}
+
 function serverIdentityIconUrl(): string {
-  return `${ASSET_BASE_URL}/clickcs-1v1-arena/icon.jpg`;
+  return `${SERVER_INFO_ASSET_BASE_URL}/clickcs-server-thumbnail.png`;
 }
 
 export function displayMapName(map: string | null): string {

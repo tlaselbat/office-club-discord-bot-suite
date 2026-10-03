@@ -5,6 +5,7 @@ export type GameServerAction =
   | 'add'
   | 'connect'
   | 'map-rules'
+  | 'copy-address'
   | 'discover'
   | 'page'
   | 'confirm'
@@ -53,9 +54,17 @@ export function parseGameServerCustomId(
   if (expected.length !== received.length || !timingSafeEqual(expected, received))
     throw new Error('Invalid Game Server component signature');
   if (
-    !['select', 'add', 'connect', 'map-rules', 'discover', 'page', 'confirm', 'cancel'].includes(
-      action,
-    )
+    ![
+      'select',
+      'add',
+      'connect',
+      'map-rules',
+      'copy-address',
+      'discover',
+      'page',
+      'confirm',
+      'cancel',
+    ].includes(action)
   )
     throw new Error('Invalid Game Server component action');
   return {

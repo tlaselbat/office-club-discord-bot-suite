@@ -164,8 +164,8 @@ describe('GameServerCardService', () => {
           cardFingerprint(serverView);
         if (change === 'layout') delete oldFingerprint.layoutVersion;
         else
-          oldFingerprint.mapImageUrl =
-            'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers/maps/fallback/clickcs-arena.jpg';
+          oldFingerprint.bannerImageUrl =
+            'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-banner-old.png';
         const prisma = createMockPrisma({
           gameServerCard: {
             findUnique: vi.fn().mockResolvedValue(createCard({ fingerprint: oldFingerprint })),
@@ -230,19 +230,19 @@ describe('GameServerCardService', () => {
           findUnique: vi.fn().mockResolvedValue(
             createCard({
               fingerprint: {
-                layoutVersion: 2,
-                accentColor: 0x23a55a,
+                layoutVersion: 3,
+                accentColor: 0x2b8aef,
                 displayName: '1v1 Arena',
                 status: 'Online',
-                players: '5 / 16 players',
+                players: '**5 / 16** players',
                 map: 'de_dust2',
-                mapImageUrl:
-                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers/maps/fallback/clickcs-arena-banner-779a25c6.jpg',
                 location: 'Los Angeles',
-                host: '1v1 Arena',
                 connectAddress: 'arena.example.com:27015',
+                bannerImageUrl:
+                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-banner.png',
+                thumbnailImageUrl:
+                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-thumbnail.png',
                 hasJoinUrl: false,
-                hasImageUrl: false,
               },
             }),
           ),

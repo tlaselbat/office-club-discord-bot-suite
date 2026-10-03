@@ -318,4 +318,28 @@ describe('Game Servers module interactions', () => {
       expect.stringContaining('No server rules are configured.'),
     );
   });
+
+  it('replies with a copy-friendly address when Copy Address is pressed', async () => {
+    const dependencies = mockDependencies({
+      prisma: mockPrisma({
+        gameServer: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: gameServerId,
+            guildId,
+            displayName: '1v1 Arena',
+            snapshot: { host: '192.0.2.1', port: 27015 },
+          }),
+        },
+      }),
+    });
+    const module = createGameServersModule(dependencies);
+    const interaction = componentInteraction(
+      createGameServerCustomId({ action: 'copy-address', value: gameServerId }, secret),
+    );
+    await module.handleInteraction?.({ interaction: interaction as never });
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: expect.any(Number) });
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      expect.stringContaining('`192.0.2.1:27015`'),
+    );
+  });
 });
