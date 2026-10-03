@@ -150,9 +150,16 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
 
+  const headerComponents: Record<string, unknown>[] = [
+    textDisplay(
+      `# ${server.displayName}  \u2022  ${statusEmoji(snapshot)} ${statusLabel(snapshot)}`,
+    ),
+  ];
+  if (location !== null) headerComponents.push(textDisplay(`\ud83d\udccd ${location}`));
+
   const headerSection = {
     type: componentType.section,
-    components: [textDisplay(`# ${server.displayName}\n${statusLine(snapshot, location)}`)],
+    components: headerComponents,
     accessory: {
       type: componentType.thumbnail,
       media: { url: serverIdentityIconUrl() },
@@ -184,11 +191,11 @@ export function renderGameServerCard(server: ServerView, secret: string) {
       headerSection,
       { type: componentType.separator, divider: true, spacing: 1 },
       bannerGallery,
-      textDisplay(`🗺️ **Current Map**\n${displayMap}`),
+      textDisplay(`🗺️ ${displayMap}`),
       { type: componentType.separator, divider: true, spacing: 1 },
-      textDisplay(`👥 **Players**\n${playerCount(snapshot)}`),
+      textDisplay(`👥 ${playerCount(snapshot)}`),
       { type: componentType.separator, divider: true, spacing: 1 },
-      textDisplay(`🔗 **Connect Command**\n\`${connectAddress(server) ?? 'Unavailable'}\``),
+      textDisplay(`🔗 ${connectAddress(server) ?? 'Unavailable'}`),
       { type: componentType.separator, divider: false, spacing: 1 },
       actionRow,
     ],
@@ -258,7 +265,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 4,
+    layoutVersion: 5,
     accentColor: containerAccentColor(snapshot),
     displayName: server.displayName,
     status: statusLabel(snapshot),
@@ -322,11 +329,6 @@ function containerAccentColor(snapshot: SnapshotView | null): number | null {
   return 0xed4245;
 }
 
-function statusLine(snapshot: SnapshotView | null, location: string | null): string {
-  const locationSuffix = location === null ? '' : `  \u2022  \ud83d\udccd ${location}`;
-  return `${statusEmoji(snapshot)} ${statusLabel(snapshot)}${locationSuffix}`;
-}
-
 function displayLocation(location: string | null): string | null {
   const trimmed = location?.trim();
   if (!trimmed) return null;
@@ -342,11 +344,11 @@ function statusEmoji(snapshot: SnapshotView | null): string {
 }
 
 function playerCount(snapshot: SnapshotView | null): string {
-  if (snapshot === null || snapshot.players === null) return '**unknown** players';
+  if (snapshot === null || snapshot.players === null) return 'Unknown players';
   const max = snapshot.maxPlayers;
   return max === null
-    ? `**${String(snapshot.players)}** players`
-    : `**${String(snapshot.players)} / ${String(max)}** players`;
+    ? `${String(snapshot.players)} Players`
+    : `${String(snapshot.players)} / ${String(max)} Players`;
 }
 
 function statusLabel(snapshot: SnapshotView | null): string {

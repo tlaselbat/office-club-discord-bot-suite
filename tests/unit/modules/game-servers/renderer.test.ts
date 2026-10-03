@@ -147,16 +147,13 @@ describe('Game Server rendering', () => {
     const container = firstContainer(result);
     expect(container.type).toBe(17);
     const text = textContents(container);
-    expect(text).toContain('# 1v1 Arena');
-    expect(text).toContain('🟢 Online');
+    expect(text).toContain('# 1v1 Arena  •  🟢 Online');
     expect(text).toContain('📍 Los Angeles');
-    expect(text).toContain('🗺️ **Current Map**');
-    expect(text).toContain('aim_map_office');
-    expect(text).not.toContain('`aim_map_office`');
-    expect(text).toContain('👥 **Players**');
-    expect(text).toContain('**0 / 16** players');
-    expect(text).toContain('🔗 **Connect Command**');
-    expect(text).toContain('`arena.example.com:27015`');
+    expect(text).toContain('🗺️ aim_map_office');
+    expect(text).not.toContain('Current Map');
+    expect(text).toContain('👥 0 / 16 Players');
+    expect(text).toContain('🔗 arena.example.com:27015');
+    expect(text).not.toContain('Connect Command');
     expect(text).not.toContain('**Host**');
 
     const rowButtons = buttons(container);
@@ -238,8 +235,8 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, host: null, port: null },
     };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
-    expect(text).toContain('🔗 **Connect Command**');
-    expect(text).toContain('`Unavailable`');
+    expect(text).toContain('🔗 Unavailable');
+    expect(text).not.toContain('`Unavailable`');
   });
 
   it('renders distinct online, offline, and starting states', () => {
@@ -286,9 +283,12 @@ describe('Game Server rendering', () => {
 
   it('omits the location marker when no datacenter is available', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, datacenter: null } };
-    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
-    expect(text).toContain('🟢 Online');
+    const container = firstContainer(renderGameServerCard(view, secret));
+    const text = textContents(container);
+    expect(text).toContain('# 1v1 Arena  •  🟢 Online');
     expect(text).not.toContain('📍');
+    const section = containerComponents(container)[0] as Record<string, unknown>;
+    expect(section.components as Record<string, unknown>[]).toHaveLength(1);
   });
 
   it('places content in the approved Components V2 order with small native dividers', () => {
@@ -298,16 +298,16 @@ describe('Game Server rendering', () => {
       9, 14, 12, 10, 14, 10, 14, 10, 14, 1,
     ]);
     const section = components[0] as Record<string, unknown>;
-    expect(section.components as Record<string, unknown>[]).toHaveLength(1);
+    expect(section.components as Record<string, unknown>[]).toHaveLength(2);
     expect(components[1]).toEqual({ type: 14, divider: true, spacing: 1 });
     expect(components[3]).toEqual({
       type: 10,
-      content: '🗺️ **Current Map**\naim_map_office',
+      content: '🗺️ aim_map_office',
     });
-    expect(components[5]).toEqual({ type: 10, content: '👥 **Players**\n**0 / 16** players' });
+    expect(components[5]).toEqual({ type: 10, content: '👥 0 / 16 Players' });
     expect(components[7]).toEqual({
       type: 10,
-      content: '🔗 **Connect Command**\n`arena.example.com:27015`',
+      content: '🔗 arena.example.com:27015',
     });
     expect(components[8]).toEqual({ type: 14, divider: false, spacing: 1 });
   });
@@ -322,9 +322,8 @@ describe('Game Server rendering', () => {
   it.each([null, '', '   '])('uses Unknown for an unresolved map: %s', (map) => {
     expect(displayMapName(map)).toBe('Unknown');
     const view = { ...server, snapshot: { ...baseSnapshot, map } };
-    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).toContain('Unknown');
-    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).not.toContain(
-      '`Unknown`',
+    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).toContain(
+      '🗺️ Unknown',
     );
   });
 
@@ -351,14 +350,14 @@ describe('Game Server rendering', () => {
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
     expect(text).toContain(map);
     expect(text).toContain(connectDomain);
-    expect(text).toContain('**16 / 16** players');
+    expect(text).toContain('👥 16 / 16 Players');
     expect(text).not.toContain('\u00a0');
   });
 
   it('keeps the fingerprint stable when only observation times change', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
     expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
-    expect(cardFingerprint(view).layoutVersion).toBe(4);
+    expect(cardFingerprint(view).layoutVersion).toBe(5);
   });
 
   it('omits unavailable detail metrics instead of rendering N/A', () => {

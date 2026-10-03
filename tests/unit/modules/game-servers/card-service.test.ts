@@ -230,11 +230,11 @@ describe('GameServerCardService', () => {
           findUnique: vi.fn().mockResolvedValue(
             createCard({
               fingerprint: {
-                layoutVersion: 4,
+                layoutVersion: 5,
                 accentColor: 0x2b8aef,
                 displayName: '1v1 Arena',
                 status: 'Online',
-                players: '**5 / 16** players',
+                players: '5 / 16 Players',
                 map: 'de_dust2',
                 location: 'Los Angeles',
                 connectAddress: 'arena.example.com:27015',
