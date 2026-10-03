@@ -343,7 +343,7 @@ async function handleComponent(
     }
     if (address !== null) {
       lines.push(`Console address: \`${address}\``);
-      lines.push('Use `connect `<address>`` in the CS2 console.');
+      lines.push(`Open the CS2 developer console and run:\n\`connect ${address}\``);
     }
     if (server.joinUrl === null && address === null) {
       lines.push('No connection address is configured for this server.');

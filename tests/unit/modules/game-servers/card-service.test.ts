@@ -162,7 +162,7 @@ describe('GameServerCardService', () => {
       async (change) => {
         const oldFingerprint: Partial<ReturnType<typeof cardFingerprint>> =
           cardFingerprint(serverView);
-        if (change === 'layout') oldFingerprint.layoutVersion = 8;
+        if (change === 'layout') oldFingerprint.layoutVersion = 9;
         else
           oldFingerprint.bannerImageUrl =
             'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-banner-old.png';
@@ -230,7 +230,7 @@ describe('GameServerCardService', () => {
           findUnique: vi.fn().mockResolvedValue(
             createCard({
               fingerprint: {
-                layoutVersion: 9,
+                layoutVersion: 10,
                 accentColor: 0x2b8aef,
                 displayName: '1v1 Arena',
                 status: 'Online',
@@ -238,8 +238,10 @@ describe('GameServerCardService', () => {
                 map: 'de_dust2',
                 location: 'Los Angeles',
                 connectAddress: 'arena.example.com:27015',
+                description:
+                  'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.',
                 bannerImageUrl:
-                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-banner.png',
+                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers/maps/fallback/clickcs-arena-banner-779a25c6.jpg',
                 thumbnailImageUrl:
                   'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-thumbnail.png',
                 hasJoinUrl: false,

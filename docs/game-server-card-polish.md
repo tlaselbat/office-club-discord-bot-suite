@@ -1,26 +1,29 @@
 # Game server card polish
 
 The persistent card uses a native Components V2 Container with a Section/Thumbnail
-header, three Separators, one Media Gallery, and the existing three-button Action Row.
-The header renders the name and status on its first line, the address on its second line,
-then the approved description. An optional location-only row appears below the divider;
-provider city labels such as `dallas` display as `Dallas`. The lower rows are map, player
-count, then the banner, with no redundant labels or padding assumptions.
+header, one Separator, one Media Gallery, and a two-button Action Row. The header renders
+the name, then the honest status, dynamic lower-case player count, and optional normalized
+location. The standalone description uses a configured nonempty description when present;
+otherwise it renders the approved two-line default. The lower rows are the labeled current
+map, map artwork, then the copyable address, with no padding assumptions.
 
-The component tree is: Section (title/status, address, and description, thumbnail),
-Separator, optional location Text Display, map Text Display, player-count Text Display,
-Separator, Media Gallery, Separator, then the Connect, Map & Rules, and Copy Address
-Action Row. There are no separators around the map row. A missing location omits its
-row; a missing address remains
-`🔗 Unavailable`; an unknown map remains `🗺️ Unknown`; player counts retain a
-configured maximum such as `👥 3 / 5 Players`.
+The component tree is: Section (title and status summary, thumbnail), description Text
+Display, Separator, current-map Text Display, Media Gallery, address Text Display,
+then Connect and Map & Rules. The container accent stays blue for every state. The status
+remains honest for offline, starting, stale, and unavailable states. A missing address
+renders as `` `Unavailable` ``; an unknown map remains `` `Unknown` ``; player counts
+retain a configured maximum such as `3 / 5 players`.
 
-The card's Media Gallery uses the dedicated neutral server banner at
-`assets/server-info/clickcs-server-banner.png`; its thumbnail uses the companion
-`clickcs-server-thumbnail.png`. These fixed server-info assets keep the layout
-stable while Discord determines the rendered media dimensions. Map artwork
-resolution remains available through the existing helper and does not determine
-the persistent card banner.
+Use the existing `/servers admin edit` `description` option to override the entire
+description block for another server, including an optional second line beginning
+with `-# ` for native subtext. Blank descriptions use the two-line default. This
+reuses the existing description/rules setting; Map & Rules continues to read that
+same setting. Description changes are included in the saved card fingerprint, and
+card payloads suppress mentions during refreshes.
+
+The Media Gallery uses the resolved map artwork selected by the existing helper: a local
+canonical map asset first, then the configured server image, then the versioned fallback.
+The header thumbnail remains `assets/server-info/clickcs-server-thumbnail.png`.
 
 ### Historical Discord media cache correction
 
@@ -35,9 +38,12 @@ Tests verify that the filename matches the bytes and that an old artwork URL
 triggers a persistent message edit. After deployment, verify the dimensions on
 Discord's returned media object, not just the origin asset or component types.
 
-Connect keeps its existing signed Primary interaction when no join URL is set.
-Servers with a join URL retain their direct Link button. Map & Rules and Copy
-Address remain Secondary. No custom IDs or interaction handlers changed.
+Connect always keeps its existing signed Primary interaction, including for servers with
+a join URL. Map & Rules remains Secondary. Copy Address is no longer rendered, although
+its backward-compatible handler remains available. Custom IDs are unchanged. Connect
+returns ephemeral instructions with the actual `connect hostname:port` command and
+any configured join URL. It remains accessible when the address is known even if the
+server is offline or telemetry is stale; it does not launch the game or use the clipboard.
 
 ## Current-map investigation
 
@@ -63,18 +69,16 @@ Workshop paths and `.bsp` extensions remain normalized for display.
 DatHost references: [server object](https://dathost.readme.io/reference/get_game_server_item)
 and [monitoring metrics](https://dathost.readme.io/reference/get_cs_monitoring_server_metrics).
 
-`layoutVersion` 9 in the saved card fingerprint causes an existing message to be
+`layoutVersion` 10 in the saved card fingerprint causes an existing message to be
 edited on its next refresh after deployment, including when server state is
 unchanged. Subsequent unchanged refreshes continue to skip Discord edits.
 
 ## Validation
 
-Automated coverage checks the nine-child component order when location is available,
-the eight-child order when it is not, native Discord
-serialization, known/unknown/workshop maps, artwork precedence, location
-de-duplication, zero and full occupancy, long values, offline/starting/stale states,
-all three existing controls, and updating the existing message after a layout
-change. No schema migration is required for the layout change.
+Automated coverage checks the seven-child component order, native Discord serialization,
+known/unknown/workshop maps, artwork precedence, configured descriptions, dynamic player
+counts, unavailable addresses, offline/starting/stale states, both rendered controls, and
+updating the existing message after a layout change. No schema migration is required.
 
 Real-client acceptance remains necessary after deployment: inspect desktop,
 narrow desktop and mobile Discord for readable wrapping and height, plus online,
@@ -82,3 +86,10 @@ offline, zero/full occupancy, known/unknown maps and long metadata. Payload test
 and inspecting the source banner do not establish Discord client appearance.
 
 API reference: <https://docs.discord.com/developers/components/reference>
+
+Discord's native [Markdown subtext](https://support.discord.com/hc/en-us/articles/210298617-Markdown-Text-101-Chat-Formatting-Bold-Italic-Underline)
+uses `-# ` at the start of a line. The heading occupies its own line so the status
+emoji remains normal body text. Inline code is selectable text rather than a custom
+input control. There are no fixed widths, padding characters, or custom fonts; long
+server and map names rely on Discord's natural wrapping. Existing map artwork or the
+fallback is used instead of reproducing the generated concept image.

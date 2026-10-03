@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { type Client, PermissionFlagsBits } from 'discord.js';
+import { type Client, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import type { PrismaClient } from '../../../../src/generated/prisma/client.js';
 import type { DatHostServerReader } from '../../../../src/integrations/dathost/client.js';
 import {
@@ -241,7 +241,10 @@ describe('Game Servers module interactions', () => {
     );
     await module.handleInteraction?.({ interaction: interaction as never });
     expect(interaction.deferReply).toHaveBeenCalledWith({ flags: expect.any(Number) });
-    expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining('192.0.2.1:27015'));
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      expect.stringContaining('`connect 192.0.2.1:27015`'),
+    );
   });
 
   it('replies with the join URL when Connect is pressed with a configured join URL', async () => {
@@ -265,6 +268,57 @@ describe('Game Servers module interactions', () => {
     await module.handleInteraction?.({ interaction: interaction as never });
     expect(interaction.editReply).toHaveBeenCalledWith(
       expect.stringContaining('https://example.com/join'),
+    );
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      expect.stringContaining('`connect 192.0.2.1:27015`'),
+    );
+  });
+
+  it.each([
+    { host: '192.0.2.1', port: 27015, hostingState: 'STOPPED', stale: false },
+    { host: '192.0.2.1', port: 27015, hostingState: 'RUNNING', stale: true },
+    null,
+  ])(
+    'keeps known connection instructions accessible despite unavailable or stale telemetry: %j',
+    async (snapshot) => {
+      const findFirst = vi.fn().mockResolvedValue({
+        id: gameServerId,
+        guildId,
+        displayName: '1v1 Arena',
+        connectDomain: 'arena.example.com',
+        joinUrl: null,
+        snapshot,
+      });
+      const module = createGameServersModule(
+        mockDependencies({ prisma: mockPrisma({ gameServer: { findFirst } }) }),
+      );
+      const interaction = componentInteraction(
+        createGameServerCustomId({ action: 'connect', value: gameServerId }, secret),
+      );
+      await module.handleInteraction?.({ interaction: interaction as never });
+      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(interaction.editReply).toHaveBeenCalledWith(
+        expect.stringContaining(
+          snapshot === null ? '`connect arena.example.com`' : '`connect arena.example.com:27015`',
+        ),
+      );
+      expect(findFirst).toHaveBeenCalledWith({
+        where: { id: gameServerId, guildId },
+        include: { snapshot: true },
+      });
+    },
+  );
+
+  it('reports an unconfigured address without inventing a console command', async () => {
+    const module = createGameServersModule(mockDependencies());
+    const interaction = componentInteraction(
+      createGameServerCustomId({ action: 'connect', value: gameServerId }, secret),
+    );
+    await module.handleInteraction?.({ interaction: interaction as never });
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      '**1v1 Arena**\nNo connection address is configured for this server.',
     );
   });
 
@@ -293,6 +347,7 @@ describe('Game Servers module interactions', () => {
     );
     expect(reply).toContain('de_dust2');
     expect(reply).toContain('No toxicity');
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
   });
 
   it('replies with no-rules message when Map & Rules is pressed without configured rules', async () => {

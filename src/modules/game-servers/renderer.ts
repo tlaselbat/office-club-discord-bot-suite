@@ -21,7 +21,7 @@ const SERVER_INFO_ASSET_BASE_URL =
 const FALLBACK_BANNER = 'clickcs-arena-banner-779a25c6.jpg';
 
 const SERVER_CARD_DESCRIPTION =
-  'Challenge other players 1v1, warm up your aim, or kill time during long matchmaking queues. Open to all Office Club members.';
+  'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.';
 
 const componentType = {
   actionRow: 1,
@@ -88,6 +88,7 @@ export interface CardFingerprint {
   map: string | null;
   location: string | null;
   connectAddress: string | null;
+  description: string;
   bannerImageUrl: string;
   thumbnailImageUrl: string;
   hasJoinUrl: boolean;
@@ -148,14 +149,15 @@ export function renderAddGameServersPanel(
 
 export function renderGameServerCard(server: ServerView, secret: string) {
   const snapshot = server.snapshot;
-  const accentColor = containerAccentColor(snapshot);
   const location = displayLocation(snapshot?.datacenter ?? null);
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
+  const description = cardDescription(server);
+  const mapImageUrl = resolveMapImageUrl(map, server.imageUrl);
 
   const headerComponents: Record<string, unknown>[] = [
     textDisplay(
-      `# ${server.displayName} • ${statusEmoji(snapshot)} ${statusLabel(snapshot)}\n🔗 ${connectAddress(server) ?? 'Unavailable'}\n${SERVER_CARD_DESCRIPTION}`,
+      `# ${server.displayName}\n${statusEmoji(snapshot)} ${statusLabel(snapshot)} · ${playerCount(snapshot).toLowerCase()}${location === null ? '' : ` · ${location}`}`,
     ),
   ];
 
@@ -168,44 +170,39 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     },
   };
 
-  const bannerGallery = {
+  const mapGallery = {
     type: componentType.mediaGallery,
     items: [
       {
-        media: { url: serverBannerUrl() },
-        description: `${server.displayName} server banner`,
+        media: { url: mapImageUrl },
+        description: `${displayMap} map artwork`,
       },
     ],
   };
 
   const actionRow = {
     type: componentType.actionRow,
-    components: [
-      connectButton(server, secret),
-      mapRulesButton(server, secret),
-      copyAddressButton(server, secret),
-    ],
+    components: [connectButton(server, secret), mapRulesButton(server, secret)],
   };
 
   const container: Record<string, unknown> = {
     type: componentType.container,
+    accentColor: 0x2b8aef,
     components: [
       headerSection,
+      textDisplay(description),
       { type: componentType.separator, divider: true, spacing: 1 },
-      ...(location === null ? [] : [textDisplay(location)]),
-      textDisplay(`🗺️ ${displayMap}`),
-      textDisplay(`👥 ${playerCount(snapshot)}`),
-      { type: componentType.separator, divider: true, spacing: 1 },
-      bannerGallery,
-      { type: componentType.separator, divider: true, spacing: 1 },
+      textDisplay(`**Current map**\n\`${displayMap}\``),
+      mapGallery,
+      textDisplay(`\`${connectAddress(server) ?? 'Unavailable'}\``),
       actionRow,
     ],
   };
-  if (accentColor !== null) container.accentColor = accentColor;
 
   return {
     components: [container] as unknown[],
     flags: MessageFlags.IsComponentsV2 as number,
+    allowedMentions: { parse: [] },
   };
 }
 
@@ -266,33 +263,29 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 9,
-    accentColor: containerAccentColor(snapshot),
+    layoutVersion: 10,
+    accentColor: 0x2b8aef,
     displayName: server.displayName,
     status: statusLabel(snapshot),
     players: playerCount(snapshot),
     map: displayMap,
     location: displayLocation(snapshot?.datacenter ?? null),
     connectAddress: connectAddress(server),
-    bannerImageUrl: serverBannerUrl(),
+    description: cardDescription(server),
+    bannerImageUrl: resolveMapImageUrl(map, server.imageUrl),
     thumbnailImageUrl: serverIdentityIconUrl(),
     hasJoinUrl: server.joinUrl !== null,
   };
 }
 
 function connectButton(server: ServerView, secret: string): Record<string, unknown> {
-  const button: Record<string, unknown> = {
+  return {
     type: componentType.button,
-    style: server.joinUrl !== null ? buttonStyle.link : buttonStyle.primary,
+    style: buttonStyle.primary,
     label: 'Connect',
     emoji: { name: '▶' },
+    customId: createGameServerCustomId({ action: 'connect', value: server.id }, secret),
   };
-  if (server.joinUrl !== null) {
-    button.url = server.joinUrl;
-  } else {
-    button.customId = createGameServerCustomId({ action: 'connect', value: server.id }, secret);
-  }
-  return button;
 }
 
 function mapRulesButton(server: ServerView, secret: string): Record<string, unknown> {
@@ -305,29 +298,8 @@ function mapRulesButton(server: ServerView, secret: string): Record<string, unkn
   };
 }
 
-function copyAddressButton(server: ServerView, secret: string): Record<string, unknown> {
-  return {
-    type: componentType.button,
-    style: buttonStyle.secondary,
-    label: 'Copy Address',
-    emoji: { name: '📋' },
-    customId: createGameServerCustomId({ action: 'copy-address', value: server.id }, secret),
-  };
-}
-
 function textDisplay(content: string): Record<string, unknown> {
   return { type: componentType.textDisplay, content };
-}
-
-function containerAccentColor(snapshot: SnapshotView | null): number | null {
-  if (snapshot === null) return null;
-  if (
-    snapshot.hostingState === 'RUNNING' &&
-    snapshot.gameplayState === 'AVAILABLE' &&
-    !snapshot.stale
-  )
-    return 0x2b8aef;
-  return 0xed4245;
 }
 
 function displayLocation(location: string | null): string | null {
@@ -401,10 +373,6 @@ export function resolveMapImageUrl(
   return `${ASSET_BASE_URL}/maps/fallback/${FALLBACK_BANNER}`;
 }
 
-function serverBannerUrl(): string {
-  return `${SERVER_INFO_ASSET_BASE_URL}/clickcs-server-banner.png`;
-}
-
 function serverIdentityIconUrl(): string {
   return `${SERVER_INFO_ASSET_BASE_URL}/clickcs-server-thumbnail.png`;
 }
@@ -414,6 +382,10 @@ export function displayMapName(map: string | null): string {
   if (!trimmed) return 'Unknown';
   const canonical = trimmed.replace(/^workshop\/\d+\//i, '').replace(/\.bsp$/i, '');
   return canonical || 'Unknown';
+}
+
+function cardDescription(server: ServerView): string {
+  return server.description?.trim() || SERVER_CARD_DESCRIPTION;
 }
 
 function color(snapshot: SnapshotView | null): number {
