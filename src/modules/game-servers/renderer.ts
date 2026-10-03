@@ -155,11 +155,11 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const description = cardDescription(server);
   const mapImageUrl = resolveMapImageUrl(map, server.imageUrl);
 
-  const headerComponents: Record<string, unknown>[] = [
-	textDisplay(
-		`# ${server.displayName}\n## ${statusEmoji(snapshot)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n\u00A0\u00A0\u00A0${playerCount(snapshot).toLowerCase()}`,
-		),
-	];
+const headerComponents: Record<string, unknown>[] = [
+  textDisplay(
+    `# ${server.displayName}\n## ${statusEmoji(snapshot)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n${playerCount(snapshot).toLowerCase()}`,
+  ),
+];
 
   const headerSection = {
     type: componentType.section,
@@ -263,7 +263,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 11,
+    layoutVersion: 12,
     accentColor: 0x2b8aef,
     displayName: server.displayName,
     status: statusLabel(snapshot),
