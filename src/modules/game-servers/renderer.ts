@@ -125,35 +125,42 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const snapshot = server.snapshot;
   const accentColor = containerAccentColor(snapshot);
 
-  const textDisplays = [
+  const primaryDisplays = [
     textDisplay(`# ${server.displayName}`),
     textDisplay(statusLine(snapshot)),
     textDisplay(`**Current Map**\n\`${snapshot?.map ?? 'Unknown'}\``),
+  ];
+  const detailDisplays = [
     textDisplay(`**Location**\n${snapshot?.datacenter ?? 'Unknown'}`),
     textDisplay(`**Host**\n${serverHost(server)}`),
     textDisplay(`**Connect**\n\`${connectAddress(server) ?? 'Unavailable'}\``),
   ];
-
-  const section: Record<string, unknown> = {
-    type: componentType.section,
-    components: textDisplays,
-  };
-  const thumbnailUrl = server.imageUrl;
-  if (thumbnailUrl !== null) {
-    section.accessory = {
-      type: componentType.thumbnail,
-      media: { url: thumbnailUrl },
-    };
-  }
 
   const actionRow = {
     type: componentType.actionRow,
     components: [connectButton(server, secret), mapRulesButton(server, secret)],
   };
 
+  const containerComponents: Record<string, unknown>[] = [];
+  const thumbnailUrl = server.imageUrl;
+  if (thumbnailUrl !== null) {
+    containerComponents.push({
+      type: componentType.section,
+      components: primaryDisplays,
+      accessory: {
+        type: componentType.thumbnail,
+        media: { url: thumbnailUrl },
+      },
+    });
+    containerComponents.push(...detailDisplays);
+  } else {
+    containerComponents.push(...primaryDisplays, ...detailDisplays);
+  }
+  containerComponents.push(actionRow);
+
   const container: Record<string, unknown> = {
     type: componentType.container,
-    components: [section, actionRow],
+    components: containerComponents,
   };
   if (accentColor !== null) container.accentColor = accentColor;
 
@@ -205,13 +212,13 @@ export function renderGameServerDetail(server: ServerView) {
     server.joinUrl === null
       ? []
       : [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setLabel('Connect')
-            .setStyle(ButtonStyle.Link)
-            .setURL(server.joinUrl),
-        ),
-      ];
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setLabel('Connect')
+              .setStyle(ButtonStyle.Link)
+              .setURL(server.joinUrl),
+          ),
+        ];
   return { embeds: [embed], components };
 }
 

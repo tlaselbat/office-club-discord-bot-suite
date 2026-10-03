@@ -49,15 +49,29 @@ function firstContainer(result: ReturnType<typeof renderGameServerCard>): Record
   return result.components[0] as Record<string, unknown>;
 }
 
-function sectionText(container: Record<string, unknown>): string {
-  const section = (container.components as unknown[])[0] as Record<string, unknown>;
-  return (section.components as Record<string, unknown>[])
-    .map((textDisplay) => String(textDisplay.content))
-    .join('\n');
+function containerComponents(container: Record<string, unknown>): Record<string, unknown>[] {
+  return container.components as Record<string, unknown>[];
+}
+
+function textContents(container: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const component of containerComponents(container)) {
+    if (component.type === 9) {
+      for (const child of component.components as Record<string, unknown>[]) {
+        parts.push(String(child.content));
+      }
+    } else if (component.type === 10) {
+      parts.push(String(component.content));
+    }
+  }
+  return parts.join('\n');
 }
 
 function actionRow(container: Record<string, unknown>): Record<string, unknown> {
-  return (container.components as unknown[])[1] as Record<string, unknown>;
+  const components = containerComponents(container);
+  const row = components[components.length - 1];
+  expect(row?.type).toBe(1);
+  return row as Record<string, unknown>;
 }
 
 function buttons(container: Record<string, unknown>): Record<string, unknown>[] {
@@ -93,7 +107,7 @@ describe('Game Server rendering', () => {
     expect(result.flags).toBe(32768);
     const container = firstContainer(result);
     expect(container.type).toBe(17);
-    const text = sectionText(container);
+    const text = textContents(container);
     expect(text).toContain('# 1v1 Arena');
     expect(text).toContain('🟢 Online');
     expect(text).toContain('👥 0 / 16 players');
@@ -143,16 +157,27 @@ describe('Game Server rendering', () => {
   it('includes thumbnail when image URL is configured', () => {
     const view = { ...server, imageUrl: 'https://example.com/map.png' };
     const container = firstContainer(renderGameServerCard(view, secret));
-    const section = (container.components as unknown[])[0] as Record<string, unknown>;
-    const accessory = section.accessory as Record<string, unknown>;
+    const components = containerComponents(container);
+    expect(components).toHaveLength(5);
+    const section = components[0];
+    expect(section?.type).toBe(9);
+    const sectionComponents = (section as Record<string, unknown>).components as Record<
+      string,
+      unknown
+    >[];
+    expect(sectionComponents).toHaveLength(3);
+    const accessory = (section as Record<string, unknown>).accessory as Record<string, unknown>;
     expect(accessory.type).toBe(11);
     expect((accessory.media as Record<string, unknown>).url).toBe('https://example.com/map.png');
   });
 
-  it('omits thumbnail when no image URL is configured', () => {
+  it('renders text displays directly in container when no image URL is configured', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
-    const section = (container.components as unknown[])[0] as Record<string, unknown>;
-    expect(section.accessory).toBeUndefined();
+    const components = containerComponents(container);
+    expect(components).toHaveLength(7);
+    expect(components[0]?.type).toBe(10);
+    expect(components[5]?.type).toBe(10);
+    expect(components[6]?.type).toBe(1);
   });
 
   it('renders distinct online, offline, and starting states', () => {
@@ -160,7 +185,7 @@ describe('Game Server rendering', () => {
       ...server,
       snapshot: { ...baseSnapshot, hostingState: 'STOPPED', gameplayState: 'UNAVAILABLE' },
     };
-    expect(sectionText(firstContainer(renderGameServerCard(stopped, secret)))).toContain(
+    expect(textContents(firstContainer(renderGameServerCard(stopped, secret)))).toContain(
       '🔴 Server stopped',
     );
 
@@ -168,12 +193,12 @@ describe('Game Server rendering', () => {
       ...server,
       snapshot: { ...baseSnapshot, hostingState: 'STARTING', gameplayState: 'UNKNOWN' },
     };
-    expect(sectionText(firstContainer(renderGameServerCard(starting, secret)))).toContain(
+    expect(textContents(firstContainer(renderGameServerCard(starting, secret)))).toContain(
       '🟡 Server starting…',
     );
 
     const stale = { ...server, snapshot: { ...baseSnapshot, stale: true } };
-    expect(sectionText(firstContainer(renderGameServerCard(stale, secret)))).toContain(
+    expect(textContents(firstContainer(renderGameServerCard(stale, secret)))).toContain(
       '🟡 Status stale',
     );
   });
