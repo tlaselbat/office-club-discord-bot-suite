@@ -157,7 +157,7 @@ export function renderGameServerCard(server: ServerView, secret: string) {
 
   const headerComponents: Record<string, unknown>[] = [
     textDisplay(
-      `# ${server.displayName}\n${statusEmoji(snapshot)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n${playerCount(snapshot).toLowerCase()}`,
+      `# ${server.displayName}\n${statusEmoji(snapshot)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n\u00A0\u00A0${playerCount(snapshot).toLowerCase()}`,
     ),
   ];
 
