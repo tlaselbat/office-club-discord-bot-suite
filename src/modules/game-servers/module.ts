@@ -166,11 +166,11 @@ async function handleCommand(
         servers.length === 0
           ? 'No Game Servers registrations.'
           : servers
-              .map(
-                (server) =>
-                  `\`${server.id}\` — ${server.displayName} — ${server.enabled ? 'enabled' : 'disabled'} / ${server.public ? 'public' : 'private'} — ${server.snapshot?.hostingState ?? 'pending'}`,
-              )
-              .join('\n'),
+            .map(
+              (server) =>
+                `\`${server.id}\` — ${server.displayName} — ${server.enabled ? 'enabled' : 'disabled'} / ${server.public ? 'public' : 'private'} — ${server.snapshot?.hostingState ?? 'pending'}`,
+            )
+            .join('\n'),
     });
     return;
   }
@@ -283,12 +283,16 @@ async function handleComponent(
     if (gameServerId === undefined) throw new Error('Game Server selection is required');
     await interaction.deferUpdate();
     const servers = await dependencies.prisma.gameServer.findMany({
-      where: { guildId: interaction.guildId, enabled: true, public: true, cards: { none: {} } },
-      include: { snapshot: true },
+      where: { guildId: interaction.guildId, enabled: true, public: true },
+      include: { snapshot: true, cards: { select: { id: true } } },
       orderBy: [{ sortOrder: 'asc' }, { displayName: 'asc' }],
     });
     await interaction.editReply(
-      renderAddGameServersPanel(servers, dependencies.componentSigningSecret, gameServerId),
+      renderAddGameServersPanel(
+        servers.map((server) => ({ ...server, hasCard: server.cards.length > 0 })),
+        dependencies.componentSigningSecret,
+        gameServerId,
+      ),
     );
     return;
   }

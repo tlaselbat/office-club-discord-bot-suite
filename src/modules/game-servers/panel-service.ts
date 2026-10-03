@@ -7,7 +7,7 @@ export class GameServerPanelService {
     private readonly prisma: PrismaClient,
     private readonly discord: Client,
     private readonly secret: string,
-  ) {}
+  ) { }
 
   public async reconcile(guildId: string, channel?: TextBasedChannel): Promise<void> {
     const settings = await this.prisma.gameServerSettings.findUnique({ where: { guildId } });
@@ -19,11 +19,14 @@ export class GameServerPanelService {
         : await this.discord.channels.fetch(settings.panelChannelId).catch(() => null));
     if (target === null || !target.isTextBased() || target.isDMBased()) return;
     const servers = await this.prisma.gameServer.findMany({
-      where: { guildId, enabled: true, public: true, cards: { none: {} } },
-      include: { snapshot: true },
+      where: { guildId, enabled: true, public: true },
+      include: { snapshot: true, cards: { select: { id: true } } },
       orderBy: [{ sortOrder: 'asc' }, { displayName: 'asc' }],
     });
-    const payload = renderAddGameServersPanel(servers, this.secret);
+    const payload = renderAddGameServersPanel(
+      servers.map((server) => ({ ...server, hasCard: server.cards.length > 0 })),
+      this.secret,
+    );
     const text = target as TextChannel;
     const existing =
       settings.panelMessageId === null

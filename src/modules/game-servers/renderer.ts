@@ -59,6 +59,7 @@ export interface ServerView {
   sortOrder: number;
   providerServerId: string;
   snapshot: SnapshotView | null;
+  hasCard?: boolean;
 }
 
 export interface CardFingerprint {
@@ -87,6 +88,10 @@ export function renderAddGameServersPanel(
     | ActionRowBuilder<StringSelectMenuBuilder>
     | ActionRowBuilder<ButtonBuilder>
   )[] = [];
+  const selectedHasCard =
+    selectedId === undefined
+      ? false
+      : (servers.find((server) => server.id === selectedId)?.hasCard ?? false);
   if (servers.length > 0) {
     components.push(
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
@@ -97,7 +102,9 @@ export function renderAddGameServersPanel(
             servers.slice(0, 25).map((server) => ({
               label: server.displayName.slice(0, 100),
               value: server.id,
-              description: statusLabel(server.snapshot).slice(0, 100),
+              description: server.hasCard
+                ? 'Already added'
+                : statusLabel(server.snapshot).slice(0, 100),
               default: server.id === selectedId,
             })),
           ),
@@ -115,7 +122,7 @@ export function renderAddGameServersPanel(
         )
         .setLabel('Add Server')
         .setStyle(ButtonStyle.Primary)
-        .setDisabled(selectedId === undefined),
+        .setDisabled(selectedId === undefined || selectedHasCard),
     ),
   );
   return { embeds: [embed], components };
@@ -212,13 +219,13 @@ export function renderGameServerDetail(server: ServerView) {
     server.joinUrl === null
       ? []
       : [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setLabel('Connect')
-              .setStyle(ButtonStyle.Link)
-              .setURL(server.joinUrl),
-          ),
-        ];
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setLabel('Connect')
+            .setStyle(ButtonStyle.Link)
+            .setURL(server.joinUrl),
+        ),
+      ];
   return { embeds: [embed], components };
 }
 

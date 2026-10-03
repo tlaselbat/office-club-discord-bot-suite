@@ -102,6 +102,15 @@ describe('Game Server rendering', () => {
     expect(selectMenu.options[0]?.default).toBe(true);
   });
 
+  it('disables Add Server and marks option when the selected server already has a card', () => {
+    const result = renderAddGameServersPanel([{ ...server, hasCard: true }], secret, server.id);
+    const rows = result.components.map((row) => row.toJSON());
+    const addButton = rows[1]?.components[0] as { label: string; disabled: boolean };
+    expect(addButton.disabled).toBe(true);
+    const selectMenu = rows[0]?.components[0] as { options: { description: string }[] };
+    expect(selectMenu.options[0]?.description).toBe('Already added');
+  });
+
   it('renders Components V2 server card with required fields', () => {
     const result = renderGameServerCard(server, secret);
     expect(result.flags).toBe(32768);

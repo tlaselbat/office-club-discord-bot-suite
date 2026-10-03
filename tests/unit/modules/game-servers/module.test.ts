@@ -142,6 +142,7 @@ describe('Game Servers module interactions', () => {
         imageUrl: null,
         sortOrder: 0,
         snapshot: null,
+        cards: [],
       },
     ]);
     const module = createGameServersModule(dependencies);
@@ -154,11 +155,11 @@ describe('Game Servers module interactions', () => {
     expect(interaction.editReply).toHaveBeenCalledOnce();
     const replyPayload = ((interaction.editReply as unknown as ReturnType<typeof vi.fn>).mock
       .calls[0]?.[0] ?? {}) as {
-      components: [
-        { toJSON: () => { components: [{ options?: Array<{ default?: boolean }> }] } },
-        { toJSON: () => { components: [{ disabled?: boolean }] } },
-      ];
-    };
+        components: [
+          { toJSON: () => { components: [{ options?: Array<{ default?: boolean }> }] } },
+          { toJSON: () => { components: [{ disabled?: boolean }] } },
+        ];
+      };
     const selectRow = replyPayload.components[0].toJSON();
     const buttonRow = replyPayload.components[1].toJSON();
     expect(selectRow.components[0].options?.[0]?.default).toBe(true);
