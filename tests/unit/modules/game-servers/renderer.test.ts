@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Client, ComponentType, ContainerBuilder, type APIContainerComponent } from 'discord.js';
 import {
   renderAddGameServersPanel,
@@ -83,6 +85,14 @@ function buttons(container: Record<string, unknown>): Record<string, unknown>[] 
 }
 
 describe('Game Server rendering', () => {
+  it('versions the fallback URL with the actual banner content to prevent stale Discord media', () => {
+    const filename = new URL(resolveMapImageUrl(null, null)).pathname.split('/').at(-1);
+    if (!filename) throw new Error('Expected a fallback banner filename');
+    const bytes = readFileSync(`assets/game-servers/maps/fallback/${filename}`);
+    const version = createHash('sha256').update(bytes).digest('hex').slice(0, 8);
+    expect(filename).toBe(`clickcs-arena-banner-${version}.jpg`);
+  });
+
   it('serializes to valid Discord API components through the installed discord.js transformer', () => {
     const client = new Client({ intents: [] });
     const container = firstContainer(renderGameServerCard(server, secret));
@@ -187,7 +197,9 @@ describe('Game Server rendering', () => {
     const gallery = components[3] as Record<string, unknown>;
     const items = gallery.items as Record<string, unknown>[];
     expect(items).toHaveLength(1);
-    expect((items[0]?.media as Record<string, unknown>).url).toContain('clickcs-arena.jpg');
+    expect((items[0]?.media as Record<string, unknown>).url).toContain(
+      'clickcs-arena-banner-779a25c6.jpg',
+    );
   });
 
   it('renders link Connect button when join URL is configured', () => {

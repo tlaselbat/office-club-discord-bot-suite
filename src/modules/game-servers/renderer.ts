@@ -13,6 +13,10 @@ import { createGameServerCustomId } from './custom-id.js';
 const ASSET_BASE_URL =
   'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers';
 
+// Discord caches external media by URL. Give revised artwork a new content-versioned
+// filename; replacing bytes at the old URL does not refresh already cached cards.
+const FALLBACK_BANNER = 'clickcs-arena-banner-779a25c6.jpg';
+
 const componentType = {
   actionRow: 1,
   button: 2,
@@ -380,7 +384,7 @@ export function resolveMapImageUrl(
     }
   }
   if (serverImageUrl !== null) return serverImageUrl;
-  return `${ASSET_BASE_URL}/maps/fallback/clickcs-arena.jpg`;
+  return `${ASSET_BASE_URL}/maps/fallback/${FALLBACK_BANNER}`;
 }
 
 function serverIdentityIconUrl(): string {

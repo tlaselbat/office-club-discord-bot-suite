@@ -157,33 +157,39 @@ describe('GameServerCardService', () => {
   });
 
   describe('refreshCard', () => {
-    it('refreshes an older layout on the same message even when server state is unchanged', async () => {
-      const oldFingerprint: Partial<ReturnType<typeof cardFingerprint>> =
-        cardFingerprint(serverView);
-      delete oldFingerprint.layoutVersion;
-      const prisma = createMockPrisma({
-        gameServerCard: {
-          findUnique: vi.fn().mockResolvedValue(createCard({ fingerprint: oldFingerprint })),
-        },
-      });
-      const discord = createMockDiscord();
-      const service = new GameServerCardService(prisma, discord, 'secret');
-      await service.refreshCard('card-1');
-      const channel = await discord.channels.fetch('channel-1');
-      const mockChannel = channel as unknown as {
-        send: ReturnType<typeof vi.fn>;
-        messages: { fetch: ReturnType<typeof vi.fn> };
-      };
-      expect(mockChannel.messages.fetch).toHaveBeenCalledWith('msg-1');
-      expect(mockChannel.send).not.toHaveBeenCalled();
-      expect(prisma.gameServerCard.update).toHaveBeenCalledWith({
-        where: { id: 'card-1' },
-        data: {
-          lastKnownState: cardFingerprint(serverView),
-          lastSuccessfulPollAt: serverView.snapshot?.lastSuccessfulAt,
-        },
-      });
-    });
+    it.each(['layout', 'artwork'])(
+      'refreshes older %s on the same message even when server state is unchanged',
+      async (change) => {
+        const oldFingerprint: Partial<ReturnType<typeof cardFingerprint>> =
+          cardFingerprint(serverView);
+        if (change === 'layout') delete oldFingerprint.layoutVersion;
+        else
+          oldFingerprint.mapImageUrl =
+            'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers/maps/fallback/clickcs-arena.jpg';
+        const prisma = createMockPrisma({
+          gameServerCard: {
+            findUnique: vi.fn().mockResolvedValue(createCard({ fingerprint: oldFingerprint })),
+          },
+        });
+        const discord = createMockDiscord();
+        const service = new GameServerCardService(prisma, discord, 'secret');
+        await service.refreshCard('card-1');
+        const channel = await discord.channels.fetch('channel-1');
+        const mockChannel = channel as unknown as {
+          send: ReturnType<typeof vi.fn>;
+          messages: { fetch: ReturnType<typeof vi.fn> };
+        };
+        expect(mockChannel.messages.fetch).toHaveBeenCalledWith('msg-1');
+        expect(mockChannel.send).not.toHaveBeenCalled();
+        expect(prisma.gameServerCard.update).toHaveBeenCalledWith({
+          where: { id: 'card-1' },
+          data: {
+            lastKnownState: cardFingerprint(serverView),
+            lastSuccessfulPollAt: serverView.snapshot?.lastSuccessfulAt,
+          },
+        });
+      },
+    );
 
     it('edits the Discord message when visible state has changed', async () => {
       const message = { id: 'msg-1', edit: vi.fn().mockResolvedValue({}) };
@@ -231,7 +237,7 @@ describe('GameServerCardService', () => {
                 players: '5 / 16 players',
                 map: 'de_dust2',
                 mapImageUrl:
-                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers/maps/fallback/clickcs-arena.jpg',
+                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers/maps/fallback/clickcs-arena-banner-779a25c6.jpg',
                 location: 'Los Angeles',
                 host: '1v1 Arena',
                 connectAddress: 'arena.example.com:27015',

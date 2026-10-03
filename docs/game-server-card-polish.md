@@ -15,6 +15,19 @@ Configured remote images keep their original aspect ratio; Discord does not offe
 an arbitrary crop/height property for Media Gallery items. New map and server
 artwork should be supplied at approximately 2.5:1–3:1.
 
+### Discord media cache correction
+
+The first deployment still displayed the old 1024 × 576 image: a read of the actual
+Discord message reported those cached dimensions even though both the local file
+and GitHub origin were 1024 × 341. Replacing the file at the same URL was insufficient.
+The renderer now uses `clickcs-arena-banner-779a25c6.jpg`, an identical copy of the
+compact artwork whose filename includes its SHA-256 prefix. Future artwork changes
+must get new content-versioned filenames. The changed URL also changes the card
+fingerprint, causing the existing message to refresh without recreating it.
+Tests verify that the filename matches the bytes and that an old artwork URL
+triggers a persistent message edit. After deployment, verify the dimensions on
+Discord's returned media object, not just the origin asset or component types.
+
 Connect keeps its existing signed Success interaction when no join URL is set.
 Servers with a join URL retain their direct Link button. Discord does not permit
 Success styling on URL buttons; preserving the existing one-click connection
