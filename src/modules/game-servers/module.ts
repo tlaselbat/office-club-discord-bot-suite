@@ -13,6 +13,7 @@ import type { Logger } from 'pino';
 import type { SuiteModule } from '../../core/modules/types.js';
 import type { PrismaClient } from '../../generated/prisma/client.js';
 import type { DatHostServerReader } from '../../integrations/dathost/client.js';
+import { PublicError } from '../../errors/public-error.js';
 import type { JobHandler, LeasedJob } from '../../jobs/worker.js';
 import { gameServerCommands } from './commands.js';
 import { createGameServerCustomId, parseGameServerCustomId } from './custom-id.js';
@@ -104,7 +105,22 @@ async function handleCommand(
     const selectedChannel = interaction.options.getChannel('channel', true);
     const channel = await dependencies.discord.channels.fetch(selectedChannel.id);
     if (channel === null || !channel.isTextBased() || channel.isDMBased())
-      throw new Error('Text channel required');
+      throw new PublicError('GAME_SERVER_TEXT_CHANNEL_REQUIRED', 'Select a server text channel.');
+    const botUser = dependencies.discord.user;
+    if (botUser === null) throw new Error('Discord client is not ready');
+    const permissions = channel.permissionsFor(botUser);
+    const requiredPermissions = [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.EmbedLinks,
+      PermissionFlagsBits.ReadMessageHistory,
+    ];
+    if (permissions?.has(requiredPermissions) !== true) {
+      throw new PublicError(
+        'GAME_SERVER_PANEL_MISSING_PERMISSIONS',
+        'I need View Channel, Send Messages, Embed Links, and Read Message History permissions in that channel before I can create the Game Servers panel.',
+      );
+    }
     await dependencies.prisma.guildSettings.upsert({
       where: { guildId: interaction.guildId },
       create: { guildId: interaction.guildId },
