@@ -11,6 +11,7 @@ export interface SnapshotView {
   hostingState: string;
   gameplayState: string;
   host: string | null;
+  hostname: string | null;
   port: number | null;
   datacenter: string | null;
   map: string | null;
@@ -41,25 +42,29 @@ export interface ServerView {
   snapshot: SnapshotView | null;
 }
 
-export function renderGameServerPanel(servers: ServerView[], secret: string) {
-  const onlinePlayers = servers.reduce(
-    (sum, server) =>
-      sum + (server.snapshot?.hostingState === 'RUNNING' ? (server.snapshot.players ?? 0) : 0),
-    0,
-  );
-  const capacity = servers.reduce((sum, server) => sum + (server.snapshot?.maxPlayers ?? 0), 0);
-  const lines = servers.map((server) => renderSummary(server));
+export interface CardFingerprint {
+  hostingState: string;
+  gameplayState: string;
+  stale: boolean;
+  players: number | null;
+  maxPlayers: number | null;
+  map: string | null;
+  host: string | null;
+  datacenter: string | null;
+  connectAddress: string | null;
+  cpuPercent: number | null;
+  memoryUsageMb: number | null;
+}
+
+export function renderAddGameServersPanel(
+  servers: ServerView[],
+  secret: string,
+  selectedId?: string,
+) {
   const embed = new EmbedBuilder()
     .setColor(0x2b8aef)
-    .setTitle('OFFICE CLUB • GAME SERVERS')
-    .setDescription(
-      lines.length === 0
-        ? 'No public game servers are configured.'
-        : `Live status for all official Office Club game servers.\n\n${lines.join('\n\n')}`,
-    )
-    .setFooter({
-      text: `Players Online: ${String(onlinePlayers)} / ${String(capacity)} • Cached status`,
-    });
+    .setTitle('OFFICE CLUB • ADD GAME SERVERS')
+    .setDescription('Select a configured game server to add to the live server display.');
   const components: (
     | ActionRowBuilder<StringSelectMenuBuilder>
     | ActionRowBuilder<ButtonBuilder>
@@ -68,13 +73,14 @@ export function renderGameServerPanel(servers: ServerView[], secret: string) {
     components.push(
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId(createGameServerCustomId({ action: 'view' }, secret))
+          .setCustomId(createGameServerCustomId({ action: 'select' }, secret))
           .setPlaceholder('Select Server')
           .addOptions(
             servers.slice(0, 25).map((server) => ({
               label: server.displayName.slice(0, 100),
               value: server.id,
               description: statusLabel(server.snapshot).slice(0, 100),
+              default: server.id === selectedId,
             })),
           ),
       ),
@@ -83,11 +89,69 @@ export function renderGameServerPanel(servers: ServerView[], secret: string) {
   components.push(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
-        .setCustomId(createGameServerCustomId({ action: 'refresh' }, secret))
-        .setLabel('Refresh')
-        .setStyle(ButtonStyle.Secondary),
+        .setCustomId(
+          createGameServerCustomId(
+            selectedId === undefined ? { action: 'add' } : { action: 'add', value: selectedId },
+            secret,
+          ),
+        )
+        .setLabel('Add Server')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(selectedId === undefined),
     ),
   );
+  return { embeds: [embed], components };
+}
+
+export function renderGameServerCard(server: ServerView) {
+  const snapshot = server.snapshot;
+  const embed = new EmbedBuilder().setColor(color(snapshot)).setTitle(server.displayName);
+  if (server.description !== null) embed.setDescription(server.description);
+  embed.addFields({ name: 'Status', value: statusLabel(snapshot), inline: true });
+  if (snapshot?.players !== null && snapshot?.players !== undefined) {
+    embed.addFields({
+      name: 'Players',
+      value: `${String(snapshot.players)}${snapshot.maxPlayers === null ? '' : ` / ${String(snapshot.maxPlayers)}`}`,
+      inline: true,
+    });
+  }
+  if (snapshot?.map !== null && snapshot?.map !== undefined)
+    embed.addFields({ name: 'Map', value: snapshot.map, inline: true });
+  embed.addFields({
+    name: 'Host',
+    value: serverHost(server),
+    inline: true,
+  });
+  if (snapshot?.datacenter !== null && snapshot?.datacenter !== undefined)
+    embed.addFields({ name: 'Location', value: snapshot.datacenter, inline: true });
+  const address = connectAddress(server);
+  if (address !== null) embed.addFields({ name: 'Connect', value: `\`${address}\``, inline: true });
+  embed.addFields({ name: 'Provider', value: 'DatHost', inline: true });
+  if (snapshot?.cpuPercent !== null && snapshot?.cpuPercent !== undefined)
+    embed.addFields({ name: 'CPU', value: `${snapshot.cpuPercent.toFixed(1)}%`, inline: true });
+  if (snapshot?.memoryUsageMb !== null && snapshot?.memoryUsageMb !== undefined)
+    embed.addFields({
+      name: 'Memory',
+      value: `${snapshot.memoryUsageMb.toFixed(1)} MB`,
+      inline: true,
+    });
+  if (snapshot !== null)
+    embed.addFields({
+      name: 'Updated',
+      value: `<t:${String(Math.floor(snapshot.observedAt.getTime() / 1000))}:R>`,
+      inline: true,
+    });
+  const components =
+    server.joinUrl === null
+      ? []
+      : [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setLabel('Connect')
+              .setStyle(ButtonStyle.Link)
+              .setURL(server.joinUrl),
+          ),
+        ];
   return { embeds: [embed], components };
 }
 
@@ -143,19 +207,26 @@ export function renderGameServerDetail(server: ServerView) {
   return { embeds: [embed], components };
 }
 
-function renderSummary(server: ServerView): string {
+export function cardFingerprint(server: ServerView): CardFingerprint {
   const snapshot = server.snapshot;
-  const players =
-    snapshot?.hostingState !== 'RUNNING' || snapshot.players === null
-      ? ''
-      : `\n${String(snapshot.players)}${snapshot.maxPlayers === null ? '' : ` / ${String(snapshot.maxPlayers)}`} players`;
-  const map = snapshot?.map === null || snapshot?.map === undefined ? '' : ` • ${snapshot.map}`;
-  const location =
-    snapshot?.datacenter === null || snapshot?.datacenter === undefined
-      ? ''
-      : `\n${snapshot.datacenter}`;
-  const address = connectAddress(server);
-  return `**${server.displayName}** — ${statusLabel(snapshot)}${players}${map}${location}${address === null ? '' : `\n${address}`}`;
+  return {
+    hostingState: snapshot?.hostingState ?? 'UNKNOWN',
+    gameplayState: snapshot?.gameplayState ?? 'UNKNOWN',
+    stale: snapshot?.stale ?? false,
+    players: snapshot?.players ?? null,
+    maxPlayers: snapshot?.maxPlayers ?? null,
+    map: snapshot?.map ?? null,
+    host: serverHost(server),
+    datacenter: snapshot?.datacenter ?? null,
+    connectAddress: connectAddress(server),
+    cpuPercent: snapshot?.cpuPercent ?? null,
+    memoryUsageMb: snapshot?.memoryUsageMb ?? null,
+  };
+}
+
+function serverHost(server: ServerView): string {
+  const snapshot = server.snapshot;
+  return snapshot?.hostname ?? snapshot?.host ?? server.connectDomain ?? 'Unknown';
 }
 
 function statusLabel(snapshot: SnapshotView | null): string {

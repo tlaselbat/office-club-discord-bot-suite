@@ -300,6 +300,7 @@ model GuildSettings {
   rewardVoiceSessions    RewardVoiceSession[]
   gameServerSettings     GameServerSettings?
   gameServers            GameServer[]
+  gameServerCards        GameServerCard[]
 
   @@map("suite_guilds")
 }
@@ -518,6 +519,7 @@ model GameServer {
   updatedAt        DateTime            @updatedAt @map("updated_at")
   guild            GuildSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
   snapshot         GameServerSnapshot?
+  cards            GameServerCard[]
 
   @@unique([guildId, provider, providerServerId])
   @@index([enabled, provider])
@@ -561,6 +563,24 @@ model GameServerSnapshot {
 
   @@index([hostingState, gameplayState])
   @@map("game_server_snapshots")
+}
+
+model GameServerCard {
+  id                    String        @id @default(uuid()) @db.Uuid
+  guildId               String        @map("guild_id")
+  gameServerId          String        @map("game_server_id") @db.Uuid
+  channelId             String        @map("channel_id")
+  messageId             String        @map("message_id")
+  lastKnownState        Json?         @map("last_known_state")
+  lastSuccessfulPollAt  DateTime?     @map("last_successful_poll_at")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  guild                 GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  gameServer            GameServer    @relation(fields: [gameServerId], references: [id], onDelete: Cascade)
+
+  @@unique([gameServerId])
+  @@index([guildId])
+  @@map("game_server_cards")
 }
 
 model GameProfile {

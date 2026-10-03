@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export type GameServerAction = 'view' | 'refresh' | 'discover' | 'page' | 'confirm' | 'cancel';
+export type GameServerAction = 'select' | 'add' | 'discover' | 'page' | 'confirm' | 'cancel';
 
 export interface GameServerCustomId {
   action: GameServerAction;
@@ -44,7 +44,7 @@ export function parseGameServerCustomId(
   const received = Buffer.from(signature);
   if (expected.length !== received.length || !timingSafeEqual(expected, received))
     throw new Error('Invalid Game Server component signature');
-  if (!['view', 'refresh', 'discover', 'page', 'confirm', 'cancel'].includes(action))
+  if (!['select', 'add', 'discover', 'page', 'confirm', 'cancel'].includes(action))
     throw new Error('Invalid Game Server component action');
   return {
     action: action as GameServerAction,

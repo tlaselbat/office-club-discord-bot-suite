@@ -17,6 +17,7 @@ import { PublicError } from '../../errors/public-error.js';
 import type { JobHandler, LeasedJob } from '../../jobs/worker.js';
 import { gameServerCommands } from './commands.js';
 import { createGameServerCustomId, parseGameServerCustomId } from './custom-id.js';
+import { GameServerCardService } from './card-service.js';
 import { GameServerPanelService } from './panel-service.js';
 import {
   GameServerPollService,
@@ -24,7 +25,7 @@ import {
   schedulePanelRefresh,
 } from './poll-service.js';
 import { DatHostGameServerProvider } from './provider.js';
-import { renderGameServerDetail } from './renderer.js';
+import { renderAddGameServersPanel } from './renderer.js';
 
 export interface GameServersModuleDependencies {
   prisma: PrismaClient;
@@ -48,9 +49,11 @@ export function createGameServersModule(dependencies?: GameServersModuleDependen
     dependencies.discord,
     dependencies.componentSigningSecret,
   );
+  const cards = new GameServerCardService(dependencies.prisma, dependencies.discord);
   const polls = new GameServerPollService(
     dependencies.prisma,
     new DatHostGameServerProvider(dependencies.dathost),
+    cards,
   );
   const handlers = new Map<string, JobHandler>([
     [
@@ -60,6 +63,10 @@ export function createGameServersModule(dependencies?: GameServersModuleDependen
     [
       'GAME_SERVER_PANEL_REFRESH',
       async (job: LeasedJob) => panel.reconcile((job.payload as { guildId: string }).guildId),
+    ],
+    [
+      'GAME_SERVER_CARD_REFRESH',
+      async (job: LeasedJob) => cards.refreshCard((job.payload as { cardId: string }).cardId),
     ],
   ]);
   return {
@@ -72,7 +79,7 @@ export function createGameServersModule(dependencies?: GameServersModuleDependen
       if (interaction.isChatInputCommand()) {
         await handleCommand(interaction, dependencies, panel);
       } else if (interaction.isMessageComponent()) {
-        await handleComponent(interaction, dependencies);
+        await handleComponent(interaction, dependencies, panel, cards);
       }
     },
     start: async () => {
@@ -254,6 +261,8 @@ async function handleCommand(
 async function handleComponent(
   interaction: MessageComponentInteraction,
   dependencies: GameServersModuleDependencies,
+  panel: GameServerPanelService,
+  cards: GameServerCardService,
 ): Promise<void> {
   if (interaction.guildId === null) throw new Error('Guild interaction required');
   const payload = parseGameServerCustomId(
@@ -261,28 +270,44 @@ async function handleComponent(
     dependencies.componentSigningSecret,
     interaction.user.id,
   );
-  if (payload.action === 'refresh') {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const registrations = await dependencies.prisma.gameServer.findMany({
-      where: { guildId: interaction.guildId, enabled: true },
-      select: { id: true },
-    });
-    for (const registration of registrations)
-      await scheduleGameServerPoll(dependencies.prisma, registration.id);
-    await schedulePanelRefresh(dependencies.prisma, interaction.guildId);
-    await interaction.editReply('Refresh queued. Cached status will update shortly.');
-    return;
-  }
-  if (payload.action === 'view' && interaction.isStringSelectMenu()) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (payload.action === 'select' && interaction.isStringSelectMenu()) {
     const gameServerId = interaction.values[0];
     if (gameServerId === undefined) throw new Error('Game Server selection is required');
-    const server = await dependencies.prisma.gameServer.findFirst({
-      where: { id: gameServerId, guildId: interaction.guildId, enabled: true, public: true },
+    await interaction.deferUpdate();
+    const servers = await dependencies.prisma.gameServer.findMany({
+      where: { guildId: interaction.guildId, enabled: true, public: true, cards: { none: {} } },
       include: { snapshot: true },
+      orderBy: [{ sortOrder: 'asc' }, { displayName: 'asc' }],
     });
-    if (server === null) throw new Error('Public Game Server is unavailable');
-    await interaction.editReply(renderGameServerDetail(server));
+    await interaction.editReply(
+      renderAddGameServersPanel(servers, dependencies.componentSigningSecret, gameServerId),
+    );
+    return;
+  }
+  if (payload.action === 'add') {
+    assertAdministrator(interaction);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const gameServerId = payload.value;
+    if (gameServerId === undefined) {
+      await interaction.editReply('Select a server before pressing Add Server.');
+      return;
+    }
+    const channel = interaction.channel;
+    if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
+      await interaction.editReply('Add Server must be used in a server text channel.');
+      return;
+    }
+    try {
+      await cards.createCard(gameServerId, channel);
+    } catch (error: unknown) {
+      if (error instanceof PublicError) {
+        await interaction.editReply(error.message);
+        return;
+      }
+      throw error;
+    }
+    await panel.reconcile(interaction.guildId);
+    await interaction.editReply('Server status card added.');
     return;
   }
   assertAdministrator(interaction);

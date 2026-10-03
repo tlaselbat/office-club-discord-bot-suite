@@ -6,8 +6,8 @@ import {
 
 describe('Game Server custom IDs', () => {
   it('round-trips public controls', () => {
-    const id = createGameServerCustomId({ action: 'refresh' }, 'secret');
-    expect(parseGameServerCustomId(id, 'secret', 'someone')).toEqual({ action: 'refresh' });
+    const id = createGameServerCustomId({ action: 'add' }, 'secret');
+    expect(parseGameServerCustomId(id, 'secret', 'someone')).toEqual({ action: 'add' });
   });
 
   it('binds administrator mutations to their recipient', () => {

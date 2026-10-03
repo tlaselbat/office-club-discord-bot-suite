@@ -1,6 +1,6 @@
 import type { Client, TextBasedChannel, TextChannel } from 'discord.js';
 import type { PrismaClient } from '../../generated/prisma/client.js';
-import { renderGameServerPanel } from './renderer.js';
+import { renderAddGameServersPanel } from './renderer.js';
 
 export class GameServerPanelService {
   public constructor(
@@ -19,11 +19,11 @@ export class GameServerPanelService {
         : await this.discord.channels.fetch(settings.panelChannelId).catch(() => null));
     if (target === null || !target.isTextBased() || target.isDMBased()) return;
     const servers = await this.prisma.gameServer.findMany({
-      where: { guildId, enabled: true, public: true },
+      where: { guildId, enabled: true, public: true, cards: { none: {} } },
       include: { snapshot: true },
       orderBy: [{ sortOrder: 'asc' }, { displayName: 'asc' }],
     });
-    const payload = renderGameServerPanel(servers, this.secret);
+    const payload = renderAddGameServersPanel(servers, this.secret);
     const text = target as TextChannel;
     const existing =
       settings.panelMessageId === null

@@ -1,13 +1,15 @@
 import type { PrismaClient } from '../../generated/prisma/client.js';
 import { scheduleJob } from '../../database/schedule-job.js';
+import type { GameServerCardService } from './card-service.js';
 import type { DatHostGameServerProvider, GameServerObservation } from './provider.js';
 
-const pollIntervalMs = 30_000;
+const pollIntervalMs = 10_000;
 
 export class GameServerPollService {
   public constructor(
     private readonly prisma: PrismaClient,
     private readonly provider: DatHostGameServerProvider,
+    private readonly cardService: Pick<GameServerCardService, 'refreshCardsForGameServer'>,
   ) {}
 
   public async poll(
@@ -46,10 +48,6 @@ export class GameServerPollService {
         telemetryReference !== null &&
         telemetryReference !== undefined &&
         now.getTime() - telemetryReference.getTime() >= 90_000;
-      const changed =
-        previous === null ||
-        displayFingerprint(previous) !==
-          displayFingerprint({ ...observation, stale: telemetryStale });
       await this.prisma.$transaction(async (transaction) => {
         await transaction.gameServerSnapshot.upsert({
           where: { gameServerId },
@@ -68,8 +66,8 @@ export class GameServerPollService {
             lastError: null,
           },
         });
-        if (changed) await schedulePanelRefresh(transaction, registration.guildId);
       });
+      await this.cardService.refreshCardsForGameServer(registration.id);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown DatHost error';
       const failures = (previous?.consecutiveFailures ?? 0) + 1;
@@ -94,8 +92,8 @@ export class GameServerPollService {
             lastError: message.slice(0, 1000),
           },
         });
-        await schedulePanelRefresh(transaction, registration.guildId);
       });
+      await this.cardService.refreshCardsForGameServer(registration.id);
     }
     return { rescheduleAt: new Date(now.getTime() + pollIntervalMs) };
   }
@@ -151,24 +149,4 @@ function snapshotData(observation: GameServerObservation) {
     monitoringObservedAt: observation.monitoringObservedAt,
     observedAt: observation.observedAt,
   };
-}
-
-function displayFingerprint(value: object): string {
-  const fields = value as Record<string, unknown>;
-  return JSON.stringify({
-    hostingState: fields.hostingState,
-    gameplayState: fields.gameplayState,
-    host: fields.host,
-    port: fields.port,
-    datacenter: fields.datacenter,
-    map: fields.map,
-    players: fields.players,
-    maxPlayers: fields.maxPlayers,
-    cpuPercent: fields.cpuPercent,
-    memoryUsageMb: fields.memoryUsageMb,
-    averagePingMs: fields.averagePingMs,
-    packetLossPercent: fields.packetLossPercent,
-    serverVarMs: fields.serverVarMs,
-    stale: fields.stale,
-  });
 }
