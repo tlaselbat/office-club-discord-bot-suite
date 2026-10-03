@@ -20,6 +20,9 @@ const SERVER_INFO_ASSET_BASE_URL =
 // filename; replacing bytes at the old URL does not refresh already cached cards.
 const FALLBACK_BANNER = 'clickcs-arena-banner-779a25c6.jpg';
 
+const SERVER_CARD_DESCRIPTION =
+  'Challenge other players 1v1, warm up your aim, or kill time during long matchmaking queues. Open to all Office Club members.';
+
 const componentType = {
   actionRow: 1,
   button: 2,
@@ -150,12 +153,12 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
 
+  const statusLine = `${statusEmoji(snapshot)} ${statusLabel(snapshot)}${
+    location === null ? '' : `  •  ${location}`
+  }`;
   const headerComponents: Record<string, unknown>[] = [
-    textDisplay(
-      `# ${server.displayName}  \u2022  ${statusEmoji(snapshot)} ${statusLabel(snapshot)}`,
-    ),
+    textDisplay(`# ${server.displayName}\n${statusLine}`),
   ];
-  if (location !== null) headerComponents.push(textDisplay(`\ud83d\udccd ${location}`));
 
   const headerSection = {
     type: componentType.section,
@@ -190,13 +193,16 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     components: [
       headerSection,
       { type: componentType.separator, divider: true, spacing: 1 },
+      textDisplay(SERVER_CARD_DESCRIPTION),
+      { type: componentType.separator, divider: true, spacing: 1 },
       bannerGallery,
+      { type: componentType.separator, divider: true, spacing: 1 },
+      textDisplay(`🔗 ${connectAddress(server) ?? 'Unavailable'}`),
+      { type: componentType.separator, divider: true, spacing: 1 },
       textDisplay(`🗺️ ${displayMap}`),
       { type: componentType.separator, divider: true, spacing: 1 },
       textDisplay(`👥 ${playerCount(snapshot)}`),
       { type: componentType.separator, divider: true, spacing: 1 },
-      textDisplay(`🔗 ${connectAddress(server) ?? 'Unavailable'}`),
-      { type: componentType.separator, divider: false, spacing: 1 },
       actionRow,
     ],
   };
@@ -265,7 +271,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 5,
+    layoutVersion: 6,
     accentColor: containerAccentColor(snapshot),
     displayName: server.displayName,
     status: statusLabel(snapshot),

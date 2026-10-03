@@ -1,26 +1,34 @@
 # Game server card polish
 
 The persistent card uses a native Components V2 Container with a Section/Thumbnail
-header, a small Separator, one three-line metadata Text Display, one Media Gallery,
-and the existing two-button Action Row. The header combines the name and status
-line; location appears once and provider city labels such as `dallas` display as
-`Dallas`. Metadata uses separate concise lines so long hosts and addresses do not
-depend on padded columns.
+header, six consistently spaced Separators, the approved description, one Media
+Gallery, three standalone metadata rows, and the existing three-button Action Row.
+The header renders the name followed directly by the status and optional location
+on one natural-wrapping metadata line; provider city labels such as `dallas` display
+as `Dallas`. The lower rows are address, map, and player count, in that order, with
+no redundant labels or padding assumptions.
 
-The checked-in `assets/game-servers/maps/fallback/clickcs-arena.jpg` is already
-1024 × 341 (approximately 3:1). It preserves the center lane, concrete and orange
-architecture without text or controls. Reuse this existing crop. Resolution order
-remains canonical map artwork, configured server image URL, then this banner.
-Configured remote images keep their original aspect ratio; Discord does not offer
-an arbitrary crop/height property for Media Gallery items. New map and server
-artwork should be supplied at approximately 2.5:1–3:1.
+The component tree is: Section (title plus status/location, thumbnail), Separator,
+description Text Display, Separator, Media Gallery, Separator, address Text Display,
+Separator, map Text Display, Separator, player-count Text Display, Separator, then
+the Connect, Map & Rules, and Copy Address Action Row. The status line omits both
+the dot and location when no location is available. A missing address remains
+`🔗 Unavailable`; an unknown map remains `🗺️ Unknown`; player counts retain a
+configured maximum such as `👥 3 / 5 Players`.
 
-### Discord media cache correction
+The card's Media Gallery uses the dedicated neutral server banner at
+`assets/server-info/clickcs-server-banner.png`; its thumbnail uses the companion
+`clickcs-server-thumbnail.png`. These fixed server-info assets keep the layout
+stable while Discord determines the rendered media dimensions. Map artwork
+resolution remains available through the existing helper and does not determine
+the persistent card banner.
+
+### Historical Discord media cache correction
 
 The first deployment still displayed the old 1024 × 576 image: a read of the actual
 Discord message reported those cached dimensions even though both the local file
 and GitHub origin were 1024 × 341. Replacing the file at the same URL was insufficient.
-The renderer now uses `clickcs-arena-banner-779a25c6.jpg`, an identical copy of the
+The earlier map-banner renderer used `clickcs-arena-banner-779a25c6.jpg`, a copy of the
 compact artwork whose filename includes its SHA-256 prefix. Future artwork changes
 must get new content-versioned filenames. The changed URL also changes the card
 fingerprint, causing the existing message to refresh without recreating it.
@@ -28,11 +36,9 @@ Tests verify that the filename matches the bytes and that an old artwork URL
 triggers a persistent message edit. After deployment, verify the dimensions on
 Discord's returned media object, not just the origin asset or component types.
 
-Connect keeps its existing signed Success interaction when no join URL is set.
-Servers with a join URL retain their direct Link button. Discord does not permit
-Success styling on URL buttons; preserving the existing one-click connection
-behavior takes precedence over that mockup detail. Map & Rules remains Secondary.
-No custom IDs or interaction handlers changed.
+Connect keeps its existing signed Primary interaction when no join URL is set.
+Servers with a join URL retain their direct Link button. Map & Rules and Copy
+Address remain Secondary. No custom IDs or interaction handlers changed.
 
 ## Current-map investigation
 
@@ -51,17 +57,17 @@ normalized consistently for display and artwork lookup when map data is availabl
 DatHost references: [server object](https://dathost.readme.io/reference/get_game_server_item)
 and [monitoring metrics](https://dathost.readme.io/reference/get_cs_monitoring_server_metrics).
 
-`layoutVersion` in the saved card fingerprint causes an existing message to be
+`layoutVersion` 6 in the saved card fingerprint causes an existing message to be
 edited on its next refresh after deployment, including when server state is
 unchanged. Subsequent unchanged refreshes continue to skip Discord edits.
 
 ## Validation
 
-Automated coverage checks the component order, native Discord serialization,
-known/unknown/workshop maps, artwork precedence, location de-duplication, zero and
-full occupancy, long values, offline/starting/stale states, exactly two controls,
-existing Connect and Map & Rules handlers, and updating the existing message after
-a layout change. No schema migration is required for the layout change.
+Automated coverage checks the thirteen-child component order, native Discord
+serialization, known/unknown/workshop maps, artwork precedence, location
+de-duplication, zero and full occupancy, long values, offline/starting/stale states,
+all three existing controls, and updating the existing message after a layout
+change. No schema migration is required for the layout change.
 
 Real-client acceptance remains necessary after deployment: inspect desktop,
 narrow desktop and mobile Discord for readable wrapping and height, plus online,

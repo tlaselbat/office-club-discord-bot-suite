@@ -84,6 +84,16 @@ function buttons(container: Record<string, unknown>): Record<string, unknown>[] 
   return actionRow(container).components as Record<string, unknown>[];
 }
 
+function componentCount(component: Record<string, unknown>): number {
+  const children = component.components as Record<string, unknown>[] | undefined;
+  const accessory = component.accessory as Record<string, unknown> | undefined;
+  return (
+    1 +
+    (children?.reduce((total, child) => total + componentCount(child), 0) ?? 0) +
+    (accessory === undefined ? 0 : componentCount(accessory))
+  );
+}
+
 describe('Game Server rendering', () => {
   it('versions the fallback URL with the actual banner content to prevent stale Discord media', () => {
     const filename = new URL(resolveMapImageUrl(null, null)).pathname.split('/').at(-1);
@@ -147,14 +157,17 @@ describe('Game Server rendering', () => {
     const container = firstContainer(result);
     expect(container.type).toBe(17);
     const text = textContents(container);
-    expect(text).toContain('# 1v1 Arena  •  🟢 Online');
-    expect(text).toContain('📍 Los Angeles');
+    expect(text).toContain('# 1v1 Arena\n🟢 Online  •  Los Angeles');
+    expect(text).toContain(
+      'Challenge other players 1v1, warm up your aim, or kill time during long matchmaking queues. Open to all Office Club members.',
+    );
     expect(text).toContain('🗺️ aim_map_office');
     expect(text).not.toContain('Current Map');
     expect(text).toContain('👥 0 / 16 Players');
     expect(text).toContain('🔗 arena.example.com:27015');
     expect(text).not.toContain('Connect Command');
     expect(text).not.toContain('**Host**');
+    expect(text).not.toContain('📍');
 
     const rowButtons = buttons(container);
     expect(rowButtons).toHaveLength(3);
@@ -285,31 +298,91 @@ describe('Game Server rendering', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, datacenter: null } };
     const container = firstContainer(renderGameServerCard(view, secret));
     const text = textContents(container);
-    expect(text).toContain('# 1v1 Arena  •  🟢 Online');
+    expect(text).toContain('# 1v1 Arena\n🟢 Online');
     expect(text).not.toContain('📍');
     const section = containerComponents(container)[0] as Record<string, unknown>;
     expect(section.components as Record<string, unknown>[]).toHaveLength(1);
   });
 
-  it('places content in the approved Components V2 order with small native dividers', () => {
+  it('places content in the approved Components V2 order with consistent native dividers', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
     const components = containerComponents(container);
     expect(components.map((component) => component.type)).toEqual([
-      9, 14, 12, 10, 14, 10, 14, 10, 14, 1,
+      9, 14, 10, 14, 12, 14, 10, 14, 10, 14, 10, 14, 1,
     ]);
     const section = components[0] as Record<string, unknown>;
-    expect(section.components as Record<string, unknown>[]).toHaveLength(2);
+    expect(section.components as Record<string, unknown>[]).toHaveLength(1);
     expect(components[1]).toEqual({ type: 14, divider: true, spacing: 1 });
-    expect(components[3]).toEqual({
+    expect(components[2]).toEqual({
       type: 10,
-      content: '🗺️ aim_map_office',
+      content:
+        'Challenge other players 1v1, warm up your aim, or kill time during long matchmaking queues. Open to all Office Club members.',
     });
-    expect(components[5]).toEqual({ type: 10, content: '👥 0 / 16 Players' });
-    expect(components[7]).toEqual({
+    expect(components[5]).toEqual({ type: 14, divider: true, spacing: 1 });
+    expect(components[6]).toEqual({
       type: 10,
       content: '🔗 arena.example.com:27015',
     });
-    expect(components[8]).toEqual({ type: 14, divider: false, spacing: 1 });
+    expect(components[8]).toEqual({
+      type: 10,
+      content: '🗺️ aim_map_office',
+    });
+    expect(components[10]).toEqual({ type: 10, content: '👥 0 / 16 Players' });
+    expect(components[11]).toEqual({ type: 14, divider: true, spacing: 1 });
+  });
+
+  it('serializes the revised thirteen-child card and keeps all action behaviors', () => {
+    const container = firstContainer(renderGameServerCard(server, secret));
+    const client = new Client({ intents: [] });
+    const transform = client.options.jsonTransformer;
+    if (transform === undefined) throw new Error('Expected the default Discord JSON transformer');
+    const api = transform(container) as APIContainerComponent;
+    expect(api.components).toHaveLength(13);
+    expect(() => new ContainerBuilder(api).toJSON()).not.toThrow();
+    expect(componentCount(container)).toBe(19);
+    expect(componentCount(container)).toBeLessThanOrEqual(40);
+    expect(
+      containerComponents(container).filter(
+        (component) => component.type === ComponentType.Separator,
+      ),
+    ).toEqual(Array.from({ length: 6 }, () => ({ type: 14, divider: true, spacing: 1 })));
+    const row = actionRow(container);
+    expect(row.components).toEqual([
+      expect.objectContaining({
+        label: 'Connect',
+        customId: expect.stringMatching(/^gs:connect:/),
+      }),
+      expect.objectContaining({
+        label: 'Map & Rules',
+        customId: expect.stringMatching(/^gs:map-rules:/),
+      }),
+      expect.objectContaining({
+        label: 'Copy Address',
+        customId: expect.stringMatching(/^gs:copy-address:/),
+      }),
+    ]);
+  });
+
+  it('keeps the configured max-player suffix and fallback rows readable', () => {
+    const view = {
+      ...server,
+      connectDomain: null,
+      snapshot: {
+        ...baseSnapshot,
+        datacenter: null,
+        host: null,
+        port: null,
+        map: null,
+        players: 3,
+        maxPlayers: 5,
+      },
+    };
+    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
+    expect(text).toContain('🟢 Online');
+    expect(text).not.toContain('  •  ');
+    expect(text).toContain('🔗 Unavailable');
+    expect(text).toContain('🗺️ Unknown');
+    expect(text).toContain('👥 3 / 5 Players');
   });
 
   it('normalizes the location once in the header', () => {
@@ -357,7 +430,7 @@ describe('Game Server rendering', () => {
   it('keeps the fingerprint stable when only observation times change', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
     expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
-    expect(cardFingerprint(view).layoutVersion).toBe(5);
+    expect(cardFingerprint(view).layoutVersion).toBe(6);
   });
 
   it('omits unavailable detail metrics instead of rendering N/A', () => {
