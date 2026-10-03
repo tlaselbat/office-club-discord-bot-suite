@@ -42,13 +42,37 @@ describe('MatchParticipantInfoService', () => {
     expect(cipher.decrypt).toHaveBeenCalledWith('encrypted-password', `join:${matchId}:server-1`);
   });
 
-  it('does not decrypt for a non-participant or a cleanup-pending match', async () => {
+  it('does not decrypt for a non-participant', async () => {
     const prisma = {
       match: { findUnique: vi.fn().mockResolvedValue(match({ players: [] })) },
     } as unknown as PrismaClient;
     const cipher = { decrypt: vi.fn() };
     const service = new MatchParticipantInfoService(prisma, cipher as never);
     await expect(service.get(matchId, 'guild-1', 'user-1')).rejects.toThrow('Only assigned');
+    expect(cipher.decrypt).not.toHaveBeenCalled();
+  });
+
+  it('does not decrypt connection details after cleanup begins', async () => {
+    const prisma = {
+      match: { findUnique: vi.fn().mockResolvedValue(match({ cleanupStatus: 'PENDING' })) },
+    } as unknown as PrismaClient;
+    const cipher = { decrypt: vi.fn() };
+
+    await expect(
+      new MatchParticipantInfoService(prisma, cipher as never).get(matchId, 'guild-1', 'user-1'),
+    ).rejects.toThrow('not available');
+    expect(cipher.decrypt).not.toHaveBeenCalled();
+  });
+
+  it('does not decrypt connection details for a terminal match', async () => {
+    const prisma = {
+      match: { findUnique: vi.fn().mockResolvedValue(match({ state: 'FINISHED' })) },
+    } as unknown as PrismaClient;
+    const cipher = { decrypt: vi.fn() };
+
+    await expect(
+      new MatchParticipantInfoService(prisma, cipher as never).get(matchId, 'guild-1', 'user-1'),
+    ).rejects.toThrow('not available');
     expect(cipher.decrypt).not.toHaveBeenCalled();
   });
 });

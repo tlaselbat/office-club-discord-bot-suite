@@ -48,7 +48,7 @@ import {
   buildAdminQueueConfiguration,
   configurationDraftFromSettings,
 } from './admin-queue-config-components.js';
-import { joinLeaveQueueButton, matchCenterButton, queueRefreshButton } from './queue-components.js';
+import { matchCenterButton, queueRefreshButton } from './queue-components.js';
 import { parseMatchAdminCustomId } from './match-admin-custom-id.js';
 import { parseMatchOpsCustomId } from './match-ops-custom-id.js';
 import { createQueueAdminCustomId, parseQueueAdminCustomId } from './queue-admin-custom-id.js';
@@ -367,6 +367,9 @@ export class TenManComponentInteractionRouter {
         this.options.componentSigningSecret,
       );
       if (payload.action !== 'MODAL') throw new Error('Unsupported modal namespace');
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       const rawInput = interaction.fields.getTextInputValue('steam_identifier');
       const result = await this.options.steamAccountService.assign({
         discordUserId: interaction.user.id,
@@ -380,14 +383,12 @@ export class TenManComponentInteractionRouter {
         case 'assigned':
         case 'replaced':
         case 'already_assigned':
-          await this.ephemeralReplies.reply(interaction, {
+          await interaction.editReply({
             content: buildAssignmentSuccessResponse(result.steamId64, result.displayName),
-            flags: MessageFlags.Ephemeral,
           });
           return;
         case 'duplicate':
-          await this.ephemeralReplies.reply(interaction, {
-            flags: MessageFlags.Ephemeral,
+          await interaction.editReply({
             ...buildDuplicateAssignmentResponse(
               payload.guildId,
               interaction.user.id,
@@ -397,21 +398,18 @@ export class TenManComponentInteractionRouter {
           });
           return;
         case 'invalid_input':
-          await this.ephemeralReplies.reply(interaction, {
+          await interaction.editReply({
             content: buildInvalidInputResponse(),
-            flags: MessageFlags.Ephemeral,
           });
           return;
         case 'api_unavailable':
-          await this.ephemeralReplies.reply(interaction, {
+          await interaction.editReply({
             content: buildApiUnavailableResponse(),
-            flags: MessageFlags.Ephemeral,
           });
           return;
         case 'locked':
-          await this.ephemeralReplies.reply(interaction, {
+          await interaction.editReply({
             content: buildLockedAssignmentResponse(result.reason),
-            flags: MessageFlags.Ephemeral,
           });
           return;
       }
@@ -428,6 +426,9 @@ export class TenManComponentInteractionRouter {
       ) {
         throw new Error('Map catalog modal does not belong to this interaction');
       }
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       const actor = await this.options.adminActorFor(interaction);
       assertAuthorized('CONFIGURE_GUILD', actor);
       const settings = await this.options.prisma.tenManSettings.findUnique({
@@ -444,7 +445,7 @@ export class TenManComponentInteractionRouter {
         correlationId: interaction.id,
       });
       const content = await this.buildMapPoolResponse(payload.guildId, interaction.user.id, 0);
-      await this.ephemeralReplies.reply(interaction, { ...content, flags: MessageFlags.Ephemeral });
+      await interaction.editReply(content);
       return;
     }
     if (interaction.customId.startsWith('tmd:')) {
@@ -454,6 +455,9 @@ export class TenManComponentInteractionRouter {
       );
       if (payload.action === 'MODAL') {
         if (payload.matchId === undefined) throw new Error('Missing match reference');
+        await this.ephemeralReplies.replace(interaction, () =>
+          interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+        );
         const reason = interaction.fields.getTextInputValue('dispute_reason');
         const result = await this.resultDisputeService.createDispute(
           payload.matchId,
@@ -461,9 +465,8 @@ export class TenManComponentInteractionRouter {
           reason,
           interaction.id,
         );
-        await this.ephemeralReplies.reply(interaction, {
+        await interaction.editReply({
           content: buildResultDisputeAcknowledgedResponse(result.id),
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -472,6 +475,9 @@ export class TenManComponentInteractionRouter {
           throw new Error('Administrative confirmation does not belong to this interaction');
         if (payload.disputeId === undefined || payload.resolution === undefined)
           throw new Error('Missing dispute resolution fields');
+        await this.ephemeralReplies.replace(interaction, () =>
+          interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+        );
         const actor = await this.options.adminActorFor(interaction);
         assertAuthorized('RESOLVE_DISPUTE', actor);
         const reason = interaction.fields.getTextInputValue('resolution_reason');
@@ -482,8 +488,7 @@ export class TenManComponentInteractionRouter {
           interaction.user.id,
           interaction.id,
         );
-        await this.ephemeralReplies.reply(interaction, {
-          flags: MessageFlags.Ephemeral,
+        await interaction.editReply({
           content:
             payload.resolution === 'REVERSE'
               ? 'Dispute accepted and match result reversed.'
@@ -502,6 +507,9 @@ export class TenManComponentInteractionRouter {
         throw new Error('Unsupported modal namespace');
       if (payload.actorDiscordUserId !== interaction.user.id)
         throw new Error('Administrative confirmation does not belong to this interaction');
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       const actor = await this.options.adminActorFor(interaction);
       assertAuthorized('QUEUE_BAN', actor);
       const reason = interaction.fields.getTextInputValue('ban_reason');
@@ -521,8 +529,7 @@ export class TenManComponentInteractionRouter {
         expiresAt,
         interaction.id,
       );
-      await this.ephemeralReplies.reply(interaction, {
-        flags: MessageFlags.Ephemeral,
+      await interaction.editReply({
         content: `<@${payload.targetDiscordUserId}> has been banned from the queue${expiresAt === null ? '' : ` until <t:${String(Math.floor(expiresAt.getTime() / 1000))}:f>`}.`,
       });
       return;
@@ -783,7 +790,9 @@ export class TenManComponentInteractionRouter {
       // Do not defer an update for a public singleton panel. If reconciliation
       // fails, the global error handler would otherwise replace that panel with
       // an error and remove its controls.
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       await this.queuePanelService.reconcile(payload.guildId);
       await interaction.editReply({ content: 'Match Queue panel refreshed.' });
       return;
@@ -859,32 +868,21 @@ export class TenManComponentInteractionRouter {
         return;
       }
       await this.queueService.leave(payload.guildId, interaction.user.id, interaction.id);
-      await interaction.editReply(await this.buildLeftQueueReply(payload.guildId, false));
+      await interaction.editReply(this.buildLeftQueueReply(false));
       return;
     }
 
     await this.queueService.leave(payload.guildId, interaction.user.id, interaction.id);
-    await interaction.editReply(await this.buildLeftQueueReply(payload.guildId, true));
+    await interaction.editReply(this.buildLeftQueueReply(true));
   }
 
-  private async buildLeftQueueReply(
-    guildId: string,
-    wasParty: boolean,
-  ): Promise<{ content: string; components: ActionRowBuilder<ButtonBuilder>[] }> {
-    const queue = await this.options.prisma.tenManQueue.findUnique({
-      where: { guildId },
-      select: { version: true },
-    });
+  private buildLeftQueueReply(wasParty: boolean): {
+    content: string;
+    components: ActionRowBuilder<ButtonBuilder>[];
+  } {
     return {
       content: wasParty ? 'Your party was removed from the queue.' : 'You left the queue.',
-      components:
-        queue === null
-          ? []
-          : [
-              new ActionRowBuilder<ButtonBuilder>().addComponents(
-                joinLeaveQueueButton(guildId, queue.version, this.options.componentSigningSecret),
-              ),
-            ],
+      components: [],
     };
   }
 
@@ -899,12 +897,6 @@ export class TenManComponentInteractionRouter {
       include: { entries: { orderBy: { joinedAt: 'asc' } } },
     });
     const version = queue?.version ?? 0;
-    const hubAndLeave = [
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        matchCenterButton(guildId, interaction.user.id, secret),
-        joinLeaveQueueButton(guildId, version, secret),
-      ),
-    ];
     const hubAndRefresh = [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         matchCenterButton(guildId, interaction.user.id, secret),
@@ -924,14 +916,7 @@ export class TenManComponentInteractionRouter {
                   `You'll receive a ready check when the queue reaches ${String(result.queueSize)} players.`,
                 ].join('\n')
               : '**Queue full — ready check has started.** Watch for the ready prompt.',
-          components:
-            result.promotedMatchId === undefined
-              ? hubAndLeave
-              : [
-                  new ActionRowBuilder<ButtonBuilder>().addComponents(
-                    matchCenterButton(guildId, interaction.user.id, secret),
-                  ),
-                ],
+          components: [],
         });
         return;
       }
@@ -947,7 +932,7 @@ export class TenManComponentInteractionRouter {
           ]
             .filter((line): line is string => line !== null)
             .join('\n'),
-          components: hubAndLeave,
+          components: [],
         });
         return;
       }
@@ -1204,7 +1189,9 @@ export class TenManComponentInteractionRouter {
       actor,
     );
     if (payload.action === 'CONFIGURE') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       const settings = await this.options.prisma.tenManSettings.findUnique({
         where: { guildId: payload.guildId },
         select: {
@@ -1225,7 +1212,9 @@ export class TenManComponentInteractionRouter {
       return;
     }
     if (payload.action === 'MODERATORS') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       await interaction.editReply(
         buildMatchModeratorPanel(
           payload.guildId,
@@ -1237,7 +1226,9 @@ export class TenManComponentInteractionRouter {
       return;
     }
     if (payload.action === 'MAPS') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
       await interaction.editReply(
         await this.buildMapPoolResponse(payload.guildId, interaction.user.id, 0),
       );
@@ -1249,7 +1240,9 @@ export class TenManComponentInteractionRouter {
     });
     if (payload.action !== 'REFRESH' && payload.version !== (queue?.version ?? 0))
       throw new Error('Admin panel is stale; refresh and try again.');
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await this.ephemeralReplies.replace(interaction, () =>
+      interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+    );
     if (payload.action === 'OPEN') {
       await this.queueService.openEnrollment({
         guildId: payload.guildId,
@@ -1724,8 +1717,11 @@ export class TenManComponentInteractionRouter {
     interaction: MessageComponentInteraction,
     guildId: string,
   ): Promise<void> {
-    await interaction.deferUpdate();
+    await this.ephemeralReplies.replace(interaction, () =>
+      interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+    );
     await this.queuePanelService.reconcile(guildId);
+    await interaction.editReply({ content: 'The queue changed; the panel has been refreshed.' });
   }
 
   private async handleMatchAdmin(interaction: MessageComponentInteraction): Promise<void> {

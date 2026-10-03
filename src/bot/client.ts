@@ -248,14 +248,13 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
         'Discord interaction failed',
       );
       const content = publicMessage(error, interaction.id);
-      if (interaction.isModalSubmit()) {
+      if (interaction.deferred) {
+        await interaction.editReply({ content, components: [] }).catch(() => undefined);
+      } else if (interaction.isModalSubmit()) {
         await ephemeralReplies
           .reply(interaction, { content, components: [] })
           .catch(() => undefined);
         return;
-      }
-      if (interaction.deferred) {
-        await interaction.editReply({ content, components: [] }).catch(() => undefined);
       } else if (interaction.replied) {
         await interaction
           .followUp({ content, flags: MessageFlags.Ephemeral })

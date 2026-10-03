@@ -24,6 +24,7 @@ function interaction(customId: string) {
 
 function router(
   match: { id: string; guildId: string; version: number; phaseGeneration: number } | null,
+  participantInfo = { get: vi.fn() },
 ) {
   const prisma = {
     match: { findUnique: vi.fn().mockResolvedValue(match) },
@@ -33,7 +34,7 @@ function router(
       prisma,
       componentSigningSecret: secret,
       actorFor: vi.fn(),
-      participantInfo: { get: vi.fn() },
+      participantInfo,
     }),
     prisma,
   };
@@ -117,5 +118,61 @@ describe('interaction router stale-control guard', () => {
 
     await expect(subject.handle(event as never)).rejects.toThrow('Match dashboard is stale');
     expect(event.editReply).not.toHaveBeenCalled();
+  });
+
+  it('never resolves private match details for stale or tampered controls', async () => {
+    const participantInfo = { get: vi.fn() };
+    const { router: subject } = router(
+      { id: matchId, guildId: '123456789012345678', version: 2, phaseGeneration: 1 },
+      participantInfo,
+    );
+    const stale = interaction(
+      createMatchCustomId(
+        { action: 'MY_MATCH_INFO', matchId, version: 1, phaseGeneration: 1 },
+        secret,
+      ),
+    );
+    const tampered = interaction(
+      createMatchCustomId(
+        { action: 'MY_MATCH_INFO', matchId, version: 2, phaseGeneration: 1 },
+        secret,
+      ).replace(/.$/u, 'x'),
+    );
+
+    await expect(subject.handle(stale as never)).rejects.toThrow('Match dashboard is stale');
+    await expect(subject.handle(tampered as never)).rejects.toThrow('signature');
+
+    expect(participantInfo.get).not.toHaveBeenCalled();
+    expect(stale.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(tampered.deferReply).not.toHaveBeenCalled();
+  });
+
+  it('uses an ephemeral reply for private match information', async () => {
+    const participantInfo = {
+      get: vi.fn().mockResolvedValue({
+        team: 'TEAM_1',
+        map: 'de_mirage',
+        voiceChannelId: 'voice-1',
+        address: '192.0.2.1:27015',
+        password: 'join-password',
+      }),
+    };
+    const { router: subject } = router(
+      { id: matchId, guildId: '123456789012345678', version: 1, phaseGeneration: 1 },
+      participantInfo,
+    );
+    const event = interaction(
+      createMatchCustomId(
+        { action: 'MY_MATCH_INFO', matchId, version: 1, phaseGeneration: 1 },
+        secret,
+      ),
+    );
+
+    await subject.handle(event as never);
+
+    expect(event.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(event.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('join-password') }),
+    );
   });
 });

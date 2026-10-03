@@ -2,10 +2,7 @@ import { MessageFlags } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 import { TenManComponentInteractionRouter } from '../../../src/modules/tenman/bot/interaction-router.js';
-import {
-  createQueueCustomId,
-  parseQueueCustomId,
-} from '../../../src/modules/tenman/bot/queue-custom-id.js';
+import { createQueueCustomId } from '../../../src/modules/tenman/bot/queue-custom-id.js';
 import { createSteamAccountCustomId } from '../../../src/modules/tenman/bot/steam-account-custom-id.js';
 import { createPlayerHubCustomId } from '../../../src/modules/tenman/bot/player-hub-custom-id.js';
 
@@ -23,6 +20,7 @@ function interaction(customId: string, componentsV2 = false) {
     deferReply: vi.fn().mockResolvedValue(undefined),
     editReply: vi.fn().mockResolvedValue(undefined),
     reply: vi.fn().mockResolvedValue(undefined),
+    deleteReply: vi.fn().mockResolvedValue(undefined),
     deferUpdate: vi.fn().mockResolvedValue(undefined),
     update: vi.fn().mockResolvedValue(undefined),
     showModal: vi.fn().mockResolvedValue(undefined),
@@ -105,9 +103,12 @@ describe('queue component interactions', () => {
       createQueueCustomId({ action: 'TOGGLE', guildId, version: 5 }, secret),
     );
     await router(prisma).handle(event as never);
-    expect(event.deferUpdate).toHaveBeenCalledOnce();
+    expect(event.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
     expect(event.reply).not.toHaveBeenCalled();
-    expect(event.deferReply).not.toHaveBeenCalled();
+    expect(event.deferUpdate).not.toHaveBeenCalled();
+    expect(event.editReply).toHaveBeenCalledWith({
+      content: 'The queue changed; the panel has been refreshed.',
+    });
   });
 
   it('keeps How It Works usable even when the panel version is stale', async () => {
@@ -144,6 +145,22 @@ describe('queue component interactions', () => {
     expect(event.editReply).toHaveBeenCalledWith({ content: 'Match Queue panel refreshed.' });
   });
 
+  it('replaces a member’s previous ephemeral queue refresh reply', async () => {
+    const subject = router(prismaMock({}));
+    const first = interaction(
+      createQueueCustomId({ action: 'REFRESH', guildId, version: 0 }, secret),
+    );
+    const second = interaction(
+      createQueueCustomId({ action: 'REFRESH', guildId, version: 0 }, secret),
+    );
+
+    await subject.handle(first as never);
+    await subject.handle(second as never);
+
+    expect(first.deleteReply).toHaveBeenCalledOnce();
+    expect(second.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+  });
+
   it('returns a rich ephemeral summary on join success', async () => {
     const prisma = prismaMock({
       joinResult: {
@@ -162,13 +179,10 @@ describe('queue component interactions', () => {
     expect(reply.content).toContain("You're in the queue");
     expect(reply.content).toContain('3 / 10');
     expect(reply.content).toContain('Needed: 7');
-    const labels = reply.components.flatMap((row) =>
-      row.toJSON().components.map((component) => component.label),
-    );
-    expect(labels).toEqual(['Player Center UI', 'Join / Leave Queue']);
+    expect(reply.components).toEqual([]);
   });
 
-  it('leaves the queue with a rejoin action for an individual entry', async () => {
+  it('confirms an individual leave without duplicating Match Queue controls', async () => {
     const prisma = prismaMock({
       queue: {
         guildId,
@@ -184,18 +198,10 @@ describe('queue component interactions', () => {
     await router(prisma).handle(event as never);
     const reply = event.editReply.mock.calls.at(0)?.[0] as {
       content: string;
-      components: { toJSON(): { components: { label?: string; custom_id?: string }[] } }[];
+      components: unknown[];
     };
     expect(reply.content).toBe('You left the queue.');
-    const buttons = reply.components.flatMap((row) => row.toJSON().components);
-    expect(buttons.map((component) => component.label)).toEqual(['Join / Leave Queue']);
-    // The recovery button must carry a valid, current-version signature.
-    const customId = buttons[0]?.custom_id ?? '';
-    expect(parseQueueCustomId(customId, secret)).toEqual({
-      action: 'TOGGLE',
-      guildId,
-      version: 5,
-    });
+    expect(reply.components).toEqual([]);
   });
 
   it('executes a confirmed party leave and reports the removal', async () => {
@@ -215,8 +221,12 @@ describe('queue component interactions', () => {
       createQueueCustomId({ action: 'LEAVE_CONFIRM', guildId, version: 5 }, secret),
     );
     await router(prisma).handle(event as never);
-    const reply = event.editReply.mock.calls.at(0)?.[0] as { content: string };
+    const reply = event.editReply.mock.calls.at(0)?.[0] as {
+      content: string;
+      components: unknown[];
+    };
     expect(reply.content).toBe('Your party was removed from the queue.');
+    expect(reply.components).toEqual([]);
   });
 
   it('explains a queue ban with its expiry instead of failing', async () => {
@@ -261,9 +271,13 @@ describe('queue component interactions', () => {
     });
     const event = interaction(createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret));
     await router(prisma).handle(event as never);
-    const reply = event.editReply.mock.calls.at(0)?.[0] as { content: string };
+    const reply = event.editReply.mock.calls.at(0)?.[0] as {
+      content: string;
+      components: unknown[];
+    };
     expect(reply.content).toContain('already in the queue');
     expect(reply.content).toContain('Position: 2');
+    expect(reply.components).toEqual([]);
   });
 
   it('requires confirmation before a party leave removes every member', async () => {
@@ -384,5 +398,47 @@ describe('steam account panel entry point', () => {
     expect(reply.content).toContain('does not verify Steam ownership');
     const labels = reply.components[0]?.components.map((component) => component.label);
     expect(labels).toEqual(['Change Steam Account', 'Remove Assignment']);
+  });
+
+  it('acknowledges Steam assignment modals ephemerally before the external assignment runs', async () => {
+    const prisma = prismaMock({});
+    const assign = vi.fn().mockResolvedValue({
+      status: 'assigned',
+      steamId64: '76561198000000000',
+      displayName: 'Player',
+    });
+    const subject = new TenManComponentInteractionRouter({
+      prisma,
+      componentSigningSecret: secret,
+      actorFor: vi.fn(),
+      adminActorFor: vi.fn(),
+      participantInfo: { get: vi.fn() } as never,
+      discord: { channels: { fetch: vi.fn() } } as never,
+      guildResourceService: {} as never,
+      matchService: {} as never,
+      steamAccountService: { assign } as never,
+      steamProfileService: {} as never,
+    });
+    const event = {
+      ...interaction(
+        createSteamAccountCustomId(
+          { action: 'MODAL', guildId, actorDiscordUserId: userId },
+          secret,
+        ),
+      ),
+      fields: { getTextInputValue: vi.fn().mockReturnValue('76561198000000000') },
+      isModalSubmit: vi.fn().mockReturnValue(true),
+      isMessageComponent: vi.fn().mockReturnValue(false),
+    };
+
+    await subject.handle(event as never);
+
+    expect(event.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(event.deferReply.mock.invocationCallOrder[0]).toBeLessThan(
+      assign.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(event.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('assigned') }),
+    );
   });
 });
