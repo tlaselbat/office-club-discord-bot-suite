@@ -15,29 +15,31 @@ export const dathostServerSchema = z.looseObject({
   id: z.string().min(1),
   name: z.string(),
   user_data: z.string().nullable().optional(),
-  location: z.string().optional(),
+  location: z.string().nullable().optional(),
   created_at: z.number().int().nonnegative(),
-  on: z.boolean().optional(),
+  on: z.boolean().nullable().optional(),
   booting: z.boolean(),
-  game: z.string().optional(),
-  ip: z.string().optional(),
-  raw_ip: z.string().optional(),
+  game: z.string().nullable().optional(),
+  ip: z.string().nullable().optional(),
+  raw_ip: z.string().nullable().optional(),
   custom_domain: z.string().nullable().optional(),
-  players_online: z.number().int().nonnegative().optional(),
+  players_online: z.number().int().nonnegative().nullable().optional(),
   ports: z.looseObject({ game: z.number().int().min(1).max(65_535) }).optional(),
   cs2_settings: z
     .looseObject({
-      slots: z.number().int().positive().optional(),
-      max_players: z.number().int().positive().optional(),
+      slots: z.number().int().positive().nullable().optional(),
+      max_players: z.number().int().positive().nullable().optional(),
     })
+    .nullable()
     .optional(),
   csgo_settings: z
     .looseObject({
-      slots: z.number().int().positive().optional(),
-      max_players: z.number().int().positive().optional(),
+      slots: z.number().int().positive().nullable().optional(),
+      max_players: z.number().int().positive().nullable().optional(),
     })
+    .nullable()
     .optional(),
-  deletion_protection: z.boolean().optional(),
+  deletion_protection: z.boolean().nullable().optional(),
 });
 
 export const dathostFileSchema = z.object({

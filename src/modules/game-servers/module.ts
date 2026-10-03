@@ -459,7 +459,7 @@ function assertAdministrator(
     throw new Error('Administrator permission required');
 }
 
-function isSupportedCs2(game: string | undefined): boolean {
+function isSupportedCs2(game: string | null | undefined): boolean {
   return game === 'cs2' || game === 'csgo';
 }
 

@@ -29,6 +29,28 @@ describe('DatHostClient monitoring', () => {
     expect(requestedUrl(request, 0).href).toBe('https://example.test/api/0.1/game-servers/a%2Fb');
   });
 
+  it('accepts nullable fields returned for inactive and non-CS2 inventory entries', async () => {
+    const inventory = [
+      {
+        ...server,
+        game: 'cs2',
+        ip: null,
+        raw_ip: null,
+        players_online: null,
+        cs2_settings: null,
+        csgo_settings: null,
+      },
+    ];
+    const request = vi.fn<typeof fetch>().mockResolvedValue(response(inventory));
+    const client = new DatHostClient({
+      email: 'bot@example.com',
+      password: 'secret',
+      baseUrl: 'https://example.test/api/0.1/',
+      fetch: request,
+    });
+    await expect(client.listServers()).resolves.toMatchObject(inventory);
+  });
+
   it('parses loose server fields and typed monitoring tuples', async () => {
     const request = vi
       .fn<typeof fetch>()
