@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { Client, ComponentType, ContainerBuilder, type APIContainerComponent } from 'discord.js';
 import {
   renderAddGameServersPanel,
   renderGameServerCard,
   renderGameServerDetail,
   resolveMapImageUrl,
+  displayMapName,
+  cardFingerprint,
   type ServerView,
 } from '../../../../src/modules/game-servers/renderer.js';
 
@@ -80,6 +83,22 @@ function buttons(container: Record<string, unknown>): Record<string, unknown>[] 
 }
 
 describe('Game Server rendering', () => {
+  it('serializes to valid Discord API components through the installed discord.js transformer', () => {
+    const client = new Client({ intents: [] });
+    const container = firstContainer(renderGameServerCard(server, secret));
+    const transform = client.options.jsonTransformer;
+    if (transform === undefined) throw new Error('Expected the default Discord JSON transformer');
+    const api = transform(container) as APIContainerComponent;
+    expect(api.accent_color).toBe(0x23a55a);
+    expect(() => new ContainerBuilder(api).toJSON()).not.toThrow();
+    const row = api.components.at(-1);
+    expect(row?.type).toBe(1);
+    if (row?.type === ComponentType.ActionRow) {
+      expect(row.components).toHaveLength(2);
+      expect(row.components[0]).toHaveProperty('custom_id', expect.stringMatching(/^gs:connect:/));
+    }
+  });
+
   it('renders Add Game Servers panel with title and Add Server button', () => {
     const result = renderAddGameServersPanel([server], secret);
     const embed = result.embeds[0]?.toJSON();
@@ -164,8 +183,8 @@ describe('Game Server rendering', () => {
   it('renders the map media gallery with the fallback arena image', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
     const components = containerComponents(container);
-    expect(components[1]?.type).toBe(12);
-    const gallery = components[1] as Record<string, unknown>;
+    expect(components[3]?.type).toBe(12);
+    const gallery = components[3] as Record<string, unknown>;
     const items = gallery.items as Record<string, unknown>[];
     expect(items).toHaveLength(1);
     expect((items[0]?.media as Record<string, unknown>).url).toContain('clickcs-arena.jpg');
@@ -214,7 +233,7 @@ describe('Game Server rendering', () => {
   it('resolves the configured server image URL as map fallback before the default arena image', () => {
     const view = { ...server, imageUrl: 'https://example.com/server-map.png' };
     const container = firstContainer(renderGameServerCard(view, secret));
-    const gallery = containerComponents(container)[1] as Record<string, unknown>;
+    const gallery = containerComponents(container)[3] as Record<string, unknown>;
     const items = gallery.items as Record<string, unknown>[];
     expect((items[0]?.media as Record<string, unknown>).url).toBe(
       'https://example.com/server-map.png',
@@ -246,10 +265,66 @@ describe('Game Server rendering', () => {
     expect(text).not.toContain('📍');
   });
 
-  it('keeps metadata compact in one TextDisplay inside the header Section', () => {
+  it('places compact metadata after a small native divider and before the banner/actions', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
-    const section = containerComponents(container)[0] as Record<string, unknown>;
-    expect(section.components as Record<string, unknown>[]).toHaveLength(3);
+    const components = containerComponents(container);
+    expect(components.map((component) => component.type)).toEqual([9, 14, 10, 12, 1]);
+    const section = components[0] as Record<string, unknown>;
+    expect(section.components as Record<string, unknown>[]).toHaveLength(1);
+    expect(components[1]).toEqual({ type: 14, divider: true, spacing: 1 });
+    expect(String(components[2]?.content).split('\n')).toEqual([
+      '🗺️ **Current Map** `aim_map_office`',
+      '🖥️ **Host** 1v1 Arena',
+      '🔗 **Connect** `arena.example.com:27015`',
+    ]);
+  });
+
+  it('normalizes the location once in the header', () => {
+    const view = { ...server, snapshot: { ...baseSnapshot, datacenter: 'dallas' } };
+    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
+    expect(text.match(/Dallas/g)).toHaveLength(1);
+    expect(text).not.toContain('dallas');
+  });
+
+  it.each([null, '', '   '])('uses Unknown for an unresolved map: %s', (map) => {
+    expect(displayMapName(map)).toBe('Unknown');
+    const view = { ...server, snapshot: { ...baseSnapshot, map } };
+    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).toContain('`Unknown`');
+  });
+
+  it('normalizes workshop paths and extensions for both display and artwork', () => {
+    expect(displayMapName(' workshop/123/aim_map_office.bsp ')).toBe('aim_map_office');
+    expect(
+      resolveMapImageUrl(
+        'workshop/123/aim_map_office.bsp',
+        'https://example.com/fallback.jpg',
+        () => true,
+      ),
+    ).toContain('/maps/aim_map_office.webp');
+    expect(resolveMapImageUrl('../../private', null, () => true)).toContain('/maps/fallback/');
+  });
+
+  it('preserves long values and full occupancy without alignment padding', () => {
+    const map = `aim_${'long_map_'.repeat(12)}`;
+    const hostname = 'Long Host '.repeat(20).trim();
+    const connectDomain = `${'long-address-'.repeat(8)}example.com`;
+    const view = {
+      ...server,
+      connectDomain,
+      snapshot: { ...baseSnapshot, map, hostname, players: 16 },
+    };
+    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
+    expect(text).toContain(map);
+    expect(text).toContain(hostname);
+    expect(text).toContain(connectDomain);
+    expect(text).toContain('16 / 16 players');
+    expect(text).not.toContain('\u00a0');
+  });
+
+  it('keeps the fingerprint stable when only observation times change', () => {
+    const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
+    expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
+    expect(cardFingerprint(view).layoutVersion).toBe(2);
   });
 
   it('omits unavailable detail metrics instead of rendering N/A', () => {

@@ -20,6 +20,7 @@ const componentType = {
   textDisplay: 10,
   thumbnail: 11,
   mediaGallery: 12,
+  separator: 14,
   container: 17,
 } as const;
 
@@ -69,6 +70,7 @@ export interface ServerView {
 }
 
 export interface CardFingerprint {
+  layoutVersion: number;
   accentColor: number | null;
   displayName: string;
   status: string;
@@ -138,22 +140,19 @@ export function renderAddGameServersPanel(
 export function renderGameServerCard(server: ServerView, secret: string) {
   const snapshot = server.snapshot;
   const accentColor = containerAccentColor(snapshot);
-  const location = snapshot?.datacenter ?? null;
+  const location = displayLocation(snapshot?.datacenter ?? null);
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
 
   const metadataBlock = [
-    `**Current Map** \`${displayMap}\`  •  **Host** ${serverHost(server)}`,
-    `**Connect** \`${connectAddress(server) ?? 'Unavailable'}\``,
+    `🗺️ **Current Map** \`${displayMap}\``,
+    `🖥️ **Host** ${serverHost(server)}`,
+    `🔗 **Connect** \`${connectAddress(server) ?? 'Unavailable'}\``,
   ].join('\n');
 
   const headerSection = {
     type: componentType.section,
-    components: [
-      textDisplay(`# ${server.displayName}`),
-      textDisplay(statusLine(snapshot, location)),
-      textDisplay(metadataBlock),
-    ],
+    components: [textDisplay(`# ${server.displayName}\n${statusLine(snapshot, location)}`)],
     accessory: {
       type: componentType.thumbnail,
       media: { url: serverIdentityIconUrl() },
@@ -177,7 +176,13 @@ export function renderGameServerCard(server: ServerView, secret: string) {
 
   const container: Record<string, unknown> = {
     type: componentType.container,
-    components: [headerSection, mapGallery, actionRow],
+    components: [
+      headerSection,
+      { type: componentType.separator, divider: true, spacing: 1 },
+      textDisplay(metadataBlock),
+      mapGallery,
+      actionRow,
+    ],
   };
   if (accentColor !== null) container.accentColor = accentColor;
 
@@ -244,13 +249,14 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
+    layoutVersion: 2,
     accentColor: containerAccentColor(snapshot),
     displayName: server.displayName,
     status: statusLabel(snapshot),
     players: playerCount(snapshot),
     map: displayMap,
     mapImageUrl: resolveMapImageUrl(map, server.imageUrl),
-    location: snapshot?.datacenter ?? null,
+    location: displayLocation(snapshot?.datacenter ?? null),
     host: serverHost(server),
     connectAddress: connectAddress(server),
     hasJoinUrl: server.joinUrl !== null,
@@ -303,6 +309,12 @@ function statusLine(snapshot: SnapshotView | null, location: string | null): str
   return `${statusEmoji(snapshot)} **${statusLabel(snapshot)}**  \u2022  👥 **${playerCount(snapshot)}**${locationSuffix}`;
 }
 
+function displayLocation(location: string | null): string | null {
+  const trimmed = location?.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\b\p{Ll}/gu, (letter) => letter.toUpperCase());
+}
+
 function statusEmoji(snapshot: SnapshotView | null): string {
   if (snapshot === null) return '⚪';
   if (snapshot.stale) return '🟡';
@@ -352,7 +364,8 @@ export function resolveMapImageUrl(
   fileExists: (path: string) => boolean = existsSync,
 ): string {
   const displayMap = displayMapName(map);
-  if (displayMap !== 'Unknown') {
+  // Only canonical map filenames may participate in local asset lookup.
+  if (displayMap !== 'Unknown' && /^[a-zA-Z0-9_-]+$/.test(displayMap)) {
     for (const ext of ['webp', 'png', 'jpg']) {
       const localPath = path.join(
         process.cwd(),
@@ -375,11 +388,10 @@ function serverIdentityIconUrl(): string {
 }
 
 export function displayMapName(map: string | null): string {
-  if (map === null) return 'Unknown';
-  const workshopMatch = /^workshop\/\d+\/(?<name>.+)$/.exec(map);
-  if (workshopMatch?.groups?.name !== undefined) return workshopMatch.groups.name;
-  const withoutExtension = map.replace(/\.bsp$/i, '');
-  return withoutExtension;
+  const trimmed = map?.trim();
+  if (!trimmed) return 'Unknown';
+  const canonical = trimmed.replace(/^workshop\/\d+\//i, '').replace(/\.bsp$/i, '');
+  return canonical || 'Unknown';
 }
 
 function color(snapshot: SnapshotView | null): number {

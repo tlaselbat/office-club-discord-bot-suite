@@ -6,6 +6,7 @@ import {
   scheduleGameServerCardRefresh,
 } from '../../../../src/modules/game-servers/card-service.js';
 import type { ServerView } from '../../../../src/modules/game-servers/renderer.js';
+import { cardFingerprint } from '../../../../src/modules/game-servers/renderer.js';
 
 const serverView: ServerView = {
   id: '513af1bb-31fa-4b17-bd2e-2ec450984cea',
@@ -156,6 +157,34 @@ describe('GameServerCardService', () => {
   });
 
   describe('refreshCard', () => {
+    it('refreshes an older layout on the same message even when server state is unchanged', async () => {
+      const oldFingerprint: Partial<ReturnType<typeof cardFingerprint>> =
+        cardFingerprint(serverView);
+      delete oldFingerprint.layoutVersion;
+      const prisma = createMockPrisma({
+        gameServerCard: {
+          findUnique: vi.fn().mockResolvedValue(createCard({ fingerprint: oldFingerprint })),
+        },
+      });
+      const discord = createMockDiscord();
+      const service = new GameServerCardService(prisma, discord, 'secret');
+      await service.refreshCard('card-1');
+      const channel = await discord.channels.fetch('channel-1');
+      const mockChannel = channel as unknown as {
+        send: ReturnType<typeof vi.fn>;
+        messages: { fetch: ReturnType<typeof vi.fn> };
+      };
+      expect(mockChannel.messages.fetch).toHaveBeenCalledWith('msg-1');
+      expect(mockChannel.send).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.update).toHaveBeenCalledWith({
+        where: { id: 'card-1' },
+        data: {
+          lastKnownState: cardFingerprint(serverView),
+          lastSuccessfulPollAt: serverView.snapshot?.lastSuccessfulAt,
+        },
+      });
+    });
+
     it('edits the Discord message when visible state has changed', async () => {
       const message = { id: 'msg-1', edit: vi.fn().mockResolvedValue({}) };
       const fetchMessages = vi.fn().mockResolvedValue(message);
@@ -195,6 +224,7 @@ describe('GameServerCardService', () => {
           findUnique: vi.fn().mockResolvedValue(
             createCard({
               fingerprint: {
+                layoutVersion: 2,
                 accentColor: 0x23a55a,
                 displayName: '1v1 Arena',
                 status: 'Online',
