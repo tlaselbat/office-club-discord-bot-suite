@@ -27,7 +27,6 @@ describe('match command tree', () => {
       (option) => option.type === ApplicationCommandOptionType.Subcommand,
     );
     expect(direct?.map((option) => option.name)).toEqual([
-      'center',
       'account',
       'history',
       'stats',

@@ -9,8 +9,8 @@ commands are exposed as direct subcommands. Staff operations live under the
 `/match admin` subcommand group. Server lifecycle and configuration live under
 `/match config`.
 
-Discord does not allow a bare top-level command to coexist with subcommands, so
-the Player Center is reached explicitly via `/match center`.
+The persistent Match Queue panel contains the personal queue, history, stats,
+and team controls; slash commands cover account management and direct views.
 
 All commands can be invoked from any guild channel. Authorization is enforced
 at execution time by the bot's actor context (leader / participant /
@@ -27,14 +27,13 @@ hiding these commands would lock out legitimate staff.
 
 ## Player commands
 
-| Command                   | Result                                                                       |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| `/match center`           | Player Center: queue status, ready check, active match, team, history, stats |
-| `/match account`          | Steam account panel: assign, review, change, remove, dispute                 |
-| `/match history [player]` | Recent finished matches; staff also see rollback controls                    |
-| `/match stats [player]`   | Rating and record                                                            |
-| `/match team`             | Team Status panel: create, invite, accept, leave, kick, disband              |
-| `/match alerts <enabled>` | Opt in/out of Match Queue fill DM alerts                                     |
+| Command                   | Result                                                          |
+| ------------------------- | --------------------------------------------------------------- |
+| `/match account`          | Steam account panel: assign, review, change, remove, dispute    |
+| `/match history [player]` | Recent finished matches; staff also see rollback controls       |
+| `/match stats [player]`   | Rating and record                                               |
+| `/match team`             | Team Status panel: create, invite, accept, leave, kick, disband |
+| `/match alerts <enabled>` | Opt in/out of Match Queue fill DM alerts                        |
 
 ## Staff commands (`/match admin`)
 
@@ -65,7 +64,7 @@ from Discord clients within roughly an hour of registration.
 | Legacy command                        | Now                                                     |
 | ------------------------------------- | ------------------------------------------------------- |
 | `/10man`                              | `/match`                                                |
-| `/10man hub`                          | `/match center`                                         |
+| `/10man hub`                          | Match Queue panel                                       |
 | `/10man account`                      | `/match account`                                        |
 | `/10man history`                      | `/match history`                                        |
 | `/10man stats`                        | `/match stats`                                          |

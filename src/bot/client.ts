@@ -16,10 +16,8 @@ import type { PrismaClient } from '../generated/prisma/client.js';
 import type { MatchService } from '../modules/tenman/services/match-service.js';
 import type { SteamAccountService } from '../modules/tenman/services/steam-account-service.js';
 import type { SteamProfileService } from '../modules/tenman/services/steam-profile-service.js';
-import { PlayerStatusService } from '../modules/tenman/services/player-status-service.js';
 import { SteamAdminService } from '../modules/tenman/services/steam-admin-service.js';
 import { GuildSettingsService } from '../modules/tenman/services/guild-settings-service.js';
-import { buildMatchCenterResponse } from '../modules/tenman/bot/player-hub-components.js';
 import { MatchResultDisputeService } from '../modules/tenman/services/match-result-dispute-service.js';
 import { QueueAlertService } from '../modules/tenman/services/queue-alert-service.js';
 import type { DatHostClient } from '../modules/tenman/integrations/dathost/client.js';
@@ -283,34 +281,6 @@ async function handleCommand(
   const subcommand = interaction.options.getSubcommand();
 
   if (interaction.commandName === 'match' && subcommandGroup === null) {
-    if (subcommand === 'center') {
-      const [status, queue, match] = await Promise.all([
-        new PlayerStatusService(dependencies.prisma).getStatus(
-          interaction.guildId,
-          interaction.user.id,
-        ),
-        dependencies.prisma.tenManQueue.findUnique({ where: { guildId: interaction.guildId } }),
-        dependencies.prisma.match.findFirst({
-          where: {
-            guildId: interaction.guildId,
-            guildSlotActive: true,
-            players: { some: { discordUserId: interaction.user.id } },
-          },
-          orderBy: { createdAt: 'desc' },
-        }),
-      ]);
-      const { embeds, components } = buildMatchCenterResponse(
-        status,
-        interaction.guildId,
-        interaction.user.id,
-        queue?.version ?? 0,
-        match?.version ?? 0,
-        match?.phaseGeneration ?? 0,
-        dependencies.componentSigningSecret,
-      );
-      await interaction.editReply({ embeds, components });
-      return;
-    }
     if (subcommand === 'account') {
       await renderSteamAccountStatus(
         interaction,

@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
-const actionSchema = z.enum(['HUB', 'HISTORY', 'STATS']);
+const actionSchema = z.enum(['HISTORY', 'STATS']);
 const snowflakeSchema = z.string().regex(/^\d{17,20}$/);
 
 const payloadSchema = z.object({

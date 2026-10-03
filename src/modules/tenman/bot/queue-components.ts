@@ -1,7 +1,8 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { createMatchCustomId } from './match-custom-id.js';
-import { createQueueCustomId } from './queue-custom-id.js';
+import { createPartyCustomId } from './party-custom-id.js';
 import { createPlayerHubCustomId } from './player-hub-custom-id.js';
+import { createQueueCustomId } from './queue-custom-id.js';
 import { createSteamAccountCustomId } from './steam-account-custom-id.js';
 
 const PANEL_ACTOR_PLACEHOLDER = '00000000000000000000';
@@ -23,16 +24,39 @@ export function joinLeaveQueueButton(
     .setStyle(ButtonStyle.Success);
 }
 
-export function matchCenterButton(
+export function matchHistoryButton(
   guildId: string,
   actorDiscordUserId: string,
   secret: string,
-  label = 'Player Center UI',
 ): ButtonBuilder {
   return new ButtonBuilder()
-    .setCustomId(createPlayerHubCustomId({ action: 'HUB', guildId, actorDiscordUserId }, secret))
-    .setLabel(label)
-    .setStyle(ButtonStyle.Primary);
+    .setCustomId(
+      createPlayerHubCustomId({ action: 'HISTORY', guildId, actorDiscordUserId }, secret),
+    )
+    .setLabel('Match History')
+    .setStyle(ButtonStyle.Secondary);
+}
+
+export function statsButton(
+  guildId: string,
+  actorDiscordUserId: string,
+  secret: string,
+): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(createPlayerHubCustomId({ action: 'STATS', guildId, actorDiscordUserId }, secret))
+    .setLabel('Stats')
+    .setStyle(ButtonStyle.Secondary);
+}
+
+export function teamStatusButton(
+  guildId: string,
+  actorDiscordUserId: string,
+  secret: string,
+): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(createPartyCustomId({ action: 'PANEL', guildId, actorDiscordUserId }, secret))
+    .setLabel('Team Status')
+    .setStyle(ButtonStyle.Secondary);
 }
 
 export function steamAccountButton(guildId: string, secret: string): ButtonBuilder {
@@ -88,12 +112,14 @@ export function buildQueueControls(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       joinLeaveQueueButton(guildId, version, secret),
       readyButton(secret),
-      matchCenterButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+      matchHistoryButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+      statsButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       steamAccountButton(guildId, secret),
       howItWorksButton(guildId, version, secret),
       queueRefreshButton(guildId, version, secret),
+      teamStatusButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),
   ];
 }
@@ -115,12 +141,14 @@ export function buildLockedQueueControls(
         .setLabel('Queue Locked')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(true),
-      matchCenterButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+      matchHistoryButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
+      statsButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       steamAccountButton(guildId, secret),
       howItWorksButton(guildId, version, secret),
       queueRefreshButton(guildId, version, secret),
+      teamStatusButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),
   ];
 }

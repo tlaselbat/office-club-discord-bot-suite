@@ -27,7 +27,6 @@ import type { GuildResourceService } from '../services/guild-resource-service.js
 import { QueuePanelService } from '../services/queue-panel-service.js';
 import { AdminPanelService } from '../services/admin-panel-service.js';
 import { GuildSettingsService } from '../services/guild-settings-service.js';
-import { PlayerStatusService } from '../services/player-status-service.js';
 import type { SteamAccountService } from '../services/steam-account-service.js';
 import { SteamAdminService } from '../services/steam-admin-service.js';
 import type { SteamProfileService } from '../services/steam-profile-service.js';
@@ -48,13 +47,13 @@ import {
   buildAdminQueueConfiguration,
   configurationDraftFromSettings,
 } from './admin-queue-config-components.js';
-import { matchCenterButton, queueRefreshButton } from './queue-components.js';
+import { queueRefreshButton } from './queue-components.js';
 import { parseMatchAdminCustomId } from './match-admin-custom-id.js';
 import { parseMatchOpsCustomId } from './match-ops-custom-id.js';
 import { createQueueAdminCustomId, parseQueueAdminCustomId } from './queue-admin-custom-id.js';
 import { parsePartyCustomId } from './party-custom-id.js';
 import { parsePlayerAdminCustomId } from './player-admin-custom-id.js';
-import { parsePlayerHubCustomId, createPlayerHubCustomId } from './player-hub-custom-id.js';
+import { parsePlayerHubCustomId } from './player-hub-custom-id.js';
 import {
   parseSteamAccountCustomId,
   createSteamAccountCustomId,
@@ -63,7 +62,6 @@ import {
   parseResultDisputeCustomId,
   createResultDisputeCustomId,
 } from './match-result-dispute-custom-id.js';
-import { buildMatchCenterResponse } from './player-hub-components.js';
 import { buildPartyInviteAcceptRows, buildPartyPanelResponse } from './party-components.js';
 import {
   buildAdminMatchPanel,
@@ -301,7 +299,6 @@ export class TenManComponentInteractionRouter {
   private readonly guildSettingsService: GuildSettingsService;
   private readonly matchHistory: MatchHistoryService;
   private readonly matchAdmin: MatchAdminService;
-  private readonly playerStatusService: PlayerStatusService;
   private readonly steamAdminService: SteamAdminService;
   private readonly resultDisputeService: MatchResultDisputeService;
   private readonly queueAlertService: QueueAlertService;
@@ -328,7 +325,6 @@ export class TenManComponentInteractionRouter {
     this.guildSettingsService = new GuildSettingsService(options.prisma, options.discord);
     this.matchHistory = new MatchHistoryService(options.prisma);
     this.matchAdmin = new MatchAdminService(options.prisma);
-    this.playerStatusService = new PlayerStatusService(options.prisma);
     this.steamAdminService = new SteamAdminService(options.prisma, options.steamProfileService);
     this.resultDisputeService = new MatchResultDisputeService(options.prisma);
     this.queueAlertService = new QueueAlertService(options.prisma, options.discord);
@@ -688,12 +684,14 @@ export class TenManComponentInteractionRouter {
       interaction.customId,
       this.options.componentSigningSecret,
     );
+    if (payload.guildId !== interaction.guildId)
+      throw new Error('Player control does not belong to this guild');
     const componentsV2 = interaction.message.flags.has(MessageFlags.IsComponentsV2);
     if (
       payload.actorDiscordUserId !== interaction.user.id &&
       !(componentsV2 && payload.actorDiscordUserId === PUBLIC_PANEL_ACTOR_PLACEHOLDER)
     )
-      throw new Error('Player Hub control does not belong to this interaction');
+      throw new Error('Player control does not belong to this interaction');
     if (componentsV2) {
       await this.ephemeralReplies.replace(interaction, () =>
         interaction.deferReply({ flags: MessageFlags.Ephemeral }),
@@ -715,61 +713,29 @@ export class TenManComponentInteractionRouter {
       );
       return;
     }
-    if (payload.action === 'STATS') {
-      const stats = await this.options.prisma.playerGuildStats.findUnique({
-        where: {
-          guildId_discordUserId: {
-            guildId: payload.guildId,
-            discordUserId: interaction.user.id,
-          },
+    const stats = await this.options.prisma.playerGuildStats.findUnique({
+      where: {
+        guildId_discordUserId: {
+          guildId: payload.guildId,
+          discordUserId: interaction.user.id,
         },
-      });
-      const embed = new EmbedBuilder().setTitle('Match Stats').setColor(0x5865f2);
-      if (stats === null) {
-        embed.setDescription('You have no match statistics yet.');
-      } else {
-        embed.setDescription('Your competitive record on this server.').addFields(
-          { name: 'Rating', value: String(stats.rating), inline: true },
-          {
-            name: 'Record',
-            value: `${String(stats.wins)}W — ${String(stats.losses)}L`,
-            inline: true,
-          },
-          { name: 'Matches', value: String(stats.matchesPlayed), inline: true },
-        );
-      }
-      await interaction.editReply({ embeds: [embed] });
-      return;
+      },
+    });
+    const embed = new EmbedBuilder().setTitle('Match Stats').setColor(0x5865f2);
+    if (stats === null) {
+      embed.setDescription('You have no match statistics yet.');
+    } else {
+      embed.setDescription('Your competitive record on this server.').addFields(
+        { name: 'Rating', value: String(stats.rating), inline: true },
+        {
+          name: 'Record',
+          value: `${String(stats.wins)}W — ${String(stats.losses)}L`,
+          inline: true,
+        },
+        { name: 'Matches', value: String(stats.matchesPlayed), inline: true },
+      );
     }
-    await this.renderPlayerHub(interaction, payload.guildId);
-  }
-
-  private async renderPlayerHub(
-    interaction: MessageComponentInteraction,
-    guildId: string,
-  ): Promise<void> {
-    const [status, queue, match] = await Promise.all([
-      this.playerStatusService.getStatus(guildId, interaction.user.id),
-      this.options.prisma.tenManQueue.findUnique({ where: { guildId } }),
-      this.options.prisma.match.findFirst({
-        where: {
-          guildId,
-          guildSlotActive: true,
-          players: { some: { discordUserId: interaction.user.id } },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-    ]);
-    const response = buildMatchCenterResponse(
-      status,
-      guildId,
-      interaction.user.id,
-      queue?.version ?? 0,
-      match?.version ?? 0,
-      match?.phaseGeneration ?? 0,
-      this.options.componentSigningSecret,
-    );
-    await interaction.editReply(response);
+    await interaction.editReply({ embeds: [embed] });
   }
 
   private async handleQueue(interaction: MessageComponentInteraction): Promise<void> {
@@ -856,12 +822,6 @@ export class TenManComponentInteractionRouter {
                 )
                 .setLabel('Remove Party')
                 .setStyle(ButtonStyle.Danger),
-              matchCenterButton(
-                payload.guildId,
-                interaction.user.id,
-                this.options.componentSigningSecret,
-                'Cancel',
-              ),
             ),
           ],
         });
@@ -899,7 +859,6 @@ export class TenManComponentInteractionRouter {
     const version = queue?.version ?? 0;
     const hubAndRefresh = [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        matchCenterButton(guildId, interaction.user.id, secret),
         queueRefreshButton(guildId, version, secret),
       ),
     ];
@@ -1034,26 +993,7 @@ export class TenManComponentInteractionRouter {
         flags: MessageFlags.Ephemeral,
         content:
           "That action isn't available anymore because the match has moved to the next stage.",
-        components: [
-          {
-            type: 1,
-            components: [
-              {
-                type: 2,
-                style: 2,
-                custom_id: createPlayerHubCustomId(
-                  {
-                    action: 'HUB',
-                    guildId: interaction.guildId,
-                    actorDiscordUserId: interaction.user.id,
-                  },
-                  this.options.componentSigningSecret,
-                ),
-                label: 'Player Center UI',
-              },
-            ],
-          },
-        ],
+        components: [],
       });
       return;
     }
@@ -1631,7 +1571,14 @@ export class TenManComponentInteractionRouter {
 
   private async handleParty(interaction: MessageComponentInteraction): Promise<void> {
     const payload = parsePartyCustomId(interaction.customId, this.options.componentSigningSecret);
-    if (payload.actorDiscordUserId !== interaction.user.id)
+    if (interaction.guildId !== null && payload.guildId !== interaction.guildId)
+      throw new Error('Party control does not belong to this guild');
+    const componentsV2 = interaction.message.flags.has(MessageFlags.IsComponentsV2);
+    const publicPanel =
+      componentsV2 &&
+      payload.action === 'PANEL' &&
+      payload.actorDiscordUserId === PUBLIC_PANEL_ACTOR_PLACEHOLDER;
+    if (payload.actorDiscordUserId !== interaction.user.id && !publicPanel)
       throw new Error('Party control does not belong to this interaction');
     const guildId = interaction.guildId ?? payload.guildId;
     if (payload.action === 'ACCEPT') {
@@ -1686,7 +1633,13 @@ export class TenManComponentInteractionRouter {
       await this.renderPartyPanel(interaction, guildId);
       return;
     }
-    await interaction.deferUpdate();
+    if (publicPanel && payload.action === 'PANEL') {
+      await this.ephemeralReplies.replace(interaction, () =>
+        interaction.deferReply({ flags: MessageFlags.Ephemeral }),
+      );
+    } else {
+      await interaction.deferUpdate();
+    }
     if (payload.action === 'CREATE') {
       await this.partyService.create(guildId, interaction.user.id);
     } else if (payload.action === 'LEAVE' || payload.action === 'DISBAND') {
@@ -1762,7 +1715,7 @@ export class TenManComponentInteractionRouter {
         interaction.id,
       );
       await interaction.editReply({
-        content: 'Match canceled. Cleanup status is available in `/match center`.',
+        content: 'Match canceled. The Match Queue panel will update when cleanup finishes.',
         components: [],
       });
       return;

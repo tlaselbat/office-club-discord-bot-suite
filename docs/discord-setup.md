@@ -76,7 +76,6 @@ After setup, either a native Discord administrator or a member with the configur
 - `/rewards profile [member]` — show XP, level, rank, and progress to the next configured level.
 - `/rewards leaderboard` — show the server's top reward members.
 - `/rewards tag-status [member]` — show guild-tag loyalty qualification progress.
-- `/match center` — open your Player Center (queue status, ready check, active match, team status, history, stats).
 - `/match account` — review, assign, change, or remove the Steam account reported for Office Club Competitive rosters. Assignment is self-reported and does not verify Steam ownership; changes are blocked while the user is queued or in a live match.
 - `/match history [player]` — show recent finished matches; staff also get rollback controls.
 - `/match stats [player]` — show rating and record.

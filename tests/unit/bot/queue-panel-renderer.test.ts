@@ -269,7 +269,14 @@ describe('queue panel renderer (Components V2)', () => {
     const labels = buttonLabels(payload);
     expect(labels).not.toContain('Join Queue');
     expect(labels).toEqual(
-      expect.arrayContaining(['Player Center UI', 'Steam Account', 'How It Works', 'Refresh']),
+      expect.arrayContaining([
+        'Match History',
+        'Stats',
+        'Steam Account',
+        'How It Works',
+        'Refresh',
+        'Team Status',
+      ]),
     );
   });
 
@@ -302,10 +309,12 @@ describe('queue panel renderer (Components V2)', () => {
     expect(buttonLabels(payload)).toEqual([
       'Join / Leave Queue',
       'Ready',
-      'Player Center UI',
+      'Match History',
+      'Stats',
       'Steam Account',
       'How It Works',
       'Refresh',
+      'Team Status',
     ]);
     // No legacy "My 10man" label may survive on the public panel.
     expect(buttonLabels(payload)).not.toContain('My 10man');
@@ -341,12 +350,16 @@ describe('queue panel renderer (Components V2)', () => {
     });
   });
 
-  it('keeps Join / Leave Queue as success and Player Center UI as primary', () => {
+  it('uses semantic styles for queue and personal controls', () => {
     const payload = renderQueuePanel(view(), secret);
     const join = buttons(payload).find((component) => component.label === 'Join / Leave Queue');
-    const lobby = buttons(payload).find((component) => component.label === 'Player Center UI');
+    const history = buttons(payload).find((component) => component.label === 'Match History');
+    const stats = buttons(payload).find((component) => component.label === 'Stats');
+    const team = buttons(payload).find((component) => component.label === 'Team Status');
     expect(join?.style).toBe(ButtonStyle.Success);
-    expect(lobby?.style).toBe(ButtonStyle.Primary);
+    expect(history?.style).toBe(ButtonStyle.Secondary);
+    expect(stats?.style).toBe(ButtonStyle.Secondary);
+    expect(team?.style).toBe(ButtonStyle.Secondary);
   });
 
   it('does not add visible separators between native Containers', () => {

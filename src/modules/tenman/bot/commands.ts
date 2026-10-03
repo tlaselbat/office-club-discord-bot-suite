@@ -3,10 +3,7 @@ import { ChannelType, SlashCommandBuilder } from 'discord.js';
 export const commands = [
   new SlashCommandBuilder()
     .setName('match')
-    .setDescription('Office Club Competitive: Match Queue, Player Center, and match controls')
-    .addSubcommand((command) =>
-      command.setName('center').setDescription('Open your Player Center status and controls'),
-    )
+    .setDescription('Office Club Competitive: Match Queue and match controls')
     .addSubcommand((command) =>
       command
         .setName('account')

@@ -597,7 +597,7 @@ Each participant runs:
 /steam account
 ```
 
-(or clicks **Steam Account** on the lobby panel or player hub) and submits a SteamID64 or `steamcommunity.com` profile URL. Assignment is self-reported and does not verify Steam ownership; vanity URLs resolve only when `STEAM_API_KEY` is configured.
+(or clicks **Steam Account** on the Match Queue panel) and submits a SteamID64 or `steamcommunity.com` profile URL. Assignment is self-reported and does not verify Steam ownership; vanity URLs resolve only when `STEAM_API_KEY` is configured.
 
 Re-running `/steam account` shows the currently assigned SteamID64 and when it was assigned.
 

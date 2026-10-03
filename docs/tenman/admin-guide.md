@@ -30,11 +30,12 @@ Staff entry points:
   resolve/reject controls.
 - `/match admin diagnostics` — safe diagnostics.
 
-Players use `/match center` for everything else, including leader match
-cancellation. Cancellation, phase restart, result rollback, player-stat reset,
-and resource teardown require an actor-bound, expiring signed confirmation.
-Use `/match center` and `/match admin diagnostics` before and after a worker
-restart. Queue bans are durable and audited.
+Players use the Match Queue panel for personal queue controls; leader match
+cancellation is available from the active-match controls. Cancellation, phase
+restart, result rollback, player-stat reset, and resource teardown require an
+actor-bound, expiring signed confirmation. Use the Match Queue panel and
+`/match admin diagnostics` before and after a worker restart. Queue bans are
+durable and audited.
 
 The bot never deletes Discord channels. It archives and locks proven bot-owned
 match channels, leaving final removal to a Discord administrator. Treat

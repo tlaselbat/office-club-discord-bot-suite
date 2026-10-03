@@ -4,6 +4,7 @@ import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 import { TenManComponentInteractionRouter } from '../../../src/modules/tenman/bot/interaction-router.js';
 import { createQueueCustomId } from '../../../src/modules/tenman/bot/queue-custom-id.js';
 import { createSteamAccountCustomId } from '../../../src/modules/tenman/bot/steam-account-custom-id.js';
+import { createPartyCustomId } from '../../../src/modules/tenman/bot/party-custom-id.js';
 import { createPlayerHubCustomId } from '../../../src/modules/tenman/bot/player-hub-custom-id.js';
 
 const secret = 'queue-router-test-secret';
@@ -58,7 +59,9 @@ function prismaMock(overrides: {
       return joinResult;
     }),
     tenManQueue: { findUnique: vi.fn().mockResolvedValue(queue) },
-    tenManSettings: { findUnique: vi.fn().mockResolvedValue({ queueSize: 10 }) },
+    tenManSettings: {
+      findUnique: vi.fn().mockResolvedValue({ queueSize: 10, partyEnabled: false }),
+    },
     tenManQueueEntry: {
       findUnique: vi.fn().mockResolvedValue(overrides.status?.queued ? { partyId: null } : null),
     },
@@ -67,7 +70,13 @@ function prismaMock(overrides: {
         .fn()
         .mockResolvedValue(overrides.status?.steam === false ? null : { steamId64: '1' }),
     },
-    match: { findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn() },
+    match: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    tenManPartyMember: { findUnique: vi.fn().mockResolvedValue(null) },
+    tenManPartyInvite: { findMany: vi.fn().mockResolvedValue([]) },
   } as unknown as PrismaClient;
   return prisma;
 }
@@ -306,22 +315,36 @@ describe('queue component interactions', () => {
     const labels = reply.components.flatMap((row) =>
       row.toJSON().components.map((component) => component.label),
     );
-    expect(labels).toEqual(['Remove Party', 'Cancel']);
+    expect(labels).toEqual(['Remove Party']);
   });
 });
 
-describe('Player Hub surfaces', () => {
-  const privateHubCustomId = createPlayerHubCustomId(
-    { action: 'HUB', guildId, actorDiscordUserId: userId },
-    secret,
-  );
-  const publicHubCustomId = createPlayerHubCustomId(
-    { action: 'HUB', guildId, actorDiscordUserId: '00000000000000000000' },
+describe('queue panel personal surfaces', () => {
+  const publicHistoryCustomId = createPlayerHubCustomId(
+    { action: 'HISTORY', guildId, actorDiscordUserId: '00000000000000000000' },
     secret,
   );
 
-  it('opens an ephemeral Player Hub from the public Components V2 queue panel', async () => {
-    const event = interaction(publicHubCustomId, true);
+  it('opens Match History ephemerally from the public Components V2 queue panel', async () => {
+    const event = interaction(publicHistoryCustomId, true);
+
+    await router(prismaMock({})).handle(event as never);
+
+    expect(event.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(event.deferUpdate).not.toHaveBeenCalled();
+    expect(event.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ embeds: expect.any(Array) }),
+    );
+  });
+
+  it('opens Team Status ephemerally from the public Components V2 queue panel', async () => {
+    const event = interaction(
+      createPartyCustomId(
+        { action: 'PANEL', guildId, actorDiscordUserId: '00000000000000000000' },
+        secret,
+      ),
+      true,
+    );
 
     await router(prismaMock({})).handle(event as never);
 
@@ -332,15 +355,55 @@ describe('Player Hub surfaces', () => {
     );
   });
 
-  it('refreshes an existing legacy Player Hub in place', async () => {
-    const event = interaction(privateHubCustomId);
+  it('rejects public-panel placeholder IDs for party mutations', async () => {
+    const event = interaction(
+      createPartyCustomId(
+        { action: 'CREATE', guildId, actorDiscordUserId: '00000000000000000000' },
+        secret,
+      ),
+      true,
+    );
 
-    await router(prismaMock({})).handle(event as never);
-
-    expect(event.deferUpdate).toHaveBeenCalledOnce();
+    await expect(router(prismaMock({})).handle(event as never)).rejects.toThrow(
+      'Party control does not belong to this interaction',
+    );
     expect(event.deferReply).not.toHaveBeenCalled();
-    expect(event.editReply).toHaveBeenCalledWith(
-      expect.objectContaining({ embeds: expect.any(Array), components: expect.any(Array) }),
+    expect(event.deferUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a public Team Status control from another guild', async () => {
+    const event = interaction(
+      createPartyCustomId(
+        {
+          action: 'PANEL',
+          guildId: '323456789012345678',
+          actorDiscordUserId: '00000000000000000000',
+        },
+        secret,
+      ),
+      true,
+    );
+
+    await expect(router(prismaMock({})).handle(event as never)).rejects.toThrow(
+      'Party control does not belong to this guild',
+    );
+  });
+
+  it('rejects a personal history control from another guild', async () => {
+    const event = interaction(
+      createPlayerHubCustomId(
+        {
+          action: 'HISTORY',
+          guildId: '323456789012345678',
+          actorDiscordUserId: '00000000000000000000',
+        },
+        secret,
+      ),
+      true,
+    );
+
+    await expect(router(prismaMock({})).handle(event as never)).rejects.toThrow(
+      'Player control does not belong to this guild',
     );
   });
 });

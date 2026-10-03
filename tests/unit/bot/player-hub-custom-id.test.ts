@@ -7,7 +7,7 @@ import {
 
 const secret = 'test-secret';
 const payload: PlayerHubComponentPayload = {
-  action: 'HUB',
+  action: 'HISTORY',
   guildId: '1234567890123456789',
   actorDiscordUserId: '9876543210987654321',
 };
