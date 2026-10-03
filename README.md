@@ -135,6 +135,7 @@ The installer configures Docker, PostgreSQL, Caddy HTTPS, a protected `.env`, mi
 - [Operations runbook](docs/operations.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Staging acceptance checklist](docs/staging-checklist.md)
+- [TenMan live beta test guide](docs/tenman/live-beta-test-guide.md)
 
 ### 10man reference
 

@@ -1,5 +1,7 @@
 # Staging Acceptance Checklist
 
+For the ordered live procedure, use the [TenMan live beta test guide](tenman/live-beta-test-guide.md).
+
 ## Environment
 
 - [ ] Node 22 runtime verified
@@ -21,6 +23,7 @@
 
 ## Queue and formation
 
+- [ ] `TEST_DATABASE_URL` points to an isolated migrated database and `corepack pnpm test:tenman:simulation` completes the ten-player queue, ready, captain draft, veto, simulated DatHost/MatchZy lifecycle, result deduplication, and cleanup
 - [ ] `/match admin queue-panel` creates or repairs one durable queue panel
 - [ ] Ten Steam-assigned test users join; duplicate user and Steam identity are rejected or disputed
 - [ ] Concurrent final joins create exactly one `READY_CHECK` match and timeout job
@@ -33,9 +36,11 @@
 
 ## Resources, results, and recovery
 
+- [ ] Use a dedicated staging guild and disposable DatHost destination; never use the production guild, template, or a production match for this acceptance run
 - [ ] Owned match text/dashboard resources are persisted and reconciled
 - [ ] An accepted-but-unpersisted resource create remains operator-visible; no duplicate is guessed
 - [ ] DatHost server is created only from the protected template
+- [ ] Record the created destination ID, verify its `user_data` begins with `tenman:`, then verify it is stopped and deleted by the matching cleanup job; do not manually retry a duplicate request after an uncertain response
 - [ ] MatchZy configuration is authenticated; duplicate `series_end` applies ratings once
 - [ ] Rollback reverses active ledger effects without deleting history
 - [ ] Cancellation and terminal completion enter cleanup; slot releases only after cleanup completes
@@ -52,3 +57,7 @@
 - [ ] `TEST_DATABASE_URL` points to an isolated migrated database and `corepack pnpm test:database` passes
 - [ ] `corepack pnpm build`
 - [ ] No secrets appear in logs, Discord responses, or test artifacts
+
+## Coverage boundary
+
+`corepack pnpm test:tenman:simulation` is an automated PostgreSQL lifecycle simulation. It never calls Discord, DatHost, or MatchZy. Every unchecked item above remains a required, manually recorded staging acceptance step before beta release.

@@ -25,7 +25,8 @@
     "tests/**/*.ts",
     "vitest.config.ts",
     "prisma.config.ts",
-    "prisma/seed.ts"
+    "prisma/seed.ts",
+    "scripts/**/*.ts"
   ],
   "exclude": ["dist", "node_modules"]
 }
