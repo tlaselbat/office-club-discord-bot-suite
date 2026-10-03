@@ -6,7 +6,12 @@ import {
   MessageFlags,
   StringSelectMenuBuilder,
 } from 'discord.js';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { createGameServerCustomId } from './custom-id.js';
+
+const ASSET_BASE_URL =
+  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers';
 
 const componentType = {
   actionRow: 1,
@@ -14,6 +19,7 @@ const componentType = {
   section: 9,
   textDisplay: 10,
   thumbnail: 11,
+  mediaGallery: 12,
   container: 17,
 } as const;
 
@@ -68,6 +74,7 @@ export interface CardFingerprint {
   status: string;
   players: string;
   map: string | null;
+  mapImageUrl: string;
   location: string | null;
   host: string;
   connectAddress: string | null;
@@ -131,43 +138,47 @@ export function renderAddGameServersPanel(
 export function renderGameServerCard(server: ServerView, secret: string) {
   const snapshot = server.snapshot;
   const accentColor = containerAccentColor(snapshot);
+  const location = snapshot?.datacenter ?? 'Unknown';
+  const map = snapshot?.map ?? 'Unknown';
 
-  const primaryDisplays = [
-    textDisplay(`# ${server.displayName}`),
-    textDisplay(statusLine(snapshot)),
-    textDisplay(`**Current Map**\n\`${snapshot?.map ?? 'Unknown'}\``),
-  ];
-  const detailDisplays = [
-    textDisplay(`**Location**\n${snapshot?.datacenter ?? 'Unknown'}`),
-    textDisplay(`**Host**\n${serverHost(server)}`),
-    textDisplay(`**Connect**\n\`${connectAddress(server) ?? 'Unavailable'}\``),
-  ];
+  const headerSection = {
+    type: componentType.section,
+    components: [
+      textDisplay(`# ${server.displayName}`),
+      textDisplay(statusLine(snapshot)),
+      textDisplay(`-# ${location}`),
+    ],
+    accessory: {
+      type: componentType.thumbnail,
+      media: { url: serverIdentityIconUrl() },
+    },
+  };
+
+  const metadataBlock = [
+    `**Current Map** \n\`${map}\``,
+    `**Location** \n${location}`,
+    `**Host** \n${serverHost(server)}`,
+    `**Connect** \n\`${connectAddress(server) ?? 'Unavailable'}\``,
+  ].join('\n\n');
+
+  const mapGallery = {
+    type: componentType.mediaGallery,
+    items: [
+      {
+        media: { url: resolveMapImageUrl(map, server.imageUrl) },
+        description: `Current map: ${map}`,
+      },
+    ],
+  };
 
   const actionRow = {
     type: componentType.actionRow,
     components: [connectButton(server, secret), mapRulesButton(server, secret)],
   };
 
-  const containerComponents: Record<string, unknown>[] = [];
-  const thumbnailUrl = server.imageUrl;
-  if (thumbnailUrl !== null) {
-    containerComponents.push({
-      type: componentType.section,
-      components: primaryDisplays,
-      accessory: {
-        type: componentType.thumbnail,
-        media: { url: thumbnailUrl },
-      },
-    });
-    containerComponents.push(...detailDisplays);
-  } else {
-    containerComponents.push(...primaryDisplays, ...detailDisplays);
-  }
-  containerComponents.push(actionRow);
-
   const container: Record<string, unknown> = {
     type: componentType.container,
-    components: containerComponents,
+    components: [headerSection, textDisplay(metadataBlock), mapGallery, actionRow],
   };
   if (accentColor !== null) container.accentColor = accentColor;
 
@@ -219,24 +230,26 @@ export function renderGameServerDetail(server: ServerView) {
     server.joinUrl === null
       ? []
       : [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setLabel('Connect')
-            .setStyle(ButtonStyle.Link)
-            .setURL(server.joinUrl),
-        ),
-      ];
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setLabel('Connect')
+              .setStyle(ButtonStyle.Link)
+              .setURL(server.joinUrl),
+          ),
+        ];
   return { embeds: [embed], components };
 }
 
 export function cardFingerprint(server: ServerView): CardFingerprint {
   const snapshot = server.snapshot;
+  const map = snapshot?.map ?? null;
   return {
     accentColor: containerAccentColor(snapshot),
     displayName: server.displayName,
     status: statusLabel(snapshot),
     players: playerCount(snapshot),
-    map: snapshot?.map ?? null,
+    map,
+    mapImageUrl: resolveMapImageUrl(map, server.imageUrl),
     location: snapshot?.datacenter ?? null,
     host: serverHost(server),
     connectAddress: connectAddress(server),
@@ -286,7 +299,7 @@ function containerAccentColor(snapshot: SnapshotView | null): number | null {
 }
 
 function statusLine(snapshot: SnapshotView | null): string {
-  return `${statusEmoji(snapshot)} ${statusLabel(snapshot)}  \u2022  ${playerCount(snapshot)}`;
+  return `${statusEmoji(snapshot)} **${statusLabel(snapshot)}**  \u2022  👥 **${playerCount(snapshot)}**`;
 }
 
 function statusEmoji(snapshot: SnapshotView | null): string {
@@ -298,9 +311,9 @@ function statusEmoji(snapshot: SnapshotView | null): string {
 }
 
 function playerCount(snapshot: SnapshotView | null): string {
-  if (snapshot === null || snapshot.players === null) return '👥 unknown';
+  if (snapshot === null || snapshot.players === null) return 'unknown';
   const max = snapshot.maxPlayers;
-  return `👥 ${String(snapshot.players)}${max === null ? '' : ` / ${String(max)}`} players`;
+  return `${String(snapshot.players)}${max === null ? '' : ` / ${String(max)}`} players`;
 }
 
 function serverHost(server: ServerView): string {
@@ -330,6 +343,27 @@ export function connectAddress(server: ServerView): string | null {
 
 function metric(label: string, value: number | null | undefined, unit: string): string | null {
   return value === null || value === undefined ? null : `${label}: ${value.toFixed(1)} ${unit}`;
+}
+
+export function resolveMapImageUrl(
+  map: string | null,
+  serverImageUrl: string | null,
+  fileExists: (path: string) => boolean = existsSync,
+): string {
+  if (map !== null) {
+    for (const ext of ['webp', 'png', 'jpg']) {
+      const localPath = path.join(process.cwd(), 'assets', 'game-servers', 'maps', `${map}.${ext}`);
+      if (fileExists(localPath)) {
+        return `${ASSET_BASE_URL}/maps/${map}.${ext}`;
+      }
+    }
+  }
+  if (serverImageUrl !== null) return serverImageUrl;
+  return `${ASSET_BASE_URL}/maps/fallback/clickcs-arena.jpg`;
+}
+
+function serverIdentityIconUrl(): string {
+  return `${ASSET_BASE_URL}/clickcs-1v1-arena/icon.jpg`;
 }
 
 function color(snapshot: SnapshotView | null): number {

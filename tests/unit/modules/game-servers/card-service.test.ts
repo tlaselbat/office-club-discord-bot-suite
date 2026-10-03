@@ -198,8 +198,10 @@ describe('GameServerCardService', () => {
                 accentColor: 0x23a55a,
                 displayName: '1v1 Arena',
                 status: 'Online',
-                players: '👥 5 / 16 players',
+                players: '5 / 16 players',
                 map: 'de_dust2',
+                mapImageUrl:
+                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers/maps/fallback/clickcs-arena.jpg',
                 location: 'Los Angeles',
                 host: '1v1 Arena',
                 connectAddress: 'arena.example.com:27015',

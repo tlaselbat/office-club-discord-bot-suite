@@ -7,7 +7,7 @@ export class GameServerPanelService {
     private readonly prisma: PrismaClient,
     private readonly discord: Client,
     private readonly secret: string,
-  ) { }
+  ) {}
 
   public async reconcile(guildId: string, channel?: TextBasedChannel): Promise<void> {
     const settings = await this.prisma.gameServerSettings.findUnique({ where: { guildId } });

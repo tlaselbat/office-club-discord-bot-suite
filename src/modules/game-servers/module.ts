@@ -166,11 +166,11 @@ async function handleCommand(
         servers.length === 0
           ? 'No Game Servers registrations.'
           : servers
-            .map(
-              (server) =>
-                `\`${server.id}\` — ${server.displayName} — ${server.enabled ? 'enabled' : 'disabled'} / ${server.public ? 'public' : 'private'} — ${server.snapshot?.hostingState ?? 'pending'}`,
-            )
-            .join('\n'),
+              .map(
+                (server) =>
+                  `\`${server.id}\` — ${server.displayName} — ${server.enabled ? 'enabled' : 'disabled'} / ${server.public ? 'public' : 'private'} — ${server.snapshot?.hostingState ?? 'pending'}`,
+              )
+              .join('\n'),
     });
     return;
   }

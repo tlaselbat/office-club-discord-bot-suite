@@ -3,6 +3,7 @@ import {
   renderAddGameServersPanel,
   renderGameServerCard,
   renderGameServerDetail,
+  resolveMapImageUrl,
   type ServerView,
 } from '../../../../src/modules/game-servers/renderer.js';
 
@@ -118,11 +119,15 @@ describe('Game Server rendering', () => {
     expect(container.type).toBe(17);
     const text = textContents(container);
     expect(text).toContain('# 1v1 Arena');
-    expect(text).toContain('🟢 Online');
-    expect(text).toContain('👥 0 / 16 players');
+    expect(text).toContain('🟢 **Online**');
+    expect(text).toContain('👥 **0 / 16 players**');
+    expect(text).toContain('**Current Map**');
     expect(text).toContain('`aim_map_office`');
+    expect(text).toContain('**Location**');
     expect(text).toContain('Los Angeles');
-    expect(text).toContain('arena.example.com:27015');
+    expect(text).toContain('**Host**');
+    expect(text).toContain('**Connect**');
+    expect(text).toContain('`arena.example.com:27015`');
 
     const rowButtons = buttons(container);
     expect(rowButtons).toHaveLength(2);
@@ -146,12 +151,24 @@ describe('Game Server rendering', () => {
     expect(container.accentColor).toBe(0xed4245);
   });
 
-  it('renders fallback interaction Connect button without join URL', () => {
+  it('includes the server identity thumbnail accessory', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
-    const connectButton = buttons(container)[0];
-    expect(connectButton?.style).toBe(3);
-    expect(connectButton?.url).toBeUndefined();
-    expect(connectButton?.customId).toMatch(/^gs:connect:/);
+    const components = containerComponents(container);
+    expect(components[0]?.type).toBe(9);
+    const section = components[0] as Record<string, unknown>;
+    const accessory = section.accessory as Record<string, unknown>;
+    expect(accessory.type).toBe(11);
+    expect((accessory.media as Record<string, unknown>).url).toContain('icon.jpg');
+  });
+
+  it('renders the map media gallery with the fallback arena image', () => {
+    const container = firstContainer(renderGameServerCard(server, secret));
+    const components = containerComponents(container);
+    expect(components[2]?.type).toBe(12);
+    const gallery = components[2] as Record<string, unknown>;
+    const items = gallery.items as Record<string, unknown>[];
+    expect(items).toHaveLength(1);
+    expect((items[0]?.media as Record<string, unknown>).url).toContain('clickcs-arena.jpg');
   });
 
   it('renders link Connect button when join URL is configured', () => {
@@ -163,30 +180,12 @@ describe('Game Server rendering', () => {
     expect(connectButton?.customId).toBeUndefined();
   });
 
-  it('includes thumbnail when image URL is configured', () => {
-    const view = { ...server, imageUrl: 'https://example.com/map.png' };
-    const container = firstContainer(renderGameServerCard(view, secret));
-    const components = containerComponents(container);
-    expect(components).toHaveLength(5);
-    const section = components[0];
-    expect(section?.type).toBe(9);
-    const sectionComponents = (section as Record<string, unknown>).components as Record<
-      string,
-      unknown
-    >[];
-    expect(sectionComponents).toHaveLength(3);
-    const accessory = (section as Record<string, unknown>).accessory as Record<string, unknown>;
-    expect(accessory.type).toBe(11);
-    expect((accessory.media as Record<string, unknown>).url).toBe('https://example.com/map.png');
-  });
-
-  it('renders text displays directly in container when no image URL is configured', () => {
+  it('renders fallback interaction Connect button without join URL', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
-    const components = containerComponents(container);
-    expect(components).toHaveLength(7);
-    expect(components[0]?.type).toBe(10);
-    expect(components[5]?.type).toBe(10);
-    expect(components[6]?.type).toBe(1);
+    const connectButton = buttons(container)[0];
+    expect(connectButton?.style).toBe(3);
+    expect(connectButton?.url).toBeUndefined();
+    expect(connectButton?.customId).toMatch(/^gs:connect:/);
   });
 
   it('renders distinct online, offline, and starting states', () => {
@@ -195,7 +194,7 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, hostingState: 'STOPPED', gameplayState: 'UNAVAILABLE' },
     };
     expect(textContents(firstContainer(renderGameServerCard(stopped, secret)))).toContain(
-      '🔴 Server stopped',
+      '🔴 **Server stopped**',
     );
 
     const starting = {
@@ -203,13 +202,31 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, hostingState: 'STARTING', gameplayState: 'UNKNOWN' },
     };
     expect(textContents(firstContainer(renderGameServerCard(starting, secret)))).toContain(
-      '🟡 Server starting…',
+      '🟡 **Server starting…**',
     );
 
     const stale = { ...server, snapshot: { ...baseSnapshot, stale: true } };
     expect(textContents(firstContainer(renderGameServerCard(stale, secret)))).toContain(
-      '🟡 Status stale',
+      '🟡 **Status stale**',
     );
+  });
+
+  it('resolves the configured server image URL as map fallback before the default arena image', () => {
+    const view = { ...server, imageUrl: 'https://example.com/server-map.png' };
+    const container = firstContainer(renderGameServerCard(view, secret));
+    const gallery = containerComponents(container)[2] as Record<string, unknown>;
+    const items = gallery.items as Record<string, unknown>[];
+    expect((items[0]?.media as Record<string, unknown>).url).toBe(
+      'https://example.com/server-map.png',
+    );
+  });
+
+  it('resolves a dedicated map asset when one exists', () => {
+    const url = resolveMapImageUrl('aim_map_office', null, (p) =>
+      typeof p === 'string' ? p.includes('aim_map_office') : false,
+    );
+    expect(url).toContain('aim_map_office');
+    expect(url).not.toContain('fallback');
   });
 
   it('omits unavailable detail metrics instead of rendering N/A', () => {
