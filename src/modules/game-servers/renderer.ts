@@ -157,7 +157,7 @@ export function renderGameServerCard(server: ServerView, secret: string) {
 
   const headerComponents: Record<string, unknown>[] = [
     textDisplay(
-      `# ${server.displayName}\n${statusEmoji(snapshot)} ${statusLabel(snapshot)} · ${playerCount(snapshot).toLowerCase()}${location === null ? '' : ` · ${location}`}`,
+      `# ${server.displayName}\n${statusEmoji(snapshot)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n${playerCount(snapshot).toLowerCase()}`,
     ),
   ];
 
@@ -263,7 +263,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 10,
+    layoutVersion: 11,
     accentColor: 0x2b8aef,
     displayName: server.displayName,
     status: statusLabel(snapshot),
