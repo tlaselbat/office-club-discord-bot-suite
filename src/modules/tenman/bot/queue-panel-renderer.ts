@@ -148,7 +148,8 @@ function buildUnavailableSummaryContainer(view: QueuePanelView): ContainerBuilde
   let subtext: string;
 
   if (phase === null || phase === undefined) {
-    heading = view.queueEverOpened === true ? '**Match Queue Closed**' : '**Match Queue Not Started**';
+    heading =
+      view.queueEverOpened === true ? '**Match Queue Closed**' : '**Match Queue Not Started**';
     subtext =
       view.queueEverOpened === true
         ? 'Player enrollment is currently closed by staff.'

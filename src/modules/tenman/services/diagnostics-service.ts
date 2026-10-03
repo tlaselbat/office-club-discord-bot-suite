@@ -1,6 +1,6 @@
 import { ChannelType, PermissionFlagsBits, type Client, type GuildBasedChannel } from 'discord.js';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
-import type { DatHostClient } from '../integrations/dathost/client.js';
+import type { DatHostClient } from '../../../integrations/dathost/client.js';
 
 export interface DiagnosticsReport {
   configured: boolean;

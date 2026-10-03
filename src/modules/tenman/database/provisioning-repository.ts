@@ -3,7 +3,7 @@ import type {
   ProvisioningAttemptRecord,
   ProvisioningRepository,
 } from '../orchestrator/provisioning.js';
-import type { DatHostServer } from '../integrations/dathost/schemas.js';
+import type { DatHostServer } from '../../../integrations/dathost/schemas.js';
 
 type ProvisioningStatus = ProvisioningAttemptRecord['status'];
 

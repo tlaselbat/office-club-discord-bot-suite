@@ -3,11 +3,22 @@ import { ModuleRegistry } from '../../../../src/core/modules/registry.js';
 import type { SuiteModule } from '../../../../src/core/modules/types.js';
 import type { JobHandler } from '../../../../src/jobs/worker.js';
 import { createCompetitiveModule } from '../../../../src/modules/tenman/module.js';
+import { createSuiteModules } from '../../../../src/core/modules/composition.js';
 
 const command = (name: string) => ({ name });
 const collisionHandler: JobHandler = async () => undefined;
 
 describe('ModuleRegistry', () => {
+  it('uses one suite composition for every declared command module', () => {
+    const modules = createSuiteModules();
+    expect(modules.map((module) => module.key)).toEqual([
+      'competitive',
+      'member-rewards',
+      'game-servers',
+    ]);
+    expect(new ModuleRegistry(modules).commands().map((item) => item.name)).toContain('servers');
+  });
+
   it('composes commands and jobs', () => {
     const handler: JobHandler = vi.fn().mockResolvedValue(undefined);
     const registry = new ModuleRegistry([

@@ -1,5 +1,5 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
-import type { DatHostServer } from '../integrations/dathost/schemas.js';
+import type { DatHostServer } from '../../../integrations/dathost/schemas.js';
 
 const OWNERSHIP_PREFIX = 'tenman:';
 

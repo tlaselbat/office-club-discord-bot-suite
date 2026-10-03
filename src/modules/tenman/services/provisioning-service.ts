@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { Logger } from 'pino';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import type { ProvisioningOrchestrator } from '../orchestrator/provisioning.js';
-import type { DatHostClient } from '../integrations/dathost/client.js';
+import type { DatHostClient } from '../../../integrations/dathost/client.js';
 import { buildMatchZyConfig } from '../integrations/matchzy/config-builder.js';
 import { renderMatchZyCommand } from '../integrations/matchzy/commands.js';
 import { assertCompetitiveBo1FiveVFive, gameProfileSchema } from '../domain/game-profile.js';

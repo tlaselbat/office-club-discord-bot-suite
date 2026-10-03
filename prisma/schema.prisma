@@ -182,19 +182,43 @@ enum RewardVoiceSessionStatus {
   CLOSED
 }
 
+enum GameServerProvider {
+  DATHOST
+}
+
+enum GameServerHostingState {
+  STOPPED
+  STARTING
+  RUNNING
+  UNKNOWN
+}
+
+enum GameServerGameplayState {
+  AVAILABLE
+  DEGRADED
+  UNAVAILABLE
+  UNKNOWN
+}
+
+enum GameServerPlayerCountSource {
+  DATHOST_MONITORING
+  DATHOST_SERVER_OBJECT
+  CACHE
+}
+
 model User {
-  discordUserId   String          @id @map("discord_user_id")
-  displayName     String          @map("display_name")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
-  steamIdentities SteamIdentity[]
-  matchPlayers    MatchPlayer[]
-  queueEntries    TenManQueueEntry[]
-  partyMemberships TenManPartyMember[]
-  partyInvitations TenManPartyInvite[]
-  playerStats     PlayerGuildStats[]
-  rewardMembers   RewardMember[]
-  assignmentDisputes SteamAssignmentDispute[]
+  discordUserId             String                   @id @map("discord_user_id")
+  displayName               String                   @map("display_name")
+  createdAt                 DateTime                 @default(now()) @map("created_at")
+  updatedAt                 DateTime                 @updatedAt @map("updated_at")
+  steamIdentities           SteamIdentity[]
+  matchPlayers              MatchPlayer[]
+  queueEntries              TenManQueueEntry[]
+  partyMemberships          TenManPartyMember[]
+  partyInvitations          TenManPartyInvite[]
+  playerStats               PlayerGuildStats[]
+  rewardMembers             RewardMember[]
+  assignmentDisputes        SteamAssignmentDispute[]
   matchModeratorMemberships MatchModerator[]
 
   @@map("users")
@@ -264,60 +288,62 @@ model WebSession {
 }
 
 model GuildSettings {
-  guildId                   String               @id @map("guild_id")
-  createdAt                 DateTime             @default(now()) @map("created_at")
-  updatedAt                 DateTime             @updatedAt @map("updated_at")
-  tenManSettings            TenManSettings?
-  rewardSettings            RewardSettings?
-  rewardMembers             RewardMember[]
-  rewardLevels              RewardLevel[]
-  rewardLedgerEntries       RewardLedgerEntry[]
-  rewardActivityReceipts    RewardActivityReceipt[]
-  rewardVoiceSessions       RewardVoiceSession[]
+  guildId                String                  @id @map("guild_id")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+  tenManSettings         TenManSettings?
+  rewardSettings         RewardSettings?
+  rewardMembers          RewardMember[]
+  rewardLevels           RewardLevel[]
+  rewardLedgerEntries    RewardLedgerEntry[]
+  rewardActivityReceipts RewardActivityReceipt[]
+  rewardVoiceSessions    RewardVoiceSession[]
+  gameServerSettings     GameServerSettings?
+  gameServers            GameServer[]
 
   @@map("suite_guilds")
 }
 
 model TenManSettings {
-  guildId                 String   @id @map("guild_id")
-  adminChannelId          String?  @map("admin_channel_id")
-  adminPanelMessageId     String?  @map("admin_panel_message_id")
-  lobbyTextChannelId      String?  @map("lobby_text_channel_id")
-  lobbyVoiceChannelId     String?  @map("lobby_voice_channel_id")
-  team1VoiceChannelId     String?  @map("team1_voice_channel_id")
-    team2VoiceChannelId     String?  @map("team2_voice_channel_id")
-    resultsChannelId        String?  @map("results_channel_id")
-  privilegedRoleIds       String[] @map("privileged_role_ids")
-  moderatorRoleIds        String[] @map("moderator_role_ids")
-  administratorRoleIds    String[] @map("administrator_role_ids")
-  dathostTemplateServerId String?  @map("dathost_template_server_id")
-  defaultServerLocation   String?  @map("default_server_location")
-  defaultGameProfileKey      String?              @map("default_game_profile_key")
-  enabled                    Boolean              @default(false)
-  queueSize                  Int                  @default(10) @map("queue_size")
-  partyEnabled               Boolean              @default(false) @map("party_enabled")
-  readyTimeoutSeconds        Int                  @default(90) @map("ready_timeout_seconds")
-  captainPolicy              CaptainPolicy        @default(RANDOM) @map("captain_policy")
-  teamSelectionMode          TeamSelectionMode    @default(CAPTAINS) @map("team_selection_mode")
-  mapSelectionMode           MapSelectionMode     @default(CAPTAIN_VETO) @map("map_selection_mode")
-  activeMapPool              String[]             @default([]) @map("active_map_pool")
-  managedResourceState       ManagedResourceState @default(NONE) @map("managed_resource_state")
-  managedSetupStep           ManagedSetupStep?    @map("managed_setup_step")
-  managedAttemptId           String?               @map("managed_attempt_id") @db.Uuid
-  managedCategoryId          String?               @map("managed_category_id")
-  managedChannelIds          String[]              @default([]) @map("managed_channel_ids")
-  managedResourcesCreatedAt  DateTime?             @map("managed_resources_created_at")
-  version                     Int                  @default(0)
-  createdAt                DateTime @default(now()) @map("created_at")
-  updatedAt                DateTime @updatedAt @map("updated_at")
-  matches                  Match[]
-  queue                    TenManQueue?
-  queueBans                TenManQueueBan[]
-  parties                  TenManParty[]
-  playerStats              PlayerGuildStats[]
-  matchModerators          MatchModerator[]
-  workshopMaps             GuildWorkshopMap[]
-  suite                    GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  guildId                   String               @id @map("guild_id")
+  adminChannelId            String?              @map("admin_channel_id")
+  adminPanelMessageId       String?              @map("admin_panel_message_id")
+  lobbyTextChannelId        String?              @map("lobby_text_channel_id")
+  lobbyVoiceChannelId       String?              @map("lobby_voice_channel_id")
+  team1VoiceChannelId       String?              @map("team1_voice_channel_id")
+  team2VoiceChannelId       String?              @map("team2_voice_channel_id")
+  resultsChannelId          String?              @map("results_channel_id")
+  privilegedRoleIds         String[]             @map("privileged_role_ids")
+  moderatorRoleIds          String[]             @map("moderator_role_ids")
+  administratorRoleIds      String[]             @map("administrator_role_ids")
+  dathostTemplateServerId   String?              @map("dathost_template_server_id")
+  defaultServerLocation     String?              @map("default_server_location")
+  defaultGameProfileKey     String?              @map("default_game_profile_key")
+  enabled                   Boolean              @default(false)
+  queueSize                 Int                  @default(10) @map("queue_size")
+  partyEnabled              Boolean              @default(false) @map("party_enabled")
+  readyTimeoutSeconds       Int                  @default(90) @map("ready_timeout_seconds")
+  captainPolicy             CaptainPolicy        @default(RANDOM) @map("captain_policy")
+  teamSelectionMode         TeamSelectionMode    @default(CAPTAINS) @map("team_selection_mode")
+  mapSelectionMode          MapSelectionMode     @default(CAPTAIN_VETO) @map("map_selection_mode")
+  activeMapPool             String[]             @default([]) @map("active_map_pool")
+  managedResourceState      ManagedResourceState @default(NONE) @map("managed_resource_state")
+  managedSetupStep          ManagedSetupStep?    @map("managed_setup_step")
+  managedAttemptId          String?              @map("managed_attempt_id") @db.Uuid
+  managedCategoryId         String?              @map("managed_category_id")
+  managedChannelIds         String[]             @default([]) @map("managed_channel_ids")
+  managedResourcesCreatedAt DateTime?            @map("managed_resources_created_at")
+  version                   Int                  @default(0)
+  createdAt                 DateTime             @default(now()) @map("created_at")
+  updatedAt                 DateTime             @updatedAt @map("updated_at")
+  matches                   Match[]
+  queue                     TenManQueue?
+  queueBans                 TenManQueueBan[]
+  parties                   TenManParty[]
+  playerStats               PlayerGuildStats[]
+  matchModerators           MatchModerator[]
+  workshopMaps              GuildWorkshopMap[]
+  suite                     GuildSettings        @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@map("guild_settings")
 }
@@ -328,13 +354,13 @@ model TenManSettings {
  * mapName exclusively.
  */
 model GuildWorkshopMap {
-  guildId              String          @map("guild_id")
-  mapName              String          @map("map_name")
-  displayName          String          @map("display_name")
-  addedByDiscordUserId String          @map("added_by_discord_user_id")
-  createdAt            DateTime        @default(now()) @map("created_at")
-  updatedAt            DateTime        @updatedAt @map("updated_at")
-  guild                TenManSettings  @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  guildId              String         @map("guild_id")
+  mapName              String         @map("map_name")
+  displayName          String         @map("display_name")
+  addedByDiscordUserId String         @map("added_by_discord_user_id")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+  guild                TenManSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@id([guildId, mapName])
   @@map("guild_workshop_maps")
@@ -348,7 +374,7 @@ model MatchModerator {
   createdAt            DateTime             @default(now()) @map("created_at")
   updatedAt            DateTime             @updatedAt @map("updated_at")
   guild                TenManSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-  user                 User                  @relation(fields: [discordUserId], references: [discordUserId], onDelete: Cascade)
+  user                 User                 @relation(fields: [discordUserId], references: [discordUserId], onDelete: Cascade)
 
   @@id([guildId, discordUserId])
   @@index([guildId, status])
@@ -356,40 +382,40 @@ model MatchModerator {
 }
 
 model RewardSettings {
-  guildId                   String        @id @map("guild_id")
-  enabled                   Boolean       @default(false)
-  textXpAmount              Int           @default(10) @map("text_xp_amount")
-  textCooldownSeconds       Int           @default(60) @map("text_cooldown_seconds")
-  voiceXpAmount             Int           @default(5) @map("voice_xp_amount")
-  voiceIntervalSeconds      Int           @default(300) @map("voice_interval_seconds")
-  textChannelIds            String[]      @default([]) @map("text_channel_ids")
-  voiceChannelIds           String[]      @default([]) @map("voice_channel_ids")
-  tagRequiredSeconds        Int           @default(2592000) @map("tag_required_seconds")
-  tagRewardRoleId           String?       @map("tag_reward_role_id")
-  tagReconcileSeconds       Int           @default(900) @map("tag_reconcile_seconds")
-  version                   Int           @default(0)
-  createdAt                 DateTime      @default(now()) @map("created_at")
-  updatedAt                 DateTime      @updatedAt @map("updated_at")
-  guild                     GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  guildId              String        @id @map("guild_id")
+  enabled              Boolean       @default(false)
+  textXpAmount         Int           @default(10) @map("text_xp_amount")
+  textCooldownSeconds  Int           @default(60) @map("text_cooldown_seconds")
+  voiceXpAmount        Int           @default(5) @map("voice_xp_amount")
+  voiceIntervalSeconds Int           @default(300) @map("voice_interval_seconds")
+  textChannelIds       String[]      @default([]) @map("text_channel_ids")
+  voiceChannelIds      String[]      @default([]) @map("voice_channel_ids")
+  tagRequiredSeconds   Int           @default(2592000) @map("tag_required_seconds")
+  tagRewardRoleId      String?       @map("tag_reward_role_id")
+  tagReconcileSeconds  Int           @default(900) @map("tag_reconcile_seconds")
+  version              Int           @default(0)
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+  guild                GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@map("reward_settings")
 }
 
 model RewardMember {
-  guildId             String              @map("guild_id")
-  discordUserId       String              @map("discord_user_id")
-  effectiveXp         Int                 @default(0) @map("effective_xp")
-  currentLevel        Int                 @default(0) @map("current_level")
-  lastTextAwardAt     DateTime?           @map("last_text_award_at")
-  tagQualifiedSince   DateTime?           @map("tag_qualified_since")
-  tagLastCheckedAt    DateTime?           @map("tag_last_checked_at")
-  tagRoleGranted      Boolean             @default(false) @map("tag_role_granted")
-  createdAt           DateTime            @default(now()) @map("created_at")
-  updatedAt           DateTime            @updatedAt @map("updated_at")
-  guild               GuildSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-  user                User                @relation(fields: [discordUserId], references: [discordUserId])
-  ledgerEntries       RewardLedgerEntry[]
-  voiceSessions       RewardVoiceSession[]
+  guildId           String               @map("guild_id")
+  discordUserId     String               @map("discord_user_id")
+  effectiveXp       Int                  @default(0) @map("effective_xp")
+  currentLevel      Int                  @default(0) @map("current_level")
+  lastTextAwardAt   DateTime?            @map("last_text_award_at")
+  tagQualifiedSince DateTime?            @map("tag_qualified_since")
+  tagLastCheckedAt  DateTime?            @map("tag_last_checked_at")
+  tagRoleGranted    Boolean              @default(false) @map("tag_role_granted")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  guild             GuildSettings        @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  user              User                 @relation(fields: [discordUserId], references: [discordUserId])
+  ledgerEntries     RewardLedgerEntry[]
+  voiceSessions     RewardVoiceSession[]
 
   @@id([guildId, discordUserId])
   @@index([guildId, effectiveXp])
@@ -397,14 +423,14 @@ model RewardMember {
 }
 
 model RewardLevel {
-  guildId       String        @map("guild_id")
-  level         Int
-  xpThreshold   Int           @map("xp_threshold")
-  label         String?
-  roleId        String?       @map("role_id")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-  guild         GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  guildId     String        @map("guild_id")
+  level       Int
+  xpThreshold Int           @map("xp_threshold")
+  label       String?
+  roleId      String?       @map("role_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  guild       GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@id([guildId, level])
   @@unique([guildId, xpThreshold])
@@ -412,18 +438,18 @@ model RewardLevel {
 }
 
 model RewardLedgerEntry {
-  id                   String        @id @default(uuid()) @db.Uuid
-  guildId              String        @map("guild_id")
-  discordUserId        String        @map("discord_user_id")
-  amount               Int
-  source               RewardSource
-  idempotencyKey       String        @map("idempotency_key")
-  actorDiscordUserId   String?       @map("actor_discord_user_id")
-  reason               String?
-  metadata             Json
-  createdAt            DateTime      @default(now()) @map("created_at")
-  guild                GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-  member               RewardMember @relation(fields: [guildId, discordUserId], references: [guildId, discordUserId], onDelete: Cascade)
+  id                 String        @id @default(uuid()) @db.Uuid
+  guildId            String        @map("guild_id")
+  discordUserId      String        @map("discord_user_id")
+  amount             Int
+  source             RewardSource
+  idempotencyKey     String        @map("idempotency_key")
+  actorDiscordUserId String?       @map("actor_discord_user_id")
+  reason             String?
+  metadata           Json
+  createdAt          DateTime      @default(now()) @map("created_at")
+  guild              GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  member             RewardMember  @relation(fields: [guildId, discordUserId], references: [guildId, discordUserId], onDelete: Cascade)
 
   @@unique([guildId, idempotencyKey])
   @@index([guildId, discordUserId, createdAt])
@@ -446,94 +472,167 @@ model RewardActivityReceipt {
 }
 
 model RewardVoiceSession {
-  id                   String                   @id @default(uuid()) @db.Uuid
-  guildId              String                   @map("guild_id")
-  discordUserId        String                   @map("discord_user_id")
-  channelId            String                   @map("channel_id")
-  status               RewardVoiceSessionStatus @default(ACTIVE)
-  connectedAt          DateTime                 @map("connected_at")
-  checkpointAt         DateTime                 @map("checkpoint_at")
-  closedAt             DateTime?                @map("closed_at")
-  version              Int                      @default(0)
-  createdAt            DateTime                 @default(now()) @map("created_at")
-  updatedAt            DateTime                 @updatedAt @map("updated_at")
-  guild                GuildSettings            @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-  member               RewardMember             @relation(fields: [guildId, discordUserId], references: [guildId, discordUserId], onDelete: Cascade)
+  id            String                   @id @default(uuid()) @db.Uuid
+  guildId       String                   @map("guild_id")
+  discordUserId String                   @map("discord_user_id")
+  channelId     String                   @map("channel_id")
+  status        RewardVoiceSessionStatus @default(ACTIVE)
+  connectedAt   DateTime                 @map("connected_at")
+  checkpointAt  DateTime                 @map("checkpoint_at")
+  closedAt      DateTime?                @map("closed_at")
+  version       Int                      @default(0)
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+  guild         GuildSettings            @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  member        RewardMember             @relation(fields: [guildId, discordUserId], references: [guildId, discordUserId], onDelete: Cascade)
 
   @@index([guildId, status, checkpointAt])
   @@map("reward_voice_sessions")
 }
 
+model GameServerSettings {
+  guildId        String        @id @map("guild_id")
+  enabled        Boolean       @default(true)
+  panelChannelId String?       @map("panel_channel_id")
+  panelMessageId String?       @map("panel_message_id")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  guild          GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@map("game_server_settings")
+}
+
+model GameServer {
+  id               String              @id @default(uuid()) @db.Uuid
+  guildId          String              @map("guild_id")
+  provider         GameServerProvider  @default(DATHOST)
+  providerServerId String              @map("provider_server_id")
+  displayName      String              @map("display_name")
+  description      String?
+  enabled          Boolean             @default(true)
+  public           Boolean             @default(true)
+  connectDomain    String?             @map("connect_domain")
+  joinUrl          String?             @map("join_url")
+  sortOrder        Int                 @default(0) @map("sort_order")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  guild            GuildSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  snapshot         GameServerSnapshot?
+
+  @@unique([guildId, provider, providerServerId])
+  @@index([enabled, provider])
+  @@index([guildId, enabled, public, sortOrder])
+  @@map("game_servers")
+}
+
+model GameServerSnapshot {
+  gameServerId         String                       @id @map("game_server_id") @db.Uuid
+  hostingState         GameServerHostingState       @default(UNKNOWN) @map("hosting_state")
+  gameplayState        GameServerGameplayState      @default(UNKNOWN) @map("gameplay_state")
+  host                 String?
+  rawIp                String?                      @map("raw_ip")
+  port                 Int?
+  datacenter           String?
+  hostname             String?
+  map                  String?
+  players              Int?
+  maxPlayers           Int?                         @map("max_players")
+  playerCountSource    GameServerPlayerCountSource? @map("player_count_source")
+  cpuPercent           Float?                       @map("cpu_percent")
+  memoryUsageMb        Float?                       @map("memory_usage_mb")
+  averagePingMs        Float?                       @map("average_ping_ms")
+  packetLossPercent    Float?                       @map("packet_loss_percent")
+  serverVarMs          Float?                       @map("server_var_ms")
+  connectedSteamIds    String[]                     @default([]) @map("connected_steam_ids")
+  serverSource         Boolean                      @default(false) @map("server_source")
+  monitoringSource     Boolean                      @default(false) @map("monitoring_source")
+  consoleSource        Boolean                      @default(false) @map("console_source")
+  serverObservedAt     DateTime?                    @map("server_observed_at")
+  monitoringObservedAt DateTime?                    @map("monitoring_observed_at")
+  observedAt           DateTime                     @map("observed_at")
+  lastSuccessfulAt     DateTime?                    @map("last_successful_at")
+  lastOnlineAt         DateTime?                    @map("last_online_at")
+  consecutiveFailures  Int                          @default(0) @map("consecutive_failures")
+  stale                Boolean                      @default(false)
+  lastError            String?                      @map("last_error")
+  createdAt            DateTime                     @default(now()) @map("created_at")
+  updatedAt            DateTime                     @updatedAt @map("updated_at")
+  gameServer           GameServer                   @relation(fields: [gameServerId], references: [id], onDelete: Cascade)
+
+  @@index([hostingState, gameplayState])
+  @@map("game_server_snapshots")
+}
+
 model GameProfile {
-  key             String   @id
-  enabled         Boolean  @default(false)
-  playersPerTeam  Int      @map("players_per_team")
-  numMaps         Int      @default(1) @map("num_maps")
-  serverSlots     Int      @map("server_slots")
-  mapAllowlist    String[] @map("map_allowlist")
-  matchzyOptions  Json     @map("matchzy_options")
-  allowedCvars    Json     @map("allowed_cvars")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  matches          Match[]
+  key            String   @id
+  enabled        Boolean  @default(false)
+  playersPerTeam Int      @map("players_per_team")
+  numMaps        Int      @default(1) @map("num_maps")
+  serverSlots    Int      @map("server_slots")
+  mapAllowlist   String[] @map("map_allowlist")
+  matchzyOptions Json     @map("matchzy_options")
+  allowedCvars   Json     @map("allowed_cvars")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  matches        Match[]
 
   @@map("game_profiles")
 }
 
 model Match {
-  id                       String                @id @default(uuid()) @db.Uuid
-  guildId                  String                @map("guild_id")
-  leaderDiscordUserId      String                @map("leader_discord_user_id")
-  state                    MatchState            @default(CREATED)
-  phaseDeadlineAt          DateTime?             @map("phase_deadline_at")
-  phaseGeneration          Int                   @default(0) @map("phase_generation")
-  cleanupStatus            CleanupStatus         @default(NOT_REQUIRED) @map("cleanup_status")
-  guildSlotActive          Boolean               @default(true) @map("guild_slot_active")
-  selectedMap              String?               @map("selected_map")
-  selectedGameProfileKey   String                @map("selected_game_profile_key")
-  settingsVersion          Int                   @map("settings_version")
-  readyTimeoutSeconds      Int                   @map("ready_timeout_seconds")
-  captainPolicy            CaptainPolicy         @map("captain_policy")
-  teamSelectionMode        TeamSelectionMode     @map("team_selection_mode")
-  mapSelectionMode         MapSelectionMode      @map("map_selection_mode")
-  dathostTemplateServerId  String?               @map("dathost_template_server_id")
-  serverLocation           String                @map("server_location")
-  mapAllowlist             String[]              @map("map_allowlist")
-  dathostServerId          String?               @unique @map("dathost_server_id")
-  dathostIp                String?               @map("dathost_ip")
-  dathostPort              Int?                  @map("dathost_port")
-  encryptedRconPassword    String?               @map("encrypted_rcon_password")
-  encryptedJoinPassword    String?               @map("encrypted_join_password")
-  matchzyMatchId           Int                   @unique @default(autoincrement()) @map("matchzy_match_id")
-  matchzyConfig            Json?                 @map("matchzy_config")
-  matchzyConfigHash        String?               @map("matchzy_config_hash")
-  lastMatchzyEventAt       DateTime?             @map("last_matchzy_event_at")
-  result                   Json?
-  resultStatus             MatchResultStatus     @default(PENDING) @map("result_status")
-  score                    Json?
-  failureReason            String?               @map("failure_reason")
-  version                  Int                   @default(0)
-  createdAt                DateTime              @default(now()) @map("created_at")
-  startedAt                DateTime?             @map("started_at")
-  finishedAt               DateTime?             @map("finished_at")
-  updatedAt                DateTime              @updatedAt @map("updated_at")
-  guild                    TenManSettings        @relation(fields: [guildId], references: [guildId])
-  profile                  GameProfile           @relation(fields: [selectedGameProfileKey], references: [key])
-  players                  MatchPlayer[]
-  transitions              MatchStateTransition[]
-  cleanupTransitions       CleanupTransition[]
-  auditEvents              AuditEvent[]
-  externalEvents           ExternalEvent[]
-  reconciliationEvents     ReconciliationEvent[]
-  provisioningAttempts     ProvisioningAttempt[]
-  jobs                     Job[]
-  demoReferences           DemoReference[]
-  credentials              MatchCredential[]
-  discordResources         MatchDiscordResource[]
-  draftPicks               MatchDraftPick[]
-  vetoActions              MatchVetoAction[]
-  ratingChanges            MatchRatingChange[]
-  resultDisputes           MatchResultDispute[]
+  id                      String                 @id @default(uuid()) @db.Uuid
+  guildId                 String                 @map("guild_id")
+  leaderDiscordUserId     String                 @map("leader_discord_user_id")
+  state                   MatchState             @default(CREATED)
+  phaseDeadlineAt         DateTime?              @map("phase_deadline_at")
+  phaseGeneration         Int                    @default(0) @map("phase_generation")
+  cleanupStatus           CleanupStatus          @default(NOT_REQUIRED) @map("cleanup_status")
+  guildSlotActive         Boolean                @default(true) @map("guild_slot_active")
+  selectedMap             String?                @map("selected_map")
+  selectedGameProfileKey  String                 @map("selected_game_profile_key")
+  settingsVersion         Int                    @map("settings_version")
+  readyTimeoutSeconds     Int                    @map("ready_timeout_seconds")
+  captainPolicy           CaptainPolicy          @map("captain_policy")
+  teamSelectionMode       TeamSelectionMode      @map("team_selection_mode")
+  mapSelectionMode        MapSelectionMode       @map("map_selection_mode")
+  dathostTemplateServerId String?                @map("dathost_template_server_id")
+  serverLocation          String                 @map("server_location")
+  mapAllowlist            String[]               @map("map_allowlist")
+  dathostServerId         String?                @unique @map("dathost_server_id")
+  dathostIp               String?                @map("dathost_ip")
+  dathostPort             Int?                   @map("dathost_port")
+  encryptedRconPassword   String?                @map("encrypted_rcon_password")
+  encryptedJoinPassword   String?                @map("encrypted_join_password")
+  matchzyMatchId          Int                    @unique @default(autoincrement()) @map("matchzy_match_id")
+  matchzyConfig           Json?                  @map("matchzy_config")
+  matchzyConfigHash       String?                @map("matchzy_config_hash")
+  lastMatchzyEventAt      DateTime?              @map("last_matchzy_event_at")
+  result                  Json?
+  resultStatus            MatchResultStatus      @default(PENDING) @map("result_status")
+  score                   Json?
+  failureReason           String?                @map("failure_reason")
+  version                 Int                    @default(0)
+  createdAt               DateTime               @default(now()) @map("created_at")
+  startedAt               DateTime?              @map("started_at")
+  finishedAt              DateTime?              @map("finished_at")
+  updatedAt               DateTime               @updatedAt @map("updated_at")
+  guild                   TenManSettings         @relation(fields: [guildId], references: [guildId])
+  profile                 GameProfile            @relation(fields: [selectedGameProfileKey], references: [key])
+  players                 MatchPlayer[]
+  transitions             MatchStateTransition[]
+  cleanupTransitions      CleanupTransition[]
+  auditEvents             AuditEvent[]
+  externalEvents          ExternalEvent[]
+  reconciliationEvents    ReconciliationEvent[]
+  provisioningAttempts    ProvisioningAttempt[]
+  jobs                    Job[]
+  demoReferences          DemoReference[]
+  credentials             MatchCredential[]
+  discordResources        MatchDiscordResource[]
+  draftPicks              MatchDraftPick[]
+  vetoActions             MatchVetoAction[]
+  ratingChanges           MatchRatingChange[]
+  resultDisputes          MatchResultDispute[]
 
   @@index([guildId, state])
   @@index([state, lastMatchzyEventAt])
@@ -564,31 +663,31 @@ model MatchPlayer {
 }
 
 model TenManQueue {
-  guildId             String            @id @map("guild_id")
-  status              TenManQueueStatus @default(DISABLED)
-  version             Int               @default(0)
-  enrollmentOpenedAt  DateTime?         @map("enrollment_opened_at")
-  panelChannelId      String?           @map("panel_channel_id")
-  panelMessageId      String?           @map("panel_message_id")
-  lastQueueAlertCount Int               @default(0) @map("last_queue_alert_count")
-  createdAt           DateTime          @default(now()) @map("created_at")
-  updatedAt           DateTime          @updatedAt @map("updated_at")
-  guild               TenManSettings    @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  guildId             String             @id @map("guild_id")
+  status              TenManQueueStatus  @default(DISABLED)
+  version             Int                @default(0)
+  enrollmentOpenedAt  DateTime?          @map("enrollment_opened_at")
+  panelChannelId      String?            @map("panel_channel_id")
+  panelMessageId      String?            @map("panel_message_id")
+  lastQueueAlertCount Int                @default(0) @map("last_queue_alert_count")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  guild               TenManSettings     @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
   entries             TenManQueueEntry[]
 
   @@map("tenman_queues")
 }
 
 model TenManQueueEntry {
-  id                  String      @id @default(uuid()) @db.Uuid
-  guildId             String      @map("guild_id")
-  discordUserId       String      @map("discord_user_id")
-  steamId64           String      @map("steam_id_64")
-  displayNameSnapshot String      @map("display_name_snapshot")
-  partyId             String?     @map("party_id") @db.Uuid
-  joinedAt            DateTime    @default(now()) @map("joined_at")
-  queue               TenManQueue @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-  user                User        @relation(fields: [discordUserId], references: [discordUserId])
+  id                  String       @id @default(uuid()) @db.Uuid
+  guildId             String       @map("guild_id")
+  discordUserId       String       @map("discord_user_id")
+  steamId64           String       @map("steam_id_64")
+  displayNameSnapshot String       @map("display_name_snapshot")
+  partyId             String?      @map("party_id") @db.Uuid
+  joinedAt            DateTime     @default(now()) @map("joined_at")
+  queue               TenManQueue  @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  user                User         @relation(fields: [discordUserId], references: [discordUserId])
   party               TenManParty? @relation(fields: [partyId], references: [id], onDelete: SetNull)
 
   @@unique([guildId, discordUserId])
@@ -598,27 +697,27 @@ model TenManQueueEntry {
 }
 
 model TenManParty {
-  id        String               @id @default(uuid()) @db.Uuid
-  guildId   String               @map("guild_id")
-  leaderDiscordUserId String     @map("leader_discord_user_id")
-  createdAt DateTime             @default(now()) @map("created_at")
-  updatedAt DateTime             @updatedAt @map("updated_at")
-  guild     TenManSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-  members   TenManPartyMember[]
-  invitations TenManPartyInvite[]
-  queueEntries TenManQueueEntry[]
-  matchPlayers MatchPlayer[]
+  id                  String              @id @default(uuid()) @db.Uuid
+  guildId             String              @map("guild_id")
+  leaderDiscordUserId String              @map("leader_discord_user_id")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  guild               TenManSettings      @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  members             TenManPartyMember[]
+  invitations         TenManPartyInvite[]
+  queueEntries        TenManQueueEntry[]
+  matchPlayers        MatchPlayer[]
 
   @@index([guildId])
   @@map("tenman_parties")
 }
 
 model TenManPartyMember {
-  partyId       String     @map("party_id") @db.Uuid
-  discordUserId String     @map("discord_user_id")
-  joinedAt      DateTime   @default(now()) @map("joined_at")
+  partyId       String      @map("party_id") @db.Uuid
+  discordUserId String      @map("discord_user_id")
+  joinedAt      DateTime    @default(now()) @map("joined_at")
   party         TenManParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  user          User       @relation(fields: [discordUserId], references: [discordUserId])
+  user          User        @relation(fields: [discordUserId], references: [discordUserId])
 
   @@id([partyId, discordUserId])
   @@unique([discordUserId])
@@ -629,16 +728,16 @@ model TenManPartyMember {
 /// its own: acceptance re-checks party capacity, party enablement, queue state,
 /// and the recipient's single-party membership invariant in the same transaction.
 model TenManPartyInvite {
-  id                    String       @id @default(uuid()) @db.Uuid
-  partyId               String       @map("party_id") @db.Uuid
-  inviteeDiscordUserId  String       @map("invitee_discord_user_id")
-  inviterDiscordUserId  String       @map("inviter_discord_user_id")
-  expiresAt             DateTime     @map("expires_at")
-  acceptedAt            DateTime?    @map("accepted_at")
-  revokedAt             DateTime?    @map("revoked_at")
-  createdAt             DateTime     @default(now()) @map("created_at")
-  party                 TenManParty  @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  invitee               User         @relation(fields: [inviteeDiscordUserId], references: [discordUserId])
+  id                   String      @id @default(uuid()) @db.Uuid
+  partyId              String      @map("party_id") @db.Uuid
+  inviteeDiscordUserId String      @map("invitee_discord_user_id")
+  inviterDiscordUserId String      @map("inviter_discord_user_id")
+  expiresAt            DateTime    @map("expires_at")
+  acceptedAt           DateTime?   @map("accepted_at")
+  revokedAt            DateTime?   @map("revoked_at")
+  createdAt            DateTime    @default(now()) @map("created_at")
+  party                TenManParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  invitee              User        @relation(fields: [inviteeDiscordUserId], references: [discordUserId])
 
   @@index([partyId, inviteeDiscordUserId, expiresAt])
   @@index([inviteeDiscordUserId, expiresAt])
@@ -646,15 +745,15 @@ model TenManPartyInvite {
 }
 
 model TenManQueueBan {
-  id                  String         @id @default(uuid()) @db.Uuid
-  guildId             String         @map("guild_id")
-  discordUserId       String         @map("discord_user_id")
-  reason              String
-  actorDiscordUserId  String         @map("actor_discord_user_id")
-  expiresAt           DateTime?      @map("expires_at")
-  revokedAt           DateTime?      @map("revoked_at")
-  createdAt           DateTime       @default(now()) @map("created_at")
-  guild               TenManSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  id                 String         @id @default(uuid()) @db.Uuid
+  guildId            String         @map("guild_id")
+  discordUserId      String         @map("discord_user_id")
+  reason             String
+  actorDiscordUserId String         @map("actor_discord_user_id")
+  expiresAt          DateTime?      @map("expires_at")
+  revokedAt          DateTime?      @map("revoked_at")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  guild              TenManSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@index([guildId, discordUserId, expiresAt])
   @@map("tenman_queue_bans")
@@ -673,20 +772,20 @@ model TenManNotificationPreference {
 }
 
 model MatchDiscordResource {
-  id           String                    @id @default(uuid()) @db.Uuid
-  matchId      String                    @map("match_id") @db.Uuid
-  resourceType MatchDiscordResourceType  @map("resource_type")
-  discordId    String?                   @map("discord_id")
-  createdByBot Boolean                   @default(false) @map("created_by_bot")
-  state        MatchDiscordResourceState @default(PENDING_CREATE)
+  id                     String                    @id @default(uuid()) @db.Uuid
+  matchId                String                    @map("match_id") @db.Uuid
+  resourceType           MatchDiscordResourceType  @map("resource_type")
+  discordId              String?                   @map("discord_id")
+  createdByBot           Boolean                   @default(false) @map("created_by_bot")
+  state                  MatchDiscordResourceState @default(PENDING_CREATE)
   /// Durable identity for one creation attempt. It is cleared only before Discord
   /// creation has begun, so stale pre-I/O leases can be reclaimed safely.
-  creationAttemptId       String?   @map("creation_attempt_id")
-  creationLeaseExpiresAt  DateTime? @map("creation_lease_expires_at")
-  creationIoStartedAt     DateTime? @map("creation_io_started_at")
-  createdAt    DateTime                  @default(now()) @map("created_at")
-  deletedAt    DateTime?                 @map("deleted_at")
-  match        Match                     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  creationAttemptId      String?                   @map("creation_attempt_id")
+  creationLeaseExpiresAt DateTime?                 @map("creation_lease_expires_at")
+  creationIoStartedAt    DateTime?                 @map("creation_io_started_at")
+  createdAt              DateTime                  @default(now()) @map("created_at")
+  deletedAt              DateTime?                 @map("deleted_at")
+  match                  Match                     @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, resourceType])
   @@index([matchId, state])
@@ -741,15 +840,15 @@ model PlayerGuildStats {
 }
 
 model MatchRatingChange {
-  id            String   @id @default(uuid()) @db.Uuid
-  matchId       String   @map("match_id") @db.Uuid
-  discordUserId String   @map("discord_user_id")
-  ratingBefore  Int      @map("rating_before")
+  id            String    @id @default(uuid()) @db.Uuid
+  matchId       String    @map("match_id") @db.Uuid
+  discordUserId String    @map("discord_user_id")
+  ratingBefore  Int       @map("rating_before")
   delta         Int
-  ratingAfter   Int      @map("rating_after")
+  ratingAfter   Int       @map("rating_after")
   reversedAt    DateTime? @map("reversed_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  match         Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, discordUserId])
   @@map("match_rating_changes")
@@ -784,16 +883,16 @@ model CleanupTransition {
 }
 
 model AuditEvent {
-  id                   String   @id @default(uuid()) @db.Uuid
-  matchId              String?  @map("match_id") @db.Uuid
-  guildId              String   @map("guild_id")
-  actorDiscordUserId   String?  @map("actor_discord_user_id")
-  eventType            String   @map("event_type")
-  result               String
-  correlationId        String   @map("correlation_id")
-  metadata             Json
-  createdAt            DateTime @default(now()) @map("created_at")
-  match                Match?   @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  id                 String   @id @default(uuid()) @db.Uuid
+  matchId            String?  @map("match_id") @db.Uuid
+  guildId            String   @map("guild_id")
+  actorDiscordUserId String?  @map("actor_discord_user_id")
+  eventType          String   @map("event_type")
+  result             String
+  correlationId      String   @map("correlation_id")
+  metadata           Json
+  createdAt          DateTime @default(now()) @map("created_at")
+  match              Match?   @relation(fields: [matchId], references: [id], onDelete: SetNull)
 
   @@index([guildId, createdAt])
   @@index([matchId, createdAt])
@@ -801,17 +900,17 @@ model AuditEvent {
 }
 
 model ExternalEvent {
-  id             String    @id @default(uuid()) @db.Uuid
-  matchId        String    @map("match_id") @db.Uuid
-  provider       String
-  eventType      String    @map("event_type")
-  dedupeKey      String    @map("dedupe_key")
-  payload        Json
-  payloadHash    String    @map("payload_hash")
-  processedAt    DateTime? @map("processed_at")
-  processingError String?  @map("processing_error")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  match          Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  id              String    @id @default(uuid()) @db.Uuid
+  matchId         String    @map("match_id") @db.Uuid
+  provider        String
+  eventType       String    @map("event_type")
+  dedupeKey       String    @map("dedupe_key")
+  payload         Json
+  payloadHash     String    @map("payload_hash")
+  processedAt     DateTime? @map("processed_at")
+  processingError String?   @map("processing_error")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  match           Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, provider, dedupeKey])
   @@index([matchId, createdAt])
@@ -832,40 +931,40 @@ model ReconciliationEvent {
 }
 
 model ProvisioningAttempt {
-  id                   String             @id @default(uuid()) @db.Uuid
-  matchId              String             @map("match_id") @db.Uuid
-  status               ProvisioningStatus
-  provisionalName      String             @unique @map("provisional_name")
-  requestedTemplateId  String             @map("requested_template_id")
-  requestedLocation    String             @map("requested_location")
-  requestStartedAt     DateTime?          @map("request_started_at")
-  requestFinishedAt    DateTime?          @map("request_finished_at")
-  dathostServerId      String?            @map("dathost_server_id")
-  candidateEvidence    Json?              @map("candidate_evidence")
-  operatorResolution   Json?              @map("operator_resolution")
-  createdAt            DateTime           @default(now()) @map("created_at")
-  updatedAt            DateTime           @updatedAt @map("updated_at")
-  match                Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(uuid()) @db.Uuid
+  matchId             String             @map("match_id") @db.Uuid
+  status              ProvisioningStatus
+  provisionalName     String             @unique @map("provisional_name")
+  requestedTemplateId String             @map("requested_template_id")
+  requestedLocation   String             @map("requested_location")
+  requestStartedAt    DateTime?          @map("request_started_at")
+  requestFinishedAt   DateTime?          @map("request_finished_at")
+  dathostServerId     String?            @map("dathost_server_id")
+  candidateEvidence   Json?              @map("candidate_evidence")
+  operatorResolution  Json?              @map("operator_resolution")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  match               Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@index([matchId, status])
   @@map("provisioning_attempts")
 }
 
 model Job {
-  id          String    @id @default(uuid()) @db.Uuid
-  matchId     String?   @map("match_id") @db.Uuid
-  type        String
-  status      JobStatus @default(PENDING)
-  idempotencyKey String @unique @map("idempotency_key")
-  payload     Json
-  attempts    Int       @default(0)
-  runAt       DateTime  @default(now()) @map("run_at")
-  leaseOwner  String?   @map("lease_owner")
+  id             String    @id @default(uuid()) @db.Uuid
+  matchId        String?   @map("match_id") @db.Uuid
+  type           String
+  status         JobStatus @default(PENDING)
+  idempotencyKey String    @unique @map("idempotency_key")
+  payload        Json
+  attempts       Int       @default(0)
+  runAt          DateTime  @default(now()) @map("run_at")
+  leaseOwner     String?   @map("lease_owner")
   leaseExpiresAt DateTime? @map("lease_expires_at")
-  lastError   String?   @map("last_error")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  match       Match?    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  lastError      String?   @map("last_error")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  match          Match?    @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@index([status, runAt])
   @@map("jobs")
@@ -889,26 +988,26 @@ model MatchCredential {
 }
 
 model DemoReference {
-    id                   String             @id @default(uuid()) @db.Uuid
-    matchId              String             @map("match_id") @db.Uuid
-    mapNumber            Int                @map("map_number")
-    mapName              String             @map("map_name")
-    status               DemoArtifactStatus @default(EXPECTED)
-    sourceFilename       String?            @map("source_filename")
-    storageKey           String?            @map("storage_key")
-    byteCount            BigInt?            @map("byte_count")
-    sha256               String?
-    observedAt           DateTime?          @map("observed_at")
-    collectionDeadlineAt DateTime           @map("collection_deadline_at")
-    storedAt             DateTime?          @map("stored_at")
-    expiredAt            DateTime?          @map("expired_at")
-    failureReason        String?            @map("failure_reason")
-    retryCount           Int                @default(0) @map("retry_count")
-    createdAt            DateTime           @default(now()) @map("created_at")
-    updatedAt            DateTime           @updatedAt @map("updated_at")
-    match                Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  id                   String             @id @default(uuid()) @db.Uuid
+  matchId              String             @map("match_id") @db.Uuid
+  mapNumber            Int                @map("map_number")
+  mapName              String             @map("map_name")
+  status               DemoArtifactStatus @default(EXPECTED)
+  sourceFilename       String?            @map("source_filename")
+  storageKey           String?            @map("storage_key")
+  byteCount            BigInt?            @map("byte_count")
+  sha256               String?
+  observedAt           DateTime?          @map("observed_at")
+  collectionDeadlineAt DateTime           @map("collection_deadline_at")
+  storedAt             DateTime?          @map("stored_at")
+  expiredAt            DateTime?          @map("expired_at")
+  failureReason        String?            @map("failure_reason")
+  retryCount           Int                @default(0) @map("retry_count")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  match                Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
-    @@unique([matchId, mapNumber])
-    @@index([status, collectionDeadlineAt])
+  @@unique([matchId, mapNumber])
+  @@index([status, collectionDeadlineAt])
   @@map("demo_references")
 }

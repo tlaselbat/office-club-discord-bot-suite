@@ -338,7 +338,10 @@ export class QueueService {
         }),
       ]);
       if (settings === null || !settings.enabled || settings.defaultGameProfileKey === null)
-        throw new PublicError('QUEUE_UNAVAILABLE', 'Competitive configuration must be enabled first.');
+        throw new PublicError(
+          'QUEUE_UNAVAILABLE',
+          'Competitive configuration must be enabled first.',
+        );
       if (activeMatch !== null)
         throw new PublicError('QUEUE_UNAVAILABLE', 'A match is already forming or in progress.');
       const queue = await transaction.tenManQueue.upsert({
@@ -370,8 +373,11 @@ export class QueueService {
   public async closeEnrollment(command: QueueEnrollmentCommand): Promise<void> {
     await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${command.guildId}, 0))`;
-      const queue = await transaction.tenManQueue.findUnique({ where: { guildId: command.guildId } });
-      if (queue === null) throw new PublicError('QUEUE_UNAVAILABLE', 'The queue has not been created.');
+      const queue = await transaction.tenManQueue.findUnique({
+        where: { guildId: command.guildId },
+      });
+      if (queue === null)
+        throw new PublicError('QUEUE_UNAVAILABLE', 'The queue has not been created.');
       if (queue.status === 'LOCKED')
         throw new PublicError('QUEUE_UNAVAILABLE', 'The queue is locked by an active match.');
       await transaction.tenManQueue.update({

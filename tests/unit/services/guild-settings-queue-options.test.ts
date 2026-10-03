@@ -35,7 +35,10 @@ function createPrisma(settings: { version: number; managedResourceState: string 
 describe('GuildSettingsService.updateQueueOptions', () => {
   it('updates only supported queue choices and records an audit event', async () => {
     const prisma = createPrisma({ version: 7, managedResourceState: 'ACTIVE' });
-    const service = new GuildSettingsService(prisma, {} as ConstructorParameters<typeof GuildSettingsService>[1]);
+    const service = new GuildSettingsService(
+      prisma,
+      {} as ConstructorParameters<typeof GuildSettingsService>[1],
+    );
 
     await service.updateQueueOptions({
       guildId: 'guild-1',
@@ -72,10 +75,16 @@ describe('GuildSettingsService.updateQueueOptions', () => {
       mapSelectionMode: 'CAPTAIN_VETO' as const,
     };
     await expect(
-      new GuildSettingsService(stale, {} as ConstructorParameters<typeof GuildSettingsService>[1]).updateQueueOptions(command),
+      new GuildSettingsService(
+        stale,
+        {} as ConstructorParameters<typeof GuildSettingsService>[1],
+      ).updateQueueOptions(command),
     ).rejects.toThrow('Configuration changed');
     await expect(
-      new GuildSettingsService(inactive, {} as ConstructorParameters<typeof GuildSettingsService>[1]).updateQueueOptions(command),
+      new GuildSettingsService(
+        inactive,
+        {} as ConstructorParameters<typeof GuildSettingsService>[1],
+      ).updateQueueOptions(command),
     ).rejects.toThrow('setup must be active');
   });
 });

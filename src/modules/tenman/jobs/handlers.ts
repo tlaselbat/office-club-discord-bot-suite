@@ -1,7 +1,7 @@
 import type { Client } from 'discord.js';
 import type { Logger } from 'pino';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
-import type { DatHostClient } from '../integrations/dathost/client.js';
+import type { DatHostClient } from '../../../integrations/dathost/client.js';
 import { ProvisioningOrchestrator } from '../orchestrator/provisioning.js';
 import { CleanupOrchestrator } from '../orchestrator/cleanup.js';
 import { PrismaProvisioningRepository } from '../database/provisioning-repository.js';

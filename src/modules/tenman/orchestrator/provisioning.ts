@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import type { DatHostServer } from '../integrations/dathost/schemas.js';
+import type { DatHostServer } from '../../../integrations/dathost/schemas.js';
 import {
   reconcileDuplicate,
   type DuplicateResolution,

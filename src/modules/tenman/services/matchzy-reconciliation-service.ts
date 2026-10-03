@@ -1,6 +1,6 @@
 import type { Logger } from 'pino';
 import type { MatchState, PrismaClient } from '../../../generated/prisma/client.js';
-import type { DatHostClient } from '../integrations/dathost/client.js';
+import type { DatHostClient } from '../../../integrations/dathost/client.js';
 
 const ACTIVE_MATCH_STATES = new Set(['MATCH_LOADED', 'WARMUP', 'LIVE', 'PAUSED']);
 

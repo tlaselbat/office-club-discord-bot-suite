@@ -20,7 +20,7 @@ import { SteamAdminService } from '../modules/tenman/services/steam-admin-servic
 import { GuildSettingsService } from '../modules/tenman/services/guild-settings-service.js';
 import { MatchResultDisputeService } from '../modules/tenman/services/match-result-dispute-service.js';
 import { QueueAlertService } from '../modules/tenman/services/queue-alert-service.js';
-import type { DatHostClient } from '../modules/tenman/integrations/dathost/client.js';
+import type { DatHostClient } from '../integrations/dathost/client.js';
 import { DiagnosticsService } from '../modules/tenman/services/diagnostics-service.js';
 import { commands } from '../modules/tenman/bot/commands.js';
 import { assertAuthorized, type ActorContext } from '../modules/tenman/domain/authorization.js';
@@ -33,10 +33,9 @@ import {
 import { adminGeneration } from '../modules/tenman/bot/admin-custom-id.js';
 import { buildAdminConfirmationControls } from '../modules/tenman/bot/admin-components.js';
 import { ModuleRegistry } from '../core/modules/registry.js';
-import { createCompetitiveModule } from '../modules/tenman/module.js';
+import { createSuiteModules } from '../core/modules/composition.js';
 import { RewardService } from '../modules/rewards/services/reward-service.js';
 import { TextActivityService } from '../modules/rewards/services/text-activity-service.js';
-import { createRewardsModule } from '../modules/rewards/module.js';
 import { LevelRoleService } from '../modules/rewards/services/level-role-service.js';
 import { VoiceActivityService } from '../modules/rewards/services/voice-activity-service.js';
 import { TagLoyaltyService } from '../modules/rewards/services/tag-loyalty-service.js';
@@ -199,30 +198,38 @@ export function createDiscordClient(dependencies: BotDependencies): Client {
     },
     ephemeralReplies,
   );
-  const modules = new ModuleRegistry([
-    {
-      ...createCompetitiveModule(),
-      handleInteraction: async ({ interaction }) => {
-        if (interaction.isChatInputCommand()) {
-          await handleCommand(
-            interaction,
-            dependencies,
-            client,
-            guildSettingsService,
-            guildResourceService,
-            ephemeralReplies,
-          );
-        } else {
-          await competitiveComponentRouter.handle(interaction);
-        }
+  const modules = new ModuleRegistry(
+    createSuiteModules({
+      competitive: {
+        handleInteraction: async ({ interaction }) => {
+          if (interaction.isChatInputCommand()) {
+            await handleCommand(
+              interaction,
+              dependencies,
+              client,
+              guildSettingsService,
+              guildResourceService,
+              ephemeralReplies,
+            );
+          } else {
+            await competitiveComponentRouter.handle(interaction);
+          }
+        },
       },
-    },
-    createRewardsModule({
-      prisma: dependencies.prisma,
-      logger: dependencies.logger,
-      componentSigningSecret: dependencies.componentSigningSecret,
+      rewards: {
+        prisma: dependencies.prisma,
+        logger: dependencies.logger,
+        componentSigningSecret: dependencies.componentSigningSecret,
+      },
+      gameServers: {
+        prisma: dependencies.prisma,
+        discord: client,
+        dathost: dependencies.dathost,
+        componentSigningSecret: dependencies.componentSigningSecret,
+        logger: dependencies.logger,
+      },
     }),
-  ]);
+  );
   client.on(Events.InteractionCreate, (interaction) => {
     if (
       !interaction.isChatInputCommand() &&

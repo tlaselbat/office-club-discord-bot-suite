@@ -18,13 +18,12 @@ import { DiagnosticsService } from './modules/tenman/services/diagnostics-servic
 import { GuildResourceService } from './modules/tenman/services/guild-resource-service.js';
 import { GuildSettingsService } from './modules/tenman/services/guild-settings-service.js';
 import { WebSessionService } from './services/web-session-service.js';
-import { DatHostClient } from './modules/tenman/integrations/dathost/client.js';
+import { DatHostClient } from './integrations/dathost/client.js';
 import { createArtifactStorage } from './modules/tenman/services/artifact-storage.js';
 import { MatchArtifactService } from './modules/tenman/services/match-artifact-service.js';
 import { WorkerRunner } from './jobs/runner.js';
 import { ModuleRegistry } from './core/modules/registry.js';
-import { createCompetitiveModule } from './modules/tenman/module.js';
-import { createRewardsModule } from './modules/rewards/module.js';
+import { createSuiteModules } from './core/modules/composition.js';
 
 export interface Application {
   prisma: PrismaClient;
@@ -98,28 +97,39 @@ export async function createApplication(
       sessionSecret: environment.PANEL_SESSION_SECRET,
     },
   });
-  const modules = new ModuleRegistry([
-    createCompetitiveModule({
-      prisma,
-      dathost,
-      discord,
-      cipher,
-      credentials: credentialService,
-      artifacts: matchArtifactService,
-      publicBaseUrl: new URL(environment.PUBLIC_BASE_URL),
-      templateServerIds: new Set([environment.DATHOST_TEMPLATE_SERVER_ID]),
-      componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
-      matchzyStaleAfterMs: environment.MATCHZY_STALE_AFTER_MS,
-      matchzyReconciliationIntervalMs: environment.MATCHZY_RECONCILIATION_INTERVAL_MS,
-      logger,
+  const modules = new ModuleRegistry(
+    createSuiteModules({
+      competitive: {
+        dependencies: {
+          prisma,
+          dathost,
+          discord,
+          cipher,
+          credentials: credentialService,
+          artifacts: matchArtifactService,
+          publicBaseUrl: new URL(environment.PUBLIC_BASE_URL),
+          templateServerIds: new Set([environment.DATHOST_TEMPLATE_SERVER_ID]),
+          componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
+          matchzyStaleAfterMs: environment.MATCHZY_STALE_AFTER_MS,
+          matchzyReconciliationIntervalMs: environment.MATCHZY_RECONCILIATION_INTERVAL_MS,
+          logger,
+        },
+      },
+      rewards: {
+        prisma,
+        discord,
+        logger,
+        componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
+      },
+      gameServers: {
+        prisma,
+        discord,
+        dathost,
+        componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
+        logger,
+      },
     }),
-    createRewardsModule({
-      prisma,
-      discord,
-      logger,
-      componentSigningSecret: environment.MATCH_TOKEN_SIGNING_SECRET,
-    }),
-  ]);
+  );
   const worker = new WorkerRunner(
     new PrismaJobStore(prisma),
     modules.jobHandlers(),

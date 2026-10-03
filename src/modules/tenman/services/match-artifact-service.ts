@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { PassThrough, Readable } from 'node:stream';
 import type { DemoReference, PrismaClient } from '../../../generated/prisma/client.js';
-import type { DatHostClient } from '../integrations/dathost/client.js';
+import type { DatHostClient } from '../../../integrations/dathost/client.js';
 import type { MatchZyEvent } from '../integrations/matchzy/schemas.js';
 import type { ArtifactStorage } from './artifact-storage.js';
 import { scheduleJob } from '../../../database/schedule-job.js';
