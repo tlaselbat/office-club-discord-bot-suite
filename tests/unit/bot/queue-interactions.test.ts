@@ -101,7 +101,9 @@ describe('queue component interactions', () => {
         entries: [],
       },
     });
-    const event = interaction(createQueueCustomId({ action: 'JOIN', guildId, version: 5 }, secret));
+    const event = interaction(
+      createQueueCustomId({ action: 'TOGGLE', guildId, version: 5 }, secret),
+    );
     await router(prisma).handle(event as never);
     expect(event.deferUpdate).toHaveBeenCalledOnce();
     expect(event.reply).not.toHaveBeenCalled();
@@ -163,7 +165,7 @@ describe('queue component interactions', () => {
     const labels = reply.components.flatMap((row) =>
       row.toJSON().components.map((component) => component.label),
     );
-    expect(labels).toEqual(['Match Center', 'Leave Queue']);
+    expect(labels).toEqual(['Player Center UI', 'Join / Leave Queue']);
   });
 
   it('leaves the queue with a rejoin action for an individual entry', async () => {
@@ -177,7 +179,7 @@ describe('queue component interactions', () => {
       joinResult: { removedCount: 1, wasParty: false },
     });
     const event = interaction(
-      createQueueCustomId({ action: 'LEAVE', guildId, version: 5 }, secret),
+      createQueueCustomId({ action: 'TOGGLE', guildId, version: 5 }, secret),
     );
     await router(prisma).handle(event as never);
     const reply = event.editReply.mock.calls.at(0)?.[0] as {
@@ -186,11 +188,11 @@ describe('queue component interactions', () => {
     };
     expect(reply.content).toBe('You left the queue.');
     const buttons = reply.components.flatMap((row) => row.toJSON().components);
-    expect(buttons.map((component) => component.label)).toEqual(['Join Queue Again']);
+    expect(buttons.map((component) => component.label)).toEqual(['Join / Leave Queue']);
     // The recovery button must carry a valid, current-version signature.
     const customId = buttons[0]?.custom_id ?? '';
     expect(parseQueueCustomId(customId, secret)).toEqual({
-      action: 'JOIN',
+      action: 'TOGGLE',
       guildId,
       version: 5,
     });

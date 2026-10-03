@@ -12,30 +12,22 @@ export interface ReadyCheckControl {
   phaseGeneration: number;
 }
 
-export function joinQueueButton(
+export function joinLeaveQueueButton(
   guildId: string,
   version: number,
   secret: string,
-  label = 'Join Queue',
 ): ButtonBuilder {
   return new ButtonBuilder()
-    .setCustomId(createQueueCustomId({ action: 'JOIN', guildId, version }, secret))
-    .setLabel(label)
+    .setCustomId(createQueueCustomId({ action: 'TOGGLE', guildId, version }, secret))
+    .setLabel('Join / Leave Queue')
     .setStyle(ButtonStyle.Success);
-}
-
-export function leaveQueueButton(guildId: string, version: number, secret: string): ButtonBuilder {
-  return new ButtonBuilder()
-    .setCustomId(createQueueCustomId({ action: 'LEAVE', guildId, version }, secret))
-    .setLabel('Leave Queue')
-    .setStyle(ButtonStyle.Danger);
 }
 
 export function matchCenterButton(
   guildId: string,
   actorDiscordUserId: string,
   secret: string,
-  label = 'Match Center',
+  label = 'Player Center UI',
 ): ButtonBuilder {
   return new ButtonBuilder()
     .setCustomId(createPlayerHubCustomId({ action: 'HUB', guildId, actorDiscordUserId }, secret))
@@ -94,7 +86,7 @@ export function buildQueueControls(
 ): ActionRowBuilder<ButtonBuilder>[] {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      joinQueueButton(guildId, version, secret),
+      joinLeaveQueueButton(guildId, version, secret),
       readyButton(secret),
       matchCenterButton(guildId, PANEL_ACTOR_PLACEHOLDER, secret),
     ),

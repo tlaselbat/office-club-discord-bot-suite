@@ -48,12 +48,7 @@ import {
   buildAdminQueueConfiguration,
   configurationDraftFromSettings,
 } from './admin-queue-config-components.js';
-import {
-  joinQueueButton,
-  leaveQueueButton,
-  matchCenterButton,
-  queueRefreshButton,
-} from './queue-components.js';
+import { joinLeaveQueueButton, matchCenterButton, queueRefreshButton } from './queue-components.js';
 import { parseMatchAdminCustomId } from './match-admin-custom-id.js';
 import { parseMatchOpsCustomId } from './match-ops-custom-id.js';
 import { createQueueAdminCustomId, parseQueueAdminCustomId } from './queue-admin-custom-id.js';
@@ -807,7 +802,10 @@ export class TenManComponentInteractionRouter {
       interaction.deferReply({ flags: MessageFlags.Ephemeral }),
     );
 
-    if (payload.action === 'JOIN') {
+    const isQueued = queue.entries.some(
+      (candidate) => candidate.discordUserId === interaction.user.id,
+    );
+    if (payload.action === 'JOIN' || (payload.action === 'TOGGLE' && !isQueued)) {
       const result = await this.queueService.join({
         guildId: payload.guildId,
         discordUserId: interaction.user.id,
@@ -825,7 +823,7 @@ export class TenManComponentInteractionRouter {
       return;
     }
 
-    if (payload.action === 'LEAVE') {
+    if (payload.action === 'LEAVE' || (payload.action === 'TOGGLE' && isQueued)) {
       const entry = queue.entries.find(
         (candidate) => candidate.discordUserId === interaction.user.id,
       );
@@ -884,12 +882,7 @@ export class TenManComponentInteractionRouter {
           ? []
           : [
               new ActionRowBuilder<ButtonBuilder>().addComponents(
-                joinQueueButton(
-                  guildId,
-                  queue.version,
-                  this.options.componentSigningSecret,
-                  'Join Queue Again',
-                ),
+                joinLeaveQueueButton(guildId, queue.version, this.options.componentSigningSecret),
               ),
             ],
     };
@@ -909,7 +902,7 @@ export class TenManComponentInteractionRouter {
     const hubAndLeave = [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         matchCenterButton(guildId, interaction.user.id, secret),
-        leaveQueueButton(guildId, version, secret),
+        joinLeaveQueueButton(guildId, version, secret),
       ),
     ];
     const hubAndRefresh = [
@@ -1071,7 +1064,7 @@ export class TenManComponentInteractionRouter {
                   },
                   this.options.componentSigningSecret,
                 ),
-                label: 'Match Center',
+                label: 'Player Center UI',
               },
             ],
           },

@@ -1,10 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import {
-  buildAssignSteamAccountButton,
-  buildSteamAccountButton,
-} from './steam-account-components.js';
 import { createPlayerHubCustomId } from './player-hub-custom-id.js';
-import { createQueueCustomId } from './queue-custom-id.js';
 import { createMatchCustomId } from './match-custom-id.js';
 import { createPartyCustomId } from './party-custom-id.js';
 import { createResultDisputeCustomId } from './match-result-dispute-custom-id.js';
@@ -20,7 +15,7 @@ export function buildMatchCenterResponse(
   matchPhaseGeneration: number,
   secret: string,
 ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
-  const base = new EmbedBuilder().setTitle('Match Center').setColor(0x5865f2);
+  const base = new EmbedBuilder().setTitle('Player Center').setColor(0x5865f2);
   const nav = navRow(guildId, discordUserId, secret);
 
   switch (status.kind) {
@@ -37,9 +32,7 @@ export function buildMatchCenterResponse(
             ),
         ],
         components: [
-          ...buildAssignSteamAccountButton(guildId, discordUserId, secret),
           new ActionRowBuilder<ButtonBuilder>().addComponents(
-            howItWorksButton(guildId, discordUserId, queueVersion, secret),
             refreshButton(guildId, discordUserId, secret),
           ),
           nav,
@@ -64,16 +57,6 @@ export function buildMatchCenterResponse(
         ],
         components: [
           new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                createQueueCustomId({ action: 'JOIN', guildId, version: queueVersion }, secret),
-              )
-              .setLabel('Join Queue')
-              .setStyle(ButtonStyle.Success),
-          ),
-          ...buildSteamAccountButton(guildId, discordUserId, secret),
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            howItWorksButton(guildId, discordUserId, queueVersion, secret),
             refreshButton(guildId, discordUserId, secret),
           ),
           nav,
@@ -99,16 +82,6 @@ export function buildMatchCenterResponse(
         ],
         components: [
           new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                createQueueCustomId({ action: 'LEAVE', guildId, version: queueVersion }, secret),
-              )
-              .setLabel('Leave Queue')
-              .setStyle(ButtonStyle.Danger),
-          ),
-          ...buildSteamAccountButton(guildId, discordUserId, secret),
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            howItWorksButton(guildId, discordUserId, queueVersion, secret),
             refreshButton(guildId, discordUserId, secret),
           ),
           nav,
@@ -123,36 +96,6 @@ export function buildMatchCenterResponse(
           ),
         ],
         components: [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                createMatchCustomId(
-                  {
-                    action: 'READY',
-                    matchId: status.matchId,
-                    version: matchVersion,
-                    phaseGeneration: matchPhaseGeneration,
-                  },
-                  secret,
-                ),
-              )
-              .setLabel("I'm Ready")
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId(
-                createMatchCustomId(
-                  {
-                    action: 'WITHDRAW_READY',
-                    matchId: status.matchId,
-                    version: matchVersion,
-                    phaseGeneration: matchPhaseGeneration,
-                  },
-                  secret,
-                ),
-              )
-              .setLabel('Withdraw')
-              .setStyle(ButtonStyle.Secondary),
-          ),
           new ActionRowBuilder<ButtonBuilder>().addComponents(
             refreshButton(guildId, discordUserId, secret),
           ),
@@ -209,14 +152,7 @@ export function buildMatchCenterResponse(
       };
 
     case 'TERMINAL': {
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(
-            createQueueCustomId({ action: 'JOIN', guildId, version: queueVersion }, secret),
-          )
-          .setLabel('Join Queue Again')
-          .setStyle(ButtonStyle.Success),
-      );
+      const row = new ActionRowBuilder<ButtonBuilder>();
       if (status.state === 'FINISHED') {
         row.addComponents(
           new ButtonBuilder()
@@ -244,7 +180,7 @@ export function buildMatchCenterResponse(
           ),
         ],
         components: [
-          row,
+          ...(row.components.length > 0 ? [row] : []),
           new ActionRowBuilder<ButtonBuilder>().addComponents(
             refreshButton(guildId, discordUserId, secret),
           ),
@@ -278,20 +214,6 @@ function navRow(
       .setLabel('Stats')
       .setStyle(ButtonStyle.Secondary),
   );
-}
-
-function howItWorksButton(
-  guildId: string,
-  actorDiscordUserId: string,
-  queueVersion: number,
-  secret: string,
-): ButtonBuilder {
-  return new ButtonBuilder()
-    .setCustomId(
-      createQueueCustomId({ action: 'HOW_IT_WORKS', guildId, version: queueVersion }, secret),
-    )
-    .setLabel('How It Works')
-    .setStyle(ButtonStyle.Secondary);
 }
 
 function refreshButton(guildId: string, actorDiscordUserId: string, secret: string): ButtonBuilder {

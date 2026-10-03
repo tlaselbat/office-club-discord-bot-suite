@@ -269,7 +269,7 @@ describe('queue panel renderer (Components V2)', () => {
     const labels = buttonLabels(payload);
     expect(labels).not.toContain('Join Queue');
     expect(labels).toEqual(
-      expect.arrayContaining(['Match Center', 'Steam Account', 'How It Works', 'Refresh']),
+      expect.arrayContaining(['Player Center UI', 'Steam Account', 'How It Works', 'Refresh']),
     );
   });
 
@@ -300,9 +300,9 @@ describe('queue panel renderer (Components V2)', () => {
   it('exposes the expected open-state controls in order', () => {
     const payload = renderQueuePanel(view(), secret);
     expect(buttonLabels(payload)).toEqual([
-      'Join Queue',
+      'Join / Leave Queue',
       'Ready',
-      'Match Center',
+      'Player Center UI',
       'Steam Account',
       'How It Works',
       'Refresh',
@@ -341,10 +341,10 @@ describe('queue panel renderer (Components V2)', () => {
     });
   });
 
-  it('keeps Join Queue as success and Match Center as primary', () => {
+  it('keeps Join / Leave Queue as success and Player Center UI as primary', () => {
     const payload = renderQueuePanel(view(), secret);
-    const join = buttons(payload).find((component) => component.label === 'Join Queue');
-    const lobby = buttons(payload).find((component) => component.label === 'Match Center');
+    const join = buttons(payload).find((component) => component.label === 'Join / Leave Queue');
+    const lobby = buttons(payload).find((component) => component.label === 'Player Center UI');
     expect(join?.style).toBe(ButtonStyle.Success);
     expect(lobby?.style).toBe(ButtonStyle.Primary);
   });
@@ -360,9 +360,9 @@ describe('queue panel renderer (Components V2)', () => {
   it('signs component IDs and binds mutating controls to the queue version', () => {
     const payload = renderQueuePanel(view(), secret);
     const join = buttons(payload)[0];
-    expect(join?.custom_id?.startsWith('tmq:JOIN:')).toBe(true);
+    expect(join?.custom_id?.startsWith('tmq:TOGGLE:')).toBe(true);
     const parsed = parseQueueCustomId(join?.custom_id ?? '', secret);
-    expect(parsed).toEqual({ action: 'JOIN', guildId, version: 7 });
+    expect(parsed).toEqual({ action: 'TOGGLE', guildId, version: 7 });
     const steam = buttons(payload).find((component) => component.label === 'Steam Account');
     expect(parseSteamAccountCustomId(steam?.custom_id ?? '', secret).action).toBe('VIEW');
   });

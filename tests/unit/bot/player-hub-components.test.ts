@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { buildMatchCenterResponse } from '../../../src/modules/tenman/bot/player-hub-components.js';
-import { parseQueueCustomId } from '../../../src/modules/tenman/bot/queue-custom-id.js';
 import { parseMatchCustomId } from '../../../src/modules/tenman/bot/match-custom-id.js';
 import type { PlayerStatus } from '../../../src/modules/tenman/services/player-status-service.js';
 
@@ -36,43 +35,32 @@ function labels(response: ReturnType<typeof render>) {
   return buttons(response).map((button) => button.label);
 }
 
-describe('Match Center personal interface', () => {
-  it('new player: no Steam account, not queued, direct assign action', () => {
+describe('Player Center personal interface', () => {
+  it('new player: no Steam account and no duplicate queue controls', () => {
     const response = render({ kind: 'NEW_PLAYER' });
-    expect(embed(response).title).toBe('Match Center');
+    expect(embed(response).title).toBe('Player Center');
     const fieldNames = (embed(response).fields ?? []).map((field) => field.name);
     expect(fieldNames).toEqual(['Steam account', 'Queue']);
     expect(embed(response).fields?.[0]?.value).toBe('Not assigned');
     expect(embed(response).fields?.[1]?.value).toBe('Not joined');
-    expect(labels(response)).toContain('Assign Steam Account');
+    expect(labels(response)).not.toContain('Assign Steam Account');
   });
 
-  it('ready to join: join and steam account actions', () => {
+  it('ready to join: queue controls remain on the Match Queue panel', () => {
     const response = render({ kind: 'READY_TO_QUEUE', queueSize: 10, playersInQueue: 4 });
     expect(embed(response).fields?.map((field) => field.value)).toContain('4 / 10 players');
     const all = buttons(response);
-    expect(labels(response)).toEqual(
-      expect.arrayContaining([
-        'Join Queue',
-        'Steam Account',
-        'How It Works',
-        'Refresh',
-        'Match History',
-      ]),
+    expect(labels(response)).toEqual(expect.arrayContaining(['Refresh', 'Match History']));
+    expect(all.map((button) => button.label)).not.toEqual(
+      expect.arrayContaining(['Join Queue', 'Steam Account', 'How It Works']),
     );
-    const join = all.find((button) => button.label === 'Join Queue');
-    expect(parseQueueCustomId(join?.customId ?? '', secret)).toEqual({
-      action: 'JOIN',
-      guildId,
-      version: 5,
-    });
     // Navigation uses the renamed player-facing labels.
     expect(labels(response)).toContain('Team Status');
     expect(labels(response)).not.toContain('My Party');
     expect(labels(response)).not.toContain('My 10man');
   });
 
-  it('queued: position, count, waiting copy, leave and refresh', () => {
+  it('queued: position, count, waiting copy, and no duplicate leave control', () => {
     const response = render({ kind: 'QUEUED', position: 4, playersInQueue: 7, queueSize: 10 });
     const data = embed(response);
     expect(data.description).toContain('Waiting for 3 more players');
@@ -80,13 +68,11 @@ describe('Match Center personal interface', () => {
     expect(values).toContain('Status:In queue');
     expect(values).toContain('Position:4');
     expect(values).toContain('Players:7 / 10');
-    const all = buttons(response);
-    expect(labels(response)).toEqual(expect.arrayContaining(['Leave Queue', 'Refresh']));
-    const leave = all.find((button) => button.label === 'Leave Queue');
-    expect(parseQueueCustomId(leave?.customId ?? '', secret).action).toBe('LEAVE');
+    expect(labels(response)).toEqual(expect.arrayContaining(['Refresh']));
+    expect(labels(response)).not.toContain('Leave Queue');
   });
 
-  it('ready check: reuses signed match ready/withdraw controls', () => {
+  it('ready check: leaves ready controls on the Match Queue panel', () => {
     const response = render({
       kind: 'READY_CHECK',
       matchId,
@@ -94,18 +80,8 @@ describe('Match Center personal interface', () => {
       ready: false,
     });
     expect(embed(response).description).toContain('Ready check');
-    const all = buttons(response);
-    const ready = all.find((button) => button.label === "I'm Ready");
-    const withdraw = all.find((button) => button.label === 'Withdraw');
-    expect(ready).toBeDefined();
-    expect(withdraw).toBeDefined();
-    expect(parseMatchCustomId(ready?.customId ?? '', secret)).toMatchObject({
-      action: 'READY',
-      matchId,
-      version: 3,
-      phaseGeneration: 2,
-    });
-    expect(parseMatchCustomId(withdraw?.customId ?? '', secret).action).toBe('WITHDRAW_READY');
+    expect(labels(response)).toEqual(expect.arrayContaining(['Refresh']));
+    expect(labels(response)).not.toEqual(expect.arrayContaining(["I'm Ready", 'Withdraw']));
   });
 
   it('match active: readable phase, map, and My Match Info navigation', () => {
@@ -124,12 +100,11 @@ describe('Match Center personal interface', () => {
     expect(parseMatchCustomId(info?.customId ?? '', secret).action).toBe('MY_MATCH_INFO');
   });
 
-  it('terminal: cleanup copy, no raw enum, rejoin action', () => {
+  it('terminal: cleanup copy, no raw enum, and no duplicate rejoin action', () => {
     const response = render({ kind: 'TERMINAL', matchId, state: 'FINISHED' });
     expect(embed(response).description).toContain('Cleanup is finishing');
     expect(JSON.stringify(embed(response))).not.toContain('FINISHED');
-    expect(labels(response)).toEqual(
-      expect.arrayContaining(['Join Queue Again', 'Refresh', 'Report Result Issue']),
-    );
+    expect(labels(response)).toEqual(expect.arrayContaining(['Refresh', 'Report Result Issue']));
+    expect(labels(response)).not.toContain('Join Queue Again');
   });
 });

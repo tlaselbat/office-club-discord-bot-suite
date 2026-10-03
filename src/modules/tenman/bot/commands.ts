@@ -3,9 +3,9 @@ import { ChannelType, SlashCommandBuilder } from 'discord.js';
 export const commands = [
   new SlashCommandBuilder()
     .setName('match')
-    .setDescription('Office Club Competitive: Match Queue, Match Center, and match controls')
+    .setDescription('Office Club Competitive: Match Queue, Player Center, and match controls')
     .addSubcommand((command) =>
-      command.setName('center').setDescription('Open your Match Center status and controls'),
+      command.setName('center').setDescription('Open your Player Center status and controls'),
     )
     .addSubcommand((command) =>
       command
