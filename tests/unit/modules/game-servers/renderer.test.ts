@@ -71,8 +71,6 @@ describe('Game Server rendering', () => {
     expect(fieldNames).toContain('Host');
     expect(fieldNames).toContain('Location');
     expect(fieldNames).toContain('Connect');
-    expect(fieldNames).toContain('Provider');
-    expect(fieldNames).toContain('Updated');
     expect(json?.fields?.find((field) => field.name === 'Players')?.value).toBe('0 / 16');
     expect(json?.fields?.find((field) => field.name === 'Status')?.value).toBe('Online');
   });

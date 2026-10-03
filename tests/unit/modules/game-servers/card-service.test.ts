@@ -203,8 +203,6 @@ describe('GameServerCardService', () => {
                 host: '1v1 Arena',
                 datacenter: 'Los Angeles',
                 connectAddress: 'arena.example.com:27015',
-                cpuPercent: 10,
-                memoryUsageMb: 512,
               },
             }),
           ),

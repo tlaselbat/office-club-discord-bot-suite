@@ -150,20 +150,17 @@ describe('Game Servers module interactions', () => {
     await module.handleInteraction?.({ interaction: interaction as never });
     expect(interaction.deferUpdate).toHaveBeenCalledOnce();
     expect(interaction.editReply).toHaveBeenCalledOnce();
-    const replyPayload =
-      ((interaction.editReply as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] ?? {}) as {
-        components: Array<{
-          toJSON: () => {
-            components: Array<{
-              options?: Array<{ default?: boolean }>;
-              disabled?: boolean;
-            }>;
-          };
-        }>;
+    const replyPayload = ((interaction.editReply as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] ?? {}) as {
+        components: [
+          { toJSON: () => { components: [{ options?: Array<{ default?: boolean }> }] } },
+          { toJSON: () => { components: [{ disabled?: boolean }] } },
+        ];
       };
-    const components = replyPayload.components.map((row) => row.toJSON());
-    expect(components[0].components[0].options?.[0]?.default).toBe(true);
-    expect(components[1].components[0].disabled).toBe(false);
+    const selectRow = replyPayload.components[0].toJSON();
+    const buttonRow = replyPayload.components[1].toJSON();
+    expect(selectRow.components[0].options?.[0]?.default).toBe(true);
+    expect(buttonRow.components[0].disabled).toBe(false);
   });
 
   it('adds a server card when Add Server is pressed with a selection', async () => {
@@ -210,9 +207,11 @@ describe('Game Servers module interactions', () => {
       createGameServerCustomId({ action: 'add', value: gameServerId }, secret),
     );
     interaction.memberPermissions = {
-      has: vi.fn().mockImplementation(
-        (permission: bigint) => permission !== PermissionFlagsBits.Administrator,
-      ) as unknown as () => boolean,
+      has: vi
+        .fn()
+        .mockImplementation(
+          (permission: bigint) => permission !== PermissionFlagsBits.Administrator,
+        ) as unknown as () => boolean,
     };
     await expect(module.handleInteraction?.({ interaction: interaction as never })).rejects.toThrow(
       'Administrator permission required',

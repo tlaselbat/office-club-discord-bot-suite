@@ -52,8 +52,6 @@ export interface CardFingerprint {
   host: string | null;
   datacenter: string | null;
   connectAddress: string | null;
-  cpuPercent: number | null;
-  memoryUsageMb: number | null;
 }
 
 export function renderAddGameServersPanel(
@@ -126,21 +124,6 @@ export function renderGameServerCard(server: ServerView) {
     embed.addFields({ name: 'Location', value: snapshot.datacenter, inline: true });
   const address = connectAddress(server);
   if (address !== null) embed.addFields({ name: 'Connect', value: `\`${address}\``, inline: true });
-  embed.addFields({ name: 'Provider', value: 'DatHost', inline: true });
-  if (snapshot?.cpuPercent !== null && snapshot?.cpuPercent !== undefined)
-    embed.addFields({ name: 'CPU', value: `${snapshot.cpuPercent.toFixed(1)}%`, inline: true });
-  if (snapshot?.memoryUsageMb !== null && snapshot?.memoryUsageMb !== undefined)
-    embed.addFields({
-      name: 'Memory',
-      value: `${snapshot.memoryUsageMb.toFixed(1)} MB`,
-      inline: true,
-    });
-  if (snapshot !== null)
-    embed.addFields({
-      name: 'Updated',
-      value: `<t:${String(Math.floor(snapshot.observedAt.getTime() / 1000))}:R>`,
-      inline: true,
-    });
   const components =
     server.joinUrl === null
       ? []
@@ -219,8 +202,6 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
     host: serverHost(server),
     datacenter: snapshot?.datacenter ?? null,
     connectAddress: connectAddress(server),
-    cpuPercent: snapshot?.cpuPercent ?? null,
-    memoryUsageMb: snapshot?.memoryUsageMb ?? null,
   };
 }
 
