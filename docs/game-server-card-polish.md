@@ -1,17 +1,17 @@
 # Game server card polish
 
 The persistent card uses a native Components V2 Container with a Section/Thumbnail
-header, five consistently spaced Separators, one Media Gallery, three standalone
-metadata rows, and the existing three-button Action Row. The header renders the
-name, the approved description, then the status and optional location on natural-
-wrapping lines; provider city labels such as `dallas` display as `Dallas`. The lower
-rows are address, map, player count, then the banner, with no redundant labels or
-padding assumptions.
+header, three Separators, one Media Gallery, four standalone metadata rows, and the
+existing three-button Action Row. The header renders the name and approved description;
+the status and optional location appear immediately below its divider. Provider city
+labels such as `dallas` display as `Dallas`. The lower rows are address, map, player
+count, then the banner, with no redundant labels or padding assumptions.
 
-The component tree is: Section (title, description, and status/location, thumbnail),
-Separator, address Text Display, Separator, map Text Display, Separator, player-count
+The component tree is: Section (title and description, thumbnail), Separator,
+status/location Text Display, address Text Display, map Text Display, player-count
 Text Display, Separator, Media Gallery, Separator, then the Connect, Map & Rules,
-and Copy Address Action Row. The status line omits both the dot and location when no
+and Copy Address Action Row. There are no separators between the status, address,
+map, or player-count rows. The status line omits both the dot and location when no
 location is available. A missing address remains
 `🔗 Unavailable`; an unknown map remains `🗺️ Unknown`; player counts retain a
 configured maximum such as `👥 3 / 5 Players`.
@@ -64,13 +64,13 @@ Workshop paths and `.bsp` extensions remain normalized for display.
 DatHost references: [server object](https://dathost.readme.io/reference/get_game_server_item)
 and [monitoring metrics](https://dathost.readme.io/reference/get_cs_monitoring_server_metrics).
 
-`layoutVersion` 7 in the saved card fingerprint causes an existing message to be
+`layoutVersion` 8 in the saved card fingerprint causes an existing message to be
 edited on its next refresh after deployment, including when server state is
 unchanged. Subsequent unchanged refreshes continue to skip Discord edits.
 
 ## Validation
 
-Automated coverage checks the eleven-child component order, native Discord
+Automated coverage checks the ten-child component order, native Discord
 serialization, known/unknown/workshop maps, artwork precedence, location
 de-duplication, zero and full occupancy, long values, offline/starting/stale states,
 all three existing controls, and updating the existing message after a layout
