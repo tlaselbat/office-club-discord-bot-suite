@@ -162,7 +162,7 @@ describe('GameServerCardService', () => {
       async (change) => {
         const oldFingerprint: Partial<ReturnType<typeof cardFingerprint>> =
           cardFingerprint(serverView);
-        if (change === 'layout') oldFingerprint.layoutVersion = 7;
+        if (change === 'layout') oldFingerprint.layoutVersion = 8;
         else
           oldFingerprint.bannerImageUrl =
             'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-banner-old.png';
@@ -230,7 +230,7 @@ describe('GameServerCardService', () => {
           findUnique: vi.fn().mockResolvedValue(
             createCard({
               fingerprint: {
-                layoutVersion: 8,
+                layoutVersion: 9,
                 accentColor: 0x2b8aef,
                 displayName: '1v1 Arena',
                 status: 'Online',

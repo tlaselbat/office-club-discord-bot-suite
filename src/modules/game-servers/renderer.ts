@@ -153,11 +153,10 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
 
-  const statusLine = `${statusEmoji(snapshot)} ${statusLabel(snapshot)}${
-    location === null ? '' : `  •  ${location}`
-  }`;
   const headerComponents: Record<string, unknown>[] = [
-    textDisplay(`# ${server.displayName}\n${SERVER_CARD_DESCRIPTION}`),
+    textDisplay(
+      `# ${server.displayName} • ${statusEmoji(snapshot)} ${statusLabel(snapshot)}\n🔗 ${connectAddress(server) ?? 'Unavailable'}\n${SERVER_CARD_DESCRIPTION}`,
+    ),
   ];
 
   const headerSection = {
@@ -193,8 +192,7 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     components: [
       headerSection,
       { type: componentType.separator, divider: true, spacing: 1 },
-      textDisplay(statusLine),
-      textDisplay(`🔗 ${connectAddress(server) ?? 'Unavailable'}`),
+      ...(location === null ? [] : [textDisplay(location)]),
       textDisplay(`🗺️ ${displayMap}`),
       textDisplay(`👥 ${playerCount(snapshot)}`),
       { type: componentType.separator, divider: true, spacing: 1 },
@@ -268,7 +266,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 8,
+    layoutVersion: 9,
     accentColor: containerAccentColor(snapshot),
     displayName: server.displayName,
     status: statusLabel(snapshot),
