@@ -148,10 +148,11 @@ describe('Game Server rendering', () => {
     expect(container.type).toBe(17);
     const text = textContents(container);
     expect(text).toContain('# 1v1 Arena');
-    expect(text).toContain('🟢 **Online**');
-    expect(text).toContain(' Los Angeles');
+    expect(text).toContain('🟢 Online');
+    expect(text).toContain('📍 Los Angeles');
     expect(text).toContain('🗺️ **Current Map**');
-    expect(text).toContain('`aim_map_office`');
+    expect(text).toContain('aim_map_office');
+    expect(text).not.toContain('`aim_map_office`');
     expect(text).toContain('👥 **Players**');
     expect(text).toContain('**0 / 16** players');
     expect(text).toContain('🔗 **Connect Command**');
@@ -247,7 +248,7 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, hostingState: 'STOPPED', gameplayState: 'UNAVAILABLE' },
     };
     expect(textContents(firstContainer(renderGameServerCard(stopped, secret)))).toContain(
-      '🔴 **Offline**',
+      '🔴 Offline',
     );
 
     const starting = {
@@ -255,12 +256,12 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, hostingState: 'STARTING', gameplayState: 'UNKNOWN' },
     };
     expect(textContents(firstContainer(renderGameServerCard(starting, secret)))).toContain(
-      '🟡 **Server starting…**',
+      '🟡 Server starting…',
     );
 
     const stale = { ...server, snapshot: { ...baseSnapshot, stale: true } };
     expect(textContents(firstContainer(renderGameServerCard(stale, secret)))).toContain(
-      '🟡 **Status stale**',
+      '🟡 Status stale',
     );
   });
 
@@ -278,14 +279,15 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, map: 'workshop/3070244462/de_ancient' },
     };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
-    expect(text).toContain('`de_ancient`');
+    expect(text).toContain('de_ancient');
+    expect(text).not.toContain('`de_ancient`');
     expect(text).not.toContain('workshop');
   });
 
   it('omits the location marker when no datacenter is available', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, datacenter: null } };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
-    expect(text).toContain('🟢 **Online**');
+    expect(text).toContain('🟢 Online');
     expect(text).not.toContain('📍');
   });
 
@@ -293,20 +295,21 @@ describe('Game Server rendering', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
     const components = containerComponents(container);
     expect(components.map((component) => component.type)).toEqual([
-      9, 14, 12, 10, 14, 10, 14, 10, 1,
+      9, 14, 12, 10, 14, 10, 14, 10, 14, 1,
     ]);
     const section = components[0] as Record<string, unknown>;
     expect(section.components as Record<string, unknown>[]).toHaveLength(1);
     expect(components[1]).toEqual({ type: 14, divider: true, spacing: 1 });
     expect(components[3]).toEqual({
       type: 10,
-      content: '🗺️ **Current Map**\n`aim_map_office`',
+      content: '🗺️ **Current Map**\naim_map_office',
     });
     expect(components[5]).toEqual({ type: 10, content: '👥 **Players**\n**0 / 16** players' });
     expect(components[7]).toEqual({
       type: 10,
       content: '🔗 **Connect Command**\n`arena.example.com:27015`',
     });
+    expect(components[8]).toEqual({ type: 14, divider: false, spacing: 1 });
   });
 
   it('normalizes the location once in the header', () => {
@@ -319,7 +322,10 @@ describe('Game Server rendering', () => {
   it.each([null, '', '   '])('uses Unknown for an unresolved map: %s', (map) => {
     expect(displayMapName(map)).toBe('Unknown');
     const view = { ...server, snapshot: { ...baseSnapshot, map } };
-    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).toContain('`Unknown`');
+    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).toContain('Unknown');
+    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).not.toContain(
+      '`Unknown`',
+    );
   });
 
   it('normalizes workshop paths and extensions for both display and artwork', () => {

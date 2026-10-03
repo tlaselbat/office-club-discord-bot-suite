@@ -184,11 +184,12 @@ export function renderGameServerCard(server: ServerView, secret: string) {
       headerSection,
       { type: componentType.separator, divider: true, spacing: 1 },
       bannerGallery,
-      textDisplay(`🗺️ **Current Map**\n\`${displayMap}\``),
+      textDisplay(`🗺️ **Current Map**\n${displayMap}`),
       { type: componentType.separator, divider: true, spacing: 1 },
       textDisplay(`👥 **Players**\n${playerCount(snapshot)}`),
       { type: componentType.separator, divider: true, spacing: 1 },
       textDisplay(`🔗 **Connect Command**\n\`${connectAddress(server) ?? 'Unavailable'}\``),
+      { type: componentType.separator, divider: false, spacing: 1 },
       actionRow,
     ],
   };
@@ -323,7 +324,7 @@ function containerAccentColor(snapshot: SnapshotView | null): number | null {
 
 function statusLine(snapshot: SnapshotView | null, location: string | null): string {
   const locationSuffix = location === null ? '' : `  \u2022  \ud83d\udccd ${location}`;
-  return `${statusEmoji(snapshot)} **${statusLabel(snapshot)}**${locationSuffix}`;
+  return `${statusEmoji(snapshot)} ${statusLabel(snapshot)}${locationSuffix}`;
 }
 
 function displayLocation(location: string | null): string | null {
