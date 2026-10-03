@@ -1,5 +1,7 @@
 import type { DatHostServerReader } from '../../integrations/dathost/client.js';
 import type { DatHostCsMonitoringMetrics } from '../../integrations/dathost/schemas.js';
+import { queryA2sCurrentMap, type A2sInfoQuery } from '../../integrations/source/a2s-info.js';
+import { isIP } from 'node:net';
 
 export interface GameServerObservation {
   hostingState: 'STOPPED' | 'STARTING' | 'RUNNING' | 'UNKNOWN';
@@ -31,7 +33,10 @@ export interface PreviousPlayerCount {
 }
 
 export class DatHostGameServerProvider {
-  public constructor(private readonly reader: DatHostServerReader) {}
+  public constructor(
+    private readonly reader: DatHostServerReader,
+    private readonly queryCurrentMap: A2sInfoQuery = queryA2sCurrentMap,
+  ) {}
 
   public async observe(
     providerServerId: string,
@@ -54,7 +59,8 @@ export class DatHostGameServerProvider {
       port: server.ports?.game ?? null,
       datacenter: server.location ?? null,
       hostname: server.name || null,
-      map: server.cs2_settings?.map ?? server.csgo_settings?.map ?? null,
+      // DatHost settings describe configuration, not the running server's map.
+      map: null,
       players: server.players_online ?? (previous?.players === undefined ? null : previous.players),
       maxPlayers:
         server.cs2_settings?.slots ??
@@ -81,15 +87,41 @@ export class DatHostGameServerProvider {
       observedAt: now,
     };
     if (hostingState !== 'RUNNING') return base;
+    const observed = await this.observeCurrentMap(base);
     try {
       const metrics = await this.reader.getCsMonitoringMetrics(
         providerServerId,
         new Date(now.getTime() - 2 * 60_000),
         now,
       );
-      return mergeMetrics(base, metrics, now);
+      return mergeMetrics(observed, metrics, now);
     } catch {
-      return base;
+      return observed;
+    }
+  }
+
+  private async observeCurrentMap(
+    observation: GameServerObservation,
+  ): Promise<GameServerObservation> {
+    if (
+      observation.rawIp === null ||
+      isIP(observation.rawIp) !== 4 ||
+      observation.port === null ||
+      !Number.isInteger(observation.port) ||
+      observation.port < 1 ||
+      observation.port > 65_535
+    ) {
+      return observation;
+    }
+    try {
+      return {
+        ...observation,
+        map: await this.queryCurrentMap(observation.rawIp, observation.port),
+      };
+    } catch {
+      // A failed live query must remain unknown; settings, start-map, history,
+      // and cached values do not prove the current map.
+      return observation;
     }
   }
 }

@@ -47,12 +47,19 @@ fallback banner. Its DatHost server response exposed `cs2_settings.maps_source`,
 `mapgroup`, `mapgroup_start_map` and workshop start-ID settings, but no current-map
 field. The CS monitoring response contained no map field. In particular,
 `mapgroup_start_map: de_dust2` is configuration, not evidence of the live map.
-The existing provider mapping is preserved; no new authoritative map mapping was
-verified. A missing map therefore remains `Unknown`. Fixing that for this server
-requires an authoritative live source beyond the currently consumed responses.
-Historical maps-played totals or passive console backlog must not be substituted
-for live state. Workshop paths, `.bsp` extensions and empty map values are now
-normalized consistently for display and artwork lookup when map data is available.
+A subsequent live probe confirmed that the game server's A2S_INFO response reports
+the current map (`am_water_wf` during verification), while DatHost's server response
+does not expose `cs2_settings.map`. Running-server polls now read that live map via
+a connected UDP socket to the provider's numeric IPv4 address and game port. The
+query has a two-second total timeout and permits one challenge retry. It rejects
+malformed or split responses and closes its socket on completion or failure.
+
+Failed queries, unsupported endpoints, and non-running servers leave the map
+`Unknown`. Configured start maps, historical maps-played totals, and passive console
+backlog are not current-map evidence. Map-query failures do not prevent existing
+status/player monitoring. The normal snapshot and persistent-card update cycle
+publishes successful map observations; no migration or layout-version bump is needed.
+Workshop paths and `.bsp` extensions remain normalized for display.
 
 DatHost references: [server object](https://dathost.readme.io/reference/get_game_server_item)
 and [monitoring metrics](https://dathost.readme.io/reference/get_cs_monitoring_server_metrics).

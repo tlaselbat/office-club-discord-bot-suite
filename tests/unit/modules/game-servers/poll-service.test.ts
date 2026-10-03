@@ -60,7 +60,7 @@ describe('GameServerPollService registration state', () => {
         port: 27015,
         datacenter: null,
         hostname: 'Arena',
-        map: null,
+        map: 'am_water_wf',
         players: 0,
         maxPlayers: 16,
         playerCountSource: 'DATHOST_MONITORING',
@@ -85,6 +85,12 @@ describe('GameServerPollService registration state', () => {
     );
     expect(provider.observe).toHaveBeenCalledWith('provider', undefined, expect.any(Date));
     expect(transaction.gameServerSnapshot.upsert).toHaveBeenCalledOnce();
+    expect(transaction.gameServerSnapshot.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ map: 'am_water_wf' }),
+        update: expect.objectContaining({ map: 'am_water_wf' }),
+      }),
+    );
     expect(cards.refreshCardsForGameServer).toHaveBeenCalledWith('one');
   });
 
