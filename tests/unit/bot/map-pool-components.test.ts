@@ -8,14 +8,12 @@ import {
 const secret = 'map-pool-test-secret';
 const basePayload = {
   guildId: '123456789012345678',
-  actorDiscordUserId: '234567890123456789',
   settingsVersion: 4,
   page: 0,
-  expiresAt: Math.floor(Date.now() / 1000) + 300,
 } as const;
 
 describe('map pool components', () => {
-  it('signs actor-bound, expiring controls', () => {
+  it('signs shared persistent controls', () => {
     const customId = createMapPoolCustomId({ ...basePayload, action: 'POOL' }, secret);
     expect(parseMapPoolCustomId(customId, secret)).toMatchObject({
       ...basePayload,

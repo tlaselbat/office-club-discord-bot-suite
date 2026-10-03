@@ -10,7 +10,6 @@ import { createMapPoolCustomId, type MapPoolComponentPayload } from './map-pool-
 
 export interface MapPoolManagementView {
   guildId: string;
-  actorDiscordUserId: string;
   settingsVersion: number;
   activePool: ActiveMapPool;
   officialMaps: string[];
@@ -32,16 +31,13 @@ export function buildMapPoolManagement(view: MapPoolManagementView, secret: stri
     })),
   ];
   const page = paginateMapPool(candidates, view.page);
-  const expiresAt = Math.floor(Date.now() / 1000) + 900;
   const id = (action: MapPoolComponentPayload['action'], pageNumber = page.page) =>
     createMapPoolCustomId(
       {
         action,
         guildId: view.guildId,
-        actorDiscordUserId: view.actorDiscordUserId,
         settingsVersion: view.settingsVersion,
         page: Math.max(0, pageNumber),
-        expiresAt,
       },
       secret,
     );

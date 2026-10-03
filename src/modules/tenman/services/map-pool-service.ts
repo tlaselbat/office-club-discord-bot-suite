@@ -9,6 +9,7 @@ export interface AddWorkshopMapCommand {
   guildId: string;
   mapName: string;
   displayName?: string;
+  expectedVersion: number;
   actorDiscordUserId: string;
   correlationId: string;
 }
@@ -16,6 +17,7 @@ export interface AddWorkshopMapCommand {
 export interface RemoveWorkshopMapCommand {
   guildId: string;
   mapName: string;
+  expectedVersion: number;
   actorDiscordUserId: string;
   correlationId: string;
 }
@@ -98,9 +100,11 @@ export class MapPoolService {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${command.guildId}, 0))`;
       const settings = await transaction.tenManSettings.findUnique({
         where: { guildId: command.guildId },
-        select: { guildId: true },
+        select: { version: true },
       });
       if (settings === null) throw new Error('Competitive configuration is missing');
+      if (settings.version !== command.expectedVersion)
+        throw new Error('Configuration changed; reload and try again');
       const existing = await transaction.guildWorkshopMap.findUnique({
         where: { guildId_mapName: { guildId: command.guildId, mapName } },
         select: { mapName: true },
@@ -114,6 +118,10 @@ export class MapPoolService {
           displayName,
           addedByDiscordUserId: command.actorDiscordUserId,
         },
+      });
+      await transaction.tenManSettings.update({
+        where: { guildId: command.guildId },
+        data: { version: { increment: 1 } },
       });
       await transaction.auditEvent.create({
         data: {
@@ -134,9 +142,11 @@ export class MapPoolService {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${command.guildId}, 0))`;
       const settings = await transaction.tenManSettings.findUnique({
         where: { guildId: command.guildId },
-        select: { activeMapPool: true },
+        select: { activeMapPool: true, version: true },
       });
       if (settings === null) throw new Error('Competitive configuration is missing');
+      if (settings.version !== command.expectedVersion)
+        throw new Error('Configuration changed; reload and try again');
       const deleted = await transaction.guildWorkshopMap.deleteMany({
         where: { guildId: command.guildId, mapName },
       });
@@ -144,12 +154,12 @@ export class MapPoolService {
 
       const nextPool = settings.activeMapPool.filter((candidate) => candidate !== mapName);
       const removedFromPool = nextPool.length !== settings.activeMapPool.length;
-      if (removedFromPool) {
-        await transaction.tenManSettings.update({
-          where: { guildId: command.guildId },
-          data: { activeMapPool: nextPool, version: { increment: 1 } },
-        });
-      }
+      await transaction.tenManSettings.update({
+        where: { guildId: command.guildId },
+        data: removedFromPool
+          ? { activeMapPool: nextPool, version: { increment: 1 } }
+          : { version: { increment: 1 } },
+      });
       await transaction.auditEvent.create({
         data: {
           guildId: command.guildId,

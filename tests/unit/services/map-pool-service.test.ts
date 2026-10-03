@@ -84,6 +84,7 @@ describe('MapPoolService', () => {
       guildId: 'guild-1',
       mapName: 'workshop/123/de_example',
       displayName: 'Example Workshop Map',
+      expectedVersion: 3,
       actorDiscordUserId: 'admin-1',
       correlationId: 'corr-1',
     });
@@ -96,6 +97,7 @@ describe('MapPoolService', () => {
       duplicate.addWorkshopMap({
         guildId: 'guild-1',
         mapName: 'workshop/123/de_example',
+        expectedVersion: 3,
         actorDiscordUserId: 'admin-1',
         correlationId: 'corr-2',
       }),
@@ -170,6 +172,7 @@ describe('MapPoolService', () => {
     await new MapPoolService(prisma).removeWorkshopMap({
       guildId: 'guild-1',
       mapName: 'workshop/123/de_example',
+      expectedVersion: 3,
       actorDiscordUserId: 'admin-1',
       correlationId: 'corr-1',
     });

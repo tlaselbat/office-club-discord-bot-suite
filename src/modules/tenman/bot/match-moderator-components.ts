@@ -2,13 +2,11 @@ import { ActionRowBuilder, EmbedBuilder, UserSelectMenuBuilder } from 'discord.j
 import { createMatchModeratorCustomId } from './match-moderator-custom-id.js';
 export function buildMatchModeratorPanel(
   guildId: string,
-  actorDiscordUserId: string,
   members: Array<{ discordUserId: string; status: string }>,
   secret: string,
 ) {
-  const expiresAt = Math.floor(Date.now() / 1000) + 900;
   const id = (action: 'ADD' | 'REMOVE') =>
-    createMatchModeratorCustomId({ action, guildId, actorDiscordUserId, expiresAt }, secret);
+    createMatchModeratorCustomId({ action, guildId }, secret);
   const list = members.length
     ? members
         .map(

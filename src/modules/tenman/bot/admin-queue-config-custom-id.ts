@@ -4,7 +4,6 @@ import { z } from 'zod';
 const payloadSchema = z.object({
   action: z.enum(['TEAM', 'MAP', 'LOCATION', 'SAVE', 'CANCEL']),
   guildId: z.string().regex(/^\d{17,20}$/),
-  actorDiscordUserId: z.string().regex(/^\d{17,20}$/),
   settingsVersion: z.number().int().nonnegative(),
   team: z.enum(['C', 'S']),
   map: z.enum(['V', 'R']),
@@ -22,7 +21,6 @@ export function createAdminQueueConfigCustomId(
     '1',
     parsed.action,
     parsed.guildId,
-    parsed.actorDiscordUserId,
     parsed.settingsVersion.toString(36),
     parsed.team,
     parsed.map,
@@ -35,14 +33,23 @@ export function parseAdminQueueConfigCustomId(
   customId: string,
   secret: string,
 ): AdminQueueConfigPayload {
-  const [namespace, version, action, guildId, actorDiscordUserId, encodedVersion, team, map, location, signature, extra] =
-    customId.split(':');
+  const [
+    namespace,
+    version,
+    action,
+    guildId,
+    encodedVersion,
+    team,
+    map,
+    location,
+    signature,
+    extra,
+  ] = customId.split(':');
   if (
     namespace !== 'tqc' ||
     version !== '1' ||
     action === undefined ||
     guildId === undefined ||
-    actorDiscordUserId === undefined ||
     encodedVersion === undefined ||
     team === undefined ||
     map === undefined ||
@@ -52,7 +59,7 @@ export function parseAdminQueueConfigCustomId(
   ) {
     throw new Error('Invalid queue configuration component ID');
   }
-  const body = [version, action, guildId, actorDiscordUserId, encodedVersion, team, map, location].join(':');
+  const body = [version, action, guildId, encodedVersion, team, map, location].join(':');
   const expected = Buffer.from(sign(body, secret));
   const received = Buffer.from(signature);
   if (expected.length !== received.length || !timingSafeEqual(expected, received))
@@ -60,7 +67,6 @@ export function parseAdminQueueConfigCustomId(
   return payloadSchema.parse({
     action,
     guildId,
-    actorDiscordUserId,
     settingsVersion: Number.parseInt(encodedVersion, 36),
     team,
     map,

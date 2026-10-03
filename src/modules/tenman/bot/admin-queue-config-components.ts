@@ -1,4 +1,10 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  StringSelectMenuBuilder,
+} from 'discord.js';
 import {
   createAdminQueueConfigCustomId,
   type AdminQueueConfigPayload,
@@ -6,13 +12,15 @@ import {
 
 const teamLabel = { C: 'Captains', S: 'Scramble' } as const;
 const mapLabel = { V: 'Captain Veto', R: 'Random Map' } as const;
-const locationLabel = { D: 'Central — Dallas', L: 'West — Los Angeles', V: 'East — Virginia' } as const;
+const locationLabel = {
+  D: 'Central — Dallas',
+  L: 'West — Los Angeles',
+  V: 'East — Virginia',
+} as const;
 
-/** Ephemeral configuration draft. Save is the only persistent operation. */
-export function buildAdminQueueConfiguration(
-  payload: Omit<AdminQueueConfigPayload, 'action'>,
-  secret: string,
-) {
+export type AdminQueueConfigurationView = Omit<AdminQueueConfigPayload, 'action'>;
+
+export function buildAdminQueueConfiguration(payload: AdminQueueConfigurationView, secret: string) {
   const customId = (action: AdminQueueConfigPayload['action']) =>
     createAdminQueueConfigCustomId({ ...payload, action }, secret);
   return {
@@ -22,7 +30,11 @@ export function buildAdminQueueConfiguration(
         .setColor(0x5865f2)
         .setDescription('Changes apply to future queues after you save this review.')
         .addFields(
-          { name: 'Game Profile', value: 'Competitive — BO1 5v5 (10 players, 11 slots)', inline: false },
+          {
+            name: 'Game Profile',
+            value: 'Competitive — BO1 5v5 (10 players, 11 slots)',
+            inline: false,
+          },
           { name: 'Team Selection', value: teamLabel[payload.team], inline: true },
           { name: 'Map Selection', value: mapLabel[payload.map], inline: true },
           { name: 'Location', value: locationLabel[payload.location], inline: true },
@@ -59,8 +71,14 @@ export function buildAdminQueueConfiguration(
           ),
       ),
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId(customId('SAVE')).setLabel('Save Configuration').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(customId('CANCEL')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(customId('SAVE'))
+          .setLabel('Save Configuration')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(customId('CANCEL'))
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Secondary),
       ),
     ],
   };

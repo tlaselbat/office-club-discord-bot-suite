@@ -1,5 +1,11 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { createAdminPanelCustomId } from './admin-panel-custom-id.js';
+import {
+  buildAdminQueueConfiguration,
+  type AdminQueueConfigurationView,
+} from './admin-queue-config-components.js';
+import { buildMapPoolManagement, type MapPoolManagementView } from './map-pool-components.js';
+import { buildMatchModeratorPanel } from './match-moderator-components.js';
 
 export interface AdminPanelView {
   guildId: string;
@@ -14,7 +20,28 @@ export interface AdminPanelView {
   matchModeratorCount: number;
 }
 
-export function renderAdminPanel(view: AdminPanelView, secret: string) {
+export type AdminPanelSubview =
+  | { kind: 'MAIN' }
+  | { kind: 'CONFIGURE'; draft: AdminQueueConfigurationView }
+  | { kind: 'MODERATORS'; members: Array<{ discordUserId: string; status: string }> }
+  | { kind: 'MAPS'; maps: MapPoolManagementView };
+
+export function renderAdminPanel(
+  view: AdminPanelView,
+  secret: string,
+  subview: AdminPanelSubview = { kind: 'MAIN' },
+) {
+  if (subview.kind === 'CONFIGURE')
+    return withBackButton(buildAdminQueueConfiguration(subview.draft, secret), view, secret);
+  if (subview.kind === 'MODERATORS')
+    return withBackButton(
+      buildMatchModeratorPanel(view.guildId, subview.members, secret),
+      view,
+      secret,
+    );
+  if (subview.kind === 'MAPS')
+    return withBackButton(buildMapPoolManagement(subview.maps, secret), view, secret);
+
   const operational = view.enabled && view.profile !== null;
   const status =
     view.queueStatus === 'OPEN'
@@ -86,6 +113,29 @@ export function renderAdminPanel(view: AdminPanelView, secret: string) {
         new ButtonBuilder()
           .setCustomId(id('REFRESH'))
           .setLabel('Refresh')
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
+
+function withBackButton<T extends { components: unknown[] }>(
+  payload: T,
+  view: AdminPanelView,
+  secret: string,
+): T & { components: unknown[] } {
+  const customId = createAdminPanelCustomId(
+    { action: 'MAIN', guildId: view.guildId, version: view.queueVersion },
+    secret,
+  );
+  return {
+    ...payload,
+    components: [
+      ...payload.components,
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(customId)
+          .setLabel('Back to Match Queue Control')
           .setStyle(ButtonStyle.Secondary),
       ),
     ],
