@@ -258,7 +258,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 3,
+    layoutVersion: 4,
     accentColor: containerAccentColor(snapshot),
     displayName: server.displayName,
     status: statusLabel(snapshot),

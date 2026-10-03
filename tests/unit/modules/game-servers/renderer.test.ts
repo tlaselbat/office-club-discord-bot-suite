@@ -358,7 +358,7 @@ describe('Game Server rendering', () => {
   it('keeps the fingerprint stable when only observation times change', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
     expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
-    expect(cardFingerprint(view).layoutVersion).toBe(3);
+    expect(cardFingerprint(view).layoutVersion).toBe(4);
   });
 
   it('omits unavailable detail metrics instead of rendering N/A', () => {
