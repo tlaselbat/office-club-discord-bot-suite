@@ -48,7 +48,7 @@ function mockPrisma(overrides: Record<string, unknown> = {}): PrismaClient {
         guildId,
         enabled: true,
         panelChannelId: channelId,
-        panelMessageId: 'panel-msg-1',
+        panelMessageId: null,
       }),
       findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn().mockResolvedValue({}),
@@ -69,12 +69,12 @@ function mockDiscord(overrides: Record<string, unknown> = {}): Client {
     id: channelId,
     isTextBased: vi.fn().mockReturnValue(true),
     isDMBased: vi.fn().mockReturnValue(false),
+    permissionsFor: vi.fn().mockReturnValue({
+      has: vi.fn().mockReturnValue(true),
+    }),
     send: vi.fn().mockResolvedValue(message),
     messages: {
-      fetch: vi.fn().mockResolvedValue({
-        id: 'panel-msg-1',
-        edit: vi.fn().mockResolvedValue({}),
-      }),
+      fetch: vi.fn().mockResolvedValue(null),
     },
   };
   return {
@@ -114,6 +114,7 @@ function componentInteraction(customId: string, values?: string[]) {
     deferReply: vi.fn().mockResolvedValue(undefined),
     deferUpdate: vi.fn().mockResolvedValue(undefined),
     editReply: vi.fn().mockResolvedValue(undefined),
+    deleteReply: vi.fn().mockResolvedValue(undefined),
     update: vi.fn().mockResolvedValue(undefined),
     isChatInputCommand: () => false,
     isMessageComponent: () => true,
@@ -124,7 +125,7 @@ function componentInteraction(customId: string, values?: string[]) {
 }
 
 describe('Game Servers module interactions', () => {
-  it('selects a server and updates the Add Server panel', async () => {
+  it('selects a server and updates the same ephemeral Add Server panel', async () => {
     const dependencies = mockDependencies();
     (
       dependencies.prisma.gameServer.findMany as unknown as ReturnType<typeof vi.fn>
@@ -145,14 +146,18 @@ describe('Game Servers module interactions', () => {
         cards: [],
       },
     ]);
+
     const module = createGameServersModule(dependencies);
     const interaction = componentInteraction(
-      createGameServerCustomId({ action: 'select' }, secret),
+      createGameServerCustomId({ action: 'select', ownerId: userId }, secret),
       [gameServerId],
     );
+
     await module.handleInteraction?.({ interaction: interaction as never });
+
     expect(interaction.deferUpdate).toHaveBeenCalledOnce();
     expect(interaction.editReply).toHaveBeenCalledOnce();
+
     const replyPayload = ((interaction.editReply as unknown as ReturnType<typeof vi.fn>).mock
       .calls[0]?.[0] ?? {}) as {
       components: [
@@ -160,55 +165,81 @@ describe('Game Servers module interactions', () => {
         { toJSON: () => { components: [{ disabled?: boolean }] } },
       ];
     };
+
     const selectRow = replyPayload.components[0].toJSON();
     const buttonRow = replyPayload.components[1].toJSON();
+
     expect(selectRow.components[0].options?.[0]?.default).toBe(true);
     expect(buttonRow.components[0].disabled).toBe(false);
   });
 
-  it('adds a server card when Add Server is pressed with a selection', async () => {
+  it('posts the selected server card to the configured channel and dismisses the ephemeral panel', async () => {
     const dependencies = mockDependencies();
     const module = createGameServersModule(dependencies);
     const interaction = componentInteraction(
-      createGameServerCustomId({ action: 'add', value: gameServerId }, secret),
+      createGameServerCustomId(
+        { action: 'add', value: gameServerId, ownerId: userId },
+        secret,
+      ),
     );
+
     await module.handleInteraction?.({ interaction: interaction as never });
-    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: expect.any(Number) });
+
+    expect(interaction.deferUpdate).toHaveBeenCalledOnce();
+    expect(dependencies.discord.channels.fetch).toHaveBeenCalledWith(channelId);
     expect(dependencies.prisma.gameServerCard.create).toHaveBeenCalledOnce();
-    expect(interaction.editReply).toHaveBeenCalledWith('Server status card added.');
+    expect(interaction.deleteReply).toHaveBeenCalledOnce();
+    expect(interaction.deferReply).not.toHaveBeenCalled();
   });
 
   it('rejects Add Server without a selection', async () => {
     const dependencies = mockDependencies();
     const module = createGameServersModule(dependencies);
-    const interaction = componentInteraction(createGameServerCustomId({ action: 'add' }, secret));
+    const interaction = componentInteraction(
+      createGameServerCustomId({ action: 'add', ownerId: userId }, secret),
+    );
+
     await module.handleInteraction?.({ interaction: interaction as never });
+
+    expect(interaction.deferUpdate).toHaveBeenCalledOnce();
     expect(interaction.editReply).toHaveBeenCalledWith(
       'Select a server before pressing Add Server.',
     );
+    expect(interaction.deleteReply).not.toHaveBeenCalled();
   });
 
-  it('rejects duplicate cards for the same server', async () => {
+  it('rejects duplicate cards for the same server without dismissing the picker', async () => {
     const dependencies = mockDependencies();
     (
       dependencies.prisma.gameServerCard.findUnique as unknown as ReturnType<typeof vi.fn>
     ).mockResolvedValue({ id: 'existing' });
+
     const module = createGameServersModule(dependencies);
     const interaction = componentInteraction(
-      createGameServerCustomId({ action: 'add', value: gameServerId }, secret),
+      createGameServerCustomId(
+        { action: 'add', value: gameServerId, ownerId: userId },
+        secret,
+      ),
     );
+
     await module.handleInteraction?.({ interaction: interaction as never });
+
     expect(interaction.editReply).toHaveBeenCalledWith(
       'A status card for this server has already been added.',
     );
+    expect(interaction.deleteReply).not.toHaveBeenCalled();
   });
 
   it('requires Administrator permission to press Add Server', async () => {
     const dependencies = mockDependencies();
     const module = createGameServersModule(dependencies);
     const interaction = componentInteraction(
-      createGameServerCustomId({ action: 'add', value: gameServerId }, secret),
+      createGameServerCustomId(
+        { action: 'add', value: gameServerId, ownerId: userId },
+        secret,
+      ),
     );
+
     interaction.memberPermissions = {
       has: vi
         .fn()
@@ -216,6 +247,7 @@ describe('Game Servers module interactions', () => {
           (permission: bigint) => permission !== PermissionFlagsBits.Administrator,
         ) as unknown as () => boolean,
     };
+
     await expect(module.handleInteraction?.({ interaction: interaction as never })).rejects.toThrow(
       'Administrator permission required',
     );

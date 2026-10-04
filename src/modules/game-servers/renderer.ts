@@ -98,6 +98,7 @@ export function renderAddGameServersPanel(
   servers: ServerView[],
   secret: string,
   selectedId?: string,
+  ownerId?: string,
 ) {
   const embed = new EmbedBuilder()
     .setColor(0x2b8aef)
@@ -115,7 +116,15 @@ export function renderAddGameServersPanel(
     components.push(
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId(createGameServerCustomId({ action: 'select' }, secret))
+          .setCustomId(
+            createGameServerCustomId(
+              {
+                action: 'select',
+                ...(ownerId === undefined ? {} : { ownerId }),
+              },
+              secret,
+            ),
+          )
           .setPlaceholder('Select Server')
           .addOptions(
             servers.slice(0, 25).map((server) => ({
@@ -135,7 +144,11 @@ export function renderAddGameServersPanel(
       new ButtonBuilder()
         .setCustomId(
           createGameServerCustomId(
-            selectedId === undefined ? { action: 'add' } : { action: 'add', value: selectedId },
+            {
+              action: 'add',
+              ...(selectedId === undefined ? {} : { value: selectedId }),
+              ...(ownerId === undefined ? {} : { ownerId }),
+            },
             secret,
           ),
         )
@@ -155,11 +168,11 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const description = cardDescription(server);
   const mapImageUrl = resolveMapImageUrl(map, server.imageUrl);
 
-  const headerComponents: Record<string, unknown>[] = [
-    textDisplay(
-      `# ${server.displayName}\n## ${statusEmoji(snapshot)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n${playerCount(snapshot).toLowerCase()}`,
-    ),
-  ];
+const headerComponents: Record<string, unknown>[] = [
+  textDisplay(
+    `# ${server.displayName}\n## ${statusEmoji(snapshot)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n${playerCount(snapshot).toLowerCase()}`,
+  ),
+];
 
   const headerSection = {
     type: componentType.section,
@@ -263,7 +276,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 13,
+    layoutVersion: 12,
     accentColor: 0x2b8aef,
     displayName: server.displayName,
     status: statusLabel(snapshot),
@@ -308,44 +321,12 @@ function displayLocation(location: string | null): string | null {
   return trimmed.replace(/\b\p{Ll}/gu, (letter) => letter.toUpperCase());
 }
 
-// Custom status emoji IDs are supplied through the deployment environment.
-//
-// Before deploying:
-// 1. Upload the PNGs from assets/game-servers/status-emojis/ to this Discord server.
-// 2. Copy the numeric Discord emoji IDs.
-// 3. Set these environment variables for the app container:
-//      GAME_SERVER_EMOJI_ONLINE_ID
-//      GAME_SERVER_EMOJI_OFFLINE_ID
-//      GAME_SERVER_EMOJI_WARNING_ID
-//      GAME_SERVER_EMOJI_PENDING_ID
-//
-// The renderer builds standard Discord custom-emoji markup:
-//   <:online_dot:123456789012345678>
-//
-// If an ID is missing, a small text bullet is used instead so the card still renders.
-function customStatusEmoji(name: string, id: string | undefined): string {
-  const trimmedId = id?.trim();
-  return trimmedId ? `<:${name}:${trimmedId}>` : '•';
-}
-
 function statusEmoji(snapshot: SnapshotView | null): string {
-  if (snapshot === null) {
-    return customStatusEmoji('pending_dot', process.env.GAME_SERVER_EMOJI_PENDING_ID);
-  }
-
-  if (snapshot.stale) {
-    return customStatusEmoji('warning_dot', process.env.GAME_SERVER_EMOJI_WARNING_ID);
-  }
-
-  if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE') {
-    return customStatusEmoji('online_dot', process.env.GAME_SERVER_EMOJI_ONLINE_ID);
-  }
-
-  if (snapshot.hostingState === 'STARTING' || snapshot.gameplayState === 'DEGRADED') {
-    return customStatusEmoji('warning_dot', process.env.GAME_SERVER_EMOJI_WARNING_ID);
-  }
-
-  return customStatusEmoji('offline_dot', process.env.GAME_SERVER_EMOJI_OFFLINE_ID);
+  if (snapshot === null) return '⚪';
+  if (snapshot.stale) return '🟡';
+  if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE') return '✅';
+  if (snapshot.hostingState === 'STARTING' || snapshot.gameplayState === 'DEGRADED') return '🟡';
+  return '❌';
 }
 
 function playerCount(snapshot: SnapshotView | null): string {

@@ -11,11 +11,11 @@ export const gameServerCommands = [
         .addSubcommand((command) =>
           command
             .setName('setup')
-            .setDescription('Create or repair the persistent Game Servers panel')
+            .setDescription('Choose the server-card channel and open the admin server picker')
             .addChannelOption((option) =>
               option
                 .setName('channel')
-                .setDescription('Panel text channel')
+                .setDescription('Channel where server status cards will be posted')
                 .setRequired(true)
                 .addChannelTypes(ChannelType.GuildText),
             ),
