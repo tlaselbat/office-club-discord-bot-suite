@@ -276,7 +276,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 12,
+    layoutVersion: 14,
     accentColor: 0x2b8aef,
     displayName: server.displayName,
     status: statusLabel(snapshot),
@@ -321,12 +321,50 @@ function displayLocation(location: string | null): string | null {
   return trimmed.replace(/\b\p{Ll}/gu, (letter) => letter.toUpperCase());
 }
 
+// Custom Discord status emoji IDs.
+//
+// Upload these four custom emojis to the guild before deployment:
+//   online_dot
+//   offline_dot
+//   warning_dot
+//   pending_dot
+//
+// Then expose their numeric Discord emoji IDs to the bot process through:
+//   GAME_SERVER_EMOJI_ONLINE_ID
+//   GAME_SERVER_EMOJI_OFFLINE_ID
+//   GAME_SERVER_EMOJI_WARNING_ID
+//   GAME_SERVER_EMOJI_PENDING_ID
+//
+// The PNGs use a 128x128 transparent canvas with a 64x64 visible circle,
+// which makes the visible dot appear about half the diameter of a normal
+// full-frame Discord emoji.
+function customStatusEmoji(name: string, id: string | undefined): string {
+  const trimmedId = id?.trim();
+
+  // Keep the card readable even if one of the deployment variables is missing.
+  // The fallback is intentionally a small text dot rather than a full-size
+  // Unicode colored-circle emoji.
+  return trimmedId ? `<:${name}:${trimmedId}>` : '•';
+}
+
 function statusEmoji(snapshot: SnapshotView | null): string {
-  if (snapshot === null) return '⚪';
-  if (snapshot.stale) return '🟡';
-  if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE') return '✅';
-  if (snapshot.hostingState === 'STARTING' || snapshot.gameplayState === 'DEGRADED') return '🟡';
-  return '❌';
+  if (snapshot === null) {
+    return customStatusEmoji('pending_dot', process.env.GAME_SERVER_EMOJI_PENDING_ID);
+  }
+
+  if (snapshot.stale) {
+    return customStatusEmoji('warning_dot', process.env.GAME_SERVER_EMOJI_WARNING_ID);
+  }
+
+  if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE') {
+    return customStatusEmoji('online_dot', process.env.GAME_SERVER_EMOJI_ONLINE_ID);
+  }
+
+  if (snapshot.hostingState === 'STARTING' || snapshot.gameplayState === 'DEGRADED') {
+    return customStatusEmoji('warning_dot', process.env.GAME_SERVER_EMOJI_WARNING_ID);
+  }
+
+  return customStatusEmoji('offline_dot', process.env.GAME_SERVER_EMOJI_OFFLINE_ID);
 }
 
 function playerCount(snapshot: SnapshotView | null): string {
