@@ -2,8 +2,9 @@
 
 The persistent card uses a native Components V2 Container with a Section/Thumbnail
 header, one Separator, one Media Gallery, and a two-button Action Row. The header renders
-the name, then the honest status, dynamic lower-case player count, and optional normalized
-location. The standalone description uses a configured nonempty description when present;
+the name, then a level-three status/location heading and a separate lower-case player-count
+subtext line. Configured custom status-dot emojis fall back to a plain text dot.
+The standalone description uses a configured nonempty description when present;
 otherwise it renders the approved two-line default. The lower rows are the labeled current
 map, map artwork, then the copyable address, with no padding assumptions.
 
@@ -69,7 +70,7 @@ Workshop paths and `.bsp` extensions remain normalized for display.
 DatHost references: [server object](https://dathost.readme.io/reference/get_game_server_item)
 and [monitoring metrics](https://dathost.readme.io/reference/get_cs_monitoring_server_metrics).
 
-`layoutVersion` 10 in the saved card fingerprint causes an existing message to be
+`layoutVersion` 15 in the saved card fingerprint causes an existing message to be
 edited on its next refresh after deployment, including when server state is
 unchanged. Subsequent unchanged refreshes continue to skip Discord edits.
 
@@ -88,8 +89,10 @@ and inspecting the source banner do not establish Discord client appearance.
 API reference: <https://docs.discord.com/developers/components/reference>
 
 Discord's native [Markdown subtext](https://support.discord.com/hc/en-us/articles/210298617-Markdown-Text-101-Chat-Formatting-Bold-Italic-Underline)
-uses `-# ` at the start of a line. The heading occupies its own line so the status
-emoji remains normal body text. Inline code is selectable text rather than a custom
-input control. There are no fixed widths, padding characters, or custom fonts; long
-server and map names rely on Discord's natural wrapping. Existing map artwork or the
+uses `-# ` at the start of a line. The user-approved newer design keeps the status
+as a level-three heading and the player count on a separate subtext line, indented
+with an em space and an en space. This differs from the original compact body-text
+summary concept. Inline code is selectable text rather than a custom input control.
+There are no fixed widths or custom fonts; long server and map names rely on
+Discord's natural wrapping. Existing map artwork or the
 fallback is used instead of reproducing the generated concept image.

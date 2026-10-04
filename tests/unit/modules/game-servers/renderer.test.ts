@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Client, ComponentType, ContainerBuilder, type APIContainerComponent } from 'discord.js';
@@ -49,6 +49,21 @@ const server: ServerView = {
 };
 
 const secret = 'secret';
+
+const statusEmojiEnvironment = [
+  'GAME_SERVER_EMOJI_ONLINE_ID',
+  'GAME_SERVER_EMOJI_OFFLINE_ID',
+  'GAME_SERVER_EMOJI_WARNING_ID',
+  'GAME_SERVER_EMOJI_PENDING_ID',
+] as const;
+
+beforeEach(() => {
+  for (const key of statusEmojiEnvironment) vi.stubEnv(key, '');
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function firstContainer(result: ReturnType<typeof renderGameServerCard>): Record<string, unknown> {
   expect(result.components).toHaveLength(1);
@@ -158,7 +173,9 @@ describe('Game Server rendering', () => {
     const container = firstContainer(result);
     expect(container.type).toBe(17);
     const text = textContents(container);
-    expect(text).toContain('# 1v1 Arena\n🟢 Online · 0 / 16 players · Los Angeles');
+    expect(text).toContain(
+      '# 1v1 Arena\n### • Online · Los Angeles\n-# \u2003\u20020 / 16 players',
+    );
     expect(text).toContain(
       'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.',
     );
@@ -181,7 +198,9 @@ describe('Game Server rendering', () => {
     const components = containerComponents(container);
     const section = components[0] as Record<string, unknown>;
     const header = (section.components as Record<string, unknown>[])[0];
-    expect(header?.content).toBe('# 1v1 Arena\n🟢 Online · 0 / 16 players · Los Angeles');
+    expect(header?.content).toBe(
+      '# 1v1 Arena\n### • Online · Los Angeles\n-# \u2003\u20020 / 16 players',
+    );
     expect(components.map((component) => component.type)).toEqual([9, 10, 14, 10, 12, 10, 1]);
   });
 
@@ -256,7 +275,7 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, hostingState: 'STOPPED', gameplayState: 'UNAVAILABLE' },
     };
     expect(textContents(firstContainer(renderGameServerCard(stopped, secret)))).toContain(
-      '🔴 Offline',
+      '• Offline',
     );
 
     const starting = {
@@ -264,12 +283,12 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, hostingState: 'STARTING', gameplayState: 'UNKNOWN' },
     };
     expect(textContents(firstContainer(renderGameServerCard(starting, secret)))).toContain(
-      '🟡 Server starting…',
+      '• Server starting…',
     );
 
     const stale = { ...server, snapshot: { ...baseSnapshot, stale: true } };
     expect(textContents(firstContainer(renderGameServerCard(stale, secret)))).toContain(
-      '🟡 Status stale',
+      '• Status stale',
     );
   });
 
@@ -295,7 +314,7 @@ describe('Game Server rendering', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, datacenter: null } };
     const container = firstContainer(renderGameServerCard(view, secret));
     const text = textContents(container);
-    expect(text).toContain('# 1v1 Arena\n🟢 Online · 0 / 16 players');
+    expect(text).toContain('# 1v1 Arena\n### • Online\n-# \u2003\u20020 / 16 players');
     expect(text).not.toContain('📍');
     const section = containerComponents(container)[0] as Record<string, unknown>;
     expect(section.components as Record<string, unknown>[]).toHaveLength(1);
@@ -367,8 +386,7 @@ describe('Game Server rendering', () => {
       },
     };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
-    expect(text).toContain('🟢 Online');
-    expect(text).toContain('🟢 Online · 3 / 5 players');
+    expect(text).toContain('### • Online\n-# \u2003\u20023 / 5 players');
     expect(text).toContain('`Unavailable`');
     expect(text).toContain('**Current map**\n`Unknown`');
   });
@@ -413,14 +431,25 @@ describe('Game Server rendering', () => {
     expect(text).toContain(map);
     expect(text).toContain(`# ${displayName}\n`);
     expect(text).toContain(connectDomain);
-    expect(text).toContain('16 / 16 players');
+    expect(text).toContain('-# \u2003\u200216 / 16 players');
     expect(text).not.toContain('\u00a0');
   });
 
   it('keeps the fingerprint stable when only observation times change', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
     expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
-    expect(cardFingerprint(view).layoutVersion).toBe(10);
+    expect(cardFingerprint(view).layoutVersion).toBe(15);
+  });
+
+  it('uses the configured custom status emoji when available', () => {
+    vi.stubEnv('GAME_SERVER_EMOJI_ONLINE_ID', '123456789012345678');
+    const text = textContents(firstContainer(renderGameServerCard(server, secret)));
+    expect(text).toContain('<:online_dot:123456789012345678> Online');
+  });
+
+  it('falls back to a text dot when the configured custom status emoji is unavailable', () => {
+    const text = textContents(firstContainer(renderGameServerCard(server, secret)));
+    expect(text).toContain('### • Online · Los Angeles');
   });
 
   it('uses a trimmed configured description as the entire description block', () => {
