@@ -88,7 +88,7 @@ describe('admin page views', () => {
     expect(html).toContain('/admin/guilds/12345678901234567/game-servers');
   });
 
-  it('game servers page renders status and registered server rows', () => {
+  it('game servers page renders complete registered-server cards and controls', () => {
     const html = gameServersPage({
       id: '12345678901234567',
       name: 'Office',
@@ -139,6 +139,16 @@ describe('admin page views', () => {
     });
     expect(html).toContain('Office CS2');
     expect(html).toContain('ONLINE');
+    expect(html).toContain('class="server-grid"');
+    expect(html).toContain('Polling enabled');
+    expect(html).toContain('Last success');
+    expect(html).toContain('Failures');
+    expect(html).toContain('Displays');
+    expect(html).toContain('/game-servers/32345678901234567/toggle-enabled');
+    expect(html).toContain('/game-servers/32345678901234567/toggle-public');
+    expect(html).toContain('name="version" value="3"');
+    expect(html).toContain('Disable polling');
+    expect(html).toContain('Make private');
     expect(html).toContain('Production ready');
     expect(html).toContain('Discord displays');
     expect(html).toContain('Publish server card');

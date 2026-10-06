@@ -1,7 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { escapeHtml, guildIndex, rewardsPage } from '../../../src/http/admin/views.js';
+import {
+  adminShell,
+  escapeHtml,
+  guildIndex,
+  multiSelect,
+  rewardsPage,
+  select,
+} from '../../../src/http/admin/views.js';
 
 describe('admin views', () => {
+  it('marks only the current module in guild navigation', () => {
+    const html = adminShell(
+      {
+        title: 'Edit server',
+        username: 'owner',
+        csrf: 'csrf',
+        currentPath: '/admin/guilds/123/game-servers/server-1',
+        currentGuildId: '123',
+      },
+      '<p>Settings</p>',
+    );
+
+    expect(html).toMatch(/Game Servers<\/a>/);
+    expect(html).toMatch(/game-servers" aria-current="page">Game Servers<\/a>/);
+    expect(html).not.toMatch(/guilds\/123" aria-current="page">Overview<\/a>/);
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+  });
+
   it('escapes untrusted text', () => {
     expect(escapeHtml('<script>"&')).toBe('&lt;script&gt;&quot;&amp;');
     expect(
@@ -47,6 +72,37 @@ describe('admin views', () => {
         },
       ]),
     ).not.toContain('<img src=x>');
+  });
+
+  it('keeps select form names while permitting a distinct safe control id', () => {
+    const html = select(
+      'Move to channel',
+      'channelId',
+      [{ id: 'channel-1', name: 'announcements' }],
+      '',
+      'required',
+      undefined,
+      undefined,
+      'display-1-channelId',
+    );
+
+    expect(html).toContain('for="display-1-channelId"');
+    expect(html).toContain('id="display-1-channelId" name="channelId"');
+  });
+
+  it('connects multi-select hints and errors to their control', () => {
+    const html = multiSelect(
+      'Channels',
+      'channelIds',
+      [{ id: 'channel-1', name: 'announcements' }],
+      [],
+      '',
+      ['Select at least one channel.'],
+    );
+
+    expect(html).toContain('id="channelIds-hint"');
+    expect(html).toContain('aria-describedby="channelIds-hint channelIds-error"');
+    expect(html).toContain('aria-invalid="true"');
   });
 
   it('escapes reward level labels and renders CSRF-protected forms', () => {

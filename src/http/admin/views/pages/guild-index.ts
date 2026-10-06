@@ -1,4 +1,4 @@
-import { adminShell, card, emptyState, escapeHtml, statusBadge, table } from '../components.js';
+import { adminShell, emptyState, escapeHtml, statusBadge, table } from '../components.js';
 
 export interface GuildSummary {
   id: string;
@@ -32,6 +32,6 @@ export function guildIndex(username: string, csrf: string, guilds: GuildSummary[
         );
   return adminShell(
     { title: 'Guilds', username, csrf, currentPath: '/admin', currentGuildId: undefined },
-    card('Guilds', body),
+    `<section class="card"><h1>Guilds</h1>${body}</section>`,
   );
 }

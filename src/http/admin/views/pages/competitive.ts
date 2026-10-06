@@ -49,7 +49,7 @@ export function competitivePage(model: CompetitivePageModel): string {
       )
     : '';
   const errorBlock = errorSummary(model.errors ?? []);
-  const moduleBody = `<p>Release: ${statusBadge(model.release, model.releaseVariant)}</p><p>Operational: ${statusBadge(model.enabled ? 'Enabled' : 'Disabled', model.enabled ? 'enabled' : 'disabled')}</p>${model.version === null ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/competitive/${model.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.version ?? 0)}"><button type="submit">${model.enabled ? 'Disable' : 'Enable'}</button>`)}`;
+  const moduleBody = `<p>Release: ${statusBadge(model.release, model.releaseVariant)}</p><p>Operational: ${statusBadge(model.enabled ? 'Enabled' : 'Disabled', model.enabled ? 'enabled' : 'disabled')}</p>${model.version === null ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/competitive/${model.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.version)}"><button type="submit"${model.enabled ? ' class="danger"' : ''}>${model.enabled ? 'Disable' : 'Enable'}</button>`)}`;
   const diagnosticsBody =
     model.diagnostics === undefined
       ? '<p class="empty">Run diagnostics to see a live report.</p>'

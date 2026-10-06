@@ -1,4 +1,5 @@
 import { adminShell, card, emptyState, escapeHtml, table } from '../components.js';
+import { formatTimestamp } from '../time.js';
 
 export interface AuditPageModel {
   id: string;
@@ -22,7 +23,7 @@ export function auditPage(model: AuditPageModel): string {
       : table(
           ['Time', 'Actor', 'Module', 'Action', 'Outcome', 'Summary'],
           model.entries.map((entry) => [
-            escapeHtml(entry.createdAt.toISOString()),
+            formatTimestamp(entry.createdAt),
             escapeHtml(entry.actor ?? 'system'),
             escapeHtml(entry.module),
             escapeHtml(entry.action),

@@ -14,6 +14,7 @@ import {
   statusBadge,
   table,
 } from '../components.js';
+import { formatTimestamp } from '../time.js';
 
 export interface RewardsPageModel {
   id: string;
@@ -68,7 +69,7 @@ export function rewardsPage(model: RewardsPageModel): string {
       )
     : '';
   const errorBlock = errorSummary(model.errors ?? []);
-  const moduleBody = `<p>Release: ${statusBadge('In development', model.releaseVariant)}</p><p>Operational: ${statusBadge(model.settings.enabled ? 'Enabled' : 'Disabled', model.settings.enabled ? 'enabled' : 'disabled')}</p>${model.settings.version === null ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/rewards/${model.settings.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.settings.version ?? 0)}"><button type="submit">${model.settings.enabled ? 'Disable' : 'Enable'}</button>`)}`;
+  const moduleBody = `<p>Release: ${statusBadge('In development', model.releaseVariant)}</p><p>Operational: ${statusBadge(model.settings.enabled ? 'Enabled' : 'Disabled', model.settings.enabled ? 'enabled' : 'disabled')}</p>${model.settings.version === null ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/rewards/${model.settings.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.settings.version)}"><button type="submit"${model.settings.enabled ? ' class="danger"' : ''}>${model.settings.enabled ? 'Disable' : 'Enable'}</button>`)}`;
   const action = `/admin/guilds/${escapeHtml(model.id)}/rewards`;
   const disabled = model.inDevelopment ? 'disabled' : '';
   const settingsForm = actionForm(
@@ -97,7 +98,7 @@ ${model.inDevelopment ? '' : '<button type="submit">Save reward settings</button
     String(entry.amount),
     escapeHtml(entry.actorDiscordUserId ?? 'system'),
     escapeHtml(entry.reason ?? ''),
-    escapeHtml(entry.createdAt.toISOString()),
+    formatTimestamp(entry.createdAt),
   ]);
   const ledgerBody =
     model.ledgerEntries.length === 0
@@ -119,7 +120,7 @@ ${model.inDevelopment ? '' : '<button type="submit">Save reward settings</button
     },
     `${devNotice}${errorBlock}` +
       card('Module status', moduleBody) +
-      settingsForm +
+      card('Reward settings', settingsForm) +
       levelsForm +
       adjustForm +
       card('Ledger', ledgerBody) +
@@ -132,16 +133,16 @@ function levelsCard(model: RewardsPageModel, action: string, disabled: string): 
     .map(
       (level, index) =>
         `<tr>
-<td><input type="number" name="levelNumbers" min="0" value="${String(level.level)}" ${disabled}></td>
-<td><input type="number" name="levelThresholds" min="0" value="${String(level.xpThreshold)}" ${disabled}></td>
-<td><input type="text" name="levelLabels" maxlength="128" value="${escapeHtml(level.label ?? '')}" ${disabled}></td>
-<td><select name="levelRoleIds" ${disabled}><option value="">None</option>${options(model.roles, level.roleId ?? '')}</select></td>
-<td><button type="submit" formaction="${escapeHtml(`${action}/levels/remove/${String(index)}`)}" ${disabled}>Remove</button></td>
+<td><label><span class="level-field-label">Level</span><input type="number" name="levelNumbers" min="0" value="${String(level.level)}" ${disabled}></label></td>
+<td><label><span class="level-field-label">XP threshold</span><input type="number" name="levelThresholds" min="0" value="${String(level.xpThreshold)}" ${disabled}></label></td>
+<td><label><span class="level-field-label">Label</span><input type="text" name="levelLabels" maxlength="128" value="${escapeHtml(level.label ?? '')}" ${disabled}></label></td>
+<td><label><span class="level-field-label">Role</span><select name="levelRoleIds" ${disabled}><option value="">None</option>${options(model.roles, level.roleId ?? '')}</select></label></td>
+<td><button class="danger" type="submit" formaction="${escapeHtml(`${action}/levels/remove/${String(index)}`)}" ${disabled}>Remove</button></td>
 </tr>`,
     )
     .join('');
   const errorBlock = errorSummary(model.levelErrors ?? []);
-  const tableHtml = `<table><thead><tr><th>Level</th><th>XP threshold</th><th>Label</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  const tableHtml = `<div class="table-wrap levels-table"><table><thead><tr><th>Level</th><th>XP threshold</th><th>Label</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
   const form = actionForm(
     `${action}/levels/add`,
     model.csrf,

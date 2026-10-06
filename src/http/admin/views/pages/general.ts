@@ -7,6 +7,7 @@ import {
   statusBadge,
   table,
 } from '../components.js';
+import { formatTimestamp } from '../time.js';
 
 export interface GeneralPageModel {
   id: string;
@@ -44,13 +45,13 @@ function moduleToggle(
     return '';
   }
   if (module.key === 'game-servers' && module.enabled) {
-    return `<a class="button" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/disable-confirm">Disable</a>`;
+    return `<a class="button danger" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/disable-confirm">Disable</a>`;
   }
   const action = module.enabled ? 'disable' : 'enable';
   return actionForm(
     `/admin/guilds/${escapeHtml(model.id)}/${module.key}/${action}`,
     model.csrf,
-    `<input type="hidden" name="version" value="${String(module.version)}"><button type="submit">${module.enabled ? 'Disable' : 'Enable'}</button>`,
+    `<input type="hidden" name="version" value="${String(module.version)}"><button type="submit"${module.enabled ? ' class="danger"' : ''}>${module.enabled ? 'Disable' : 'Enable'}</button>`,
   );
 }
 
@@ -61,7 +62,7 @@ export function generalPage(model: GeneralPageModel): string {
   const moduleCards = model.modules
     .map(
       (module) =>
-        `<div class="module-card"><h3><a href="${escapeHtml(module.href)}">${escapeHtml(module.label)}</a></h3><p>${statusBadge(module.release, module.releaseVariant)} ${statusBadge(module.operational, module.operationalVariant)}</p><p class="actions">${moduleToggle(model, module)}${module.primaryAction === undefined ? '' : `<a class="button" href="${escapeHtml(module.primaryAction.href)}">${escapeHtml(module.primaryAction.label)}</a>`}</p></div>`,
+        `<div class="module-card"><h3><a href="${escapeHtml(module.href)}">${escapeHtml(module.label)}</a></h3><p>${statusBadge(module.release, module.releaseVariant)} ${statusBadge(module.operational, module.operationalVariant)}</p><div class="actions">${moduleToggle(model, module)}${module.primaryAction === undefined ? '' : `<a class="button" href="${escapeHtml(module.primaryAction.href)}">${escapeHtml(module.primaryAction.label)}</a>`}</div></div>`,
     )
     .join('');
   const auditBody =
@@ -70,7 +71,7 @@ export function generalPage(model: GeneralPageModel): string {
       : table(
           ['Time', 'Actor', 'Module', 'Action', 'Result'],
           model.recentAudit.map((entry) => [
-            escapeHtml(entry.createdAt.toISOString()),
+            formatTimestamp(entry.createdAt),
             escapeHtml(entry.actor ?? 'system'),
             escapeHtml(entry.module),
             escapeHtml(entry.action),
@@ -85,7 +86,7 @@ export function generalPage(model: GeneralPageModel): string {
       currentPath: `/admin/guilds/${model.id}`,
       currentGuildId: model.id,
     },
-    `<header class="card"><h2>${escapeHtml(model.name)}</h2><p>Discord gateway: ${status}</p></header>` +
+    `<header class="card"><h1>${escapeHtml(model.name)}</h1><p>Discord gateway: ${status}</p></header>` +
       card('Modules', `<div class="module-grid">${moduleCards}</div>`) +
       card('Recent audit activity', auditBody),
   );
