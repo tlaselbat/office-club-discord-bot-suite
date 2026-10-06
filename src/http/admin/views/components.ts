@@ -31,7 +31,12 @@ export function adminShell(options: ShellOptions, body: string): string {
       ? ''
       : `<p class="guild-back"><a href="/admin">← All guilds</a></p>`;
   const nav = navLinks(options.currentPath, options.currentGuildId);
-  const header = `<header class="site-header"><div class="brand"><h1>Office Club owner panel</h1><p>Signed in as ${escapeHtml(options.username)}</p></div><form method="post" action="/admin/logout" class="logout">${hiddenCsrf(options.csrf)}<button>Sign out</button></form></header><nav class="module-nav" aria-label="Modules">${nav}</nav>${guildHeading}`;
+  const pageHeading =
+    options.currentGuildId === undefined ||
+    options.currentPath === `/admin/guilds/${options.currentGuildId}`
+      ? ''
+      : `<header class="page-heading"><p>Guild administration</p><h1>${escapeHtml(activeNavLabel(options.currentPath, options.currentGuildId))}</h1></header>`;
+  const header = `<header class="site-header"><div class="brand"><p class="brand-name">Office Club owner panel</p><p>Signed in as ${escapeHtml(options.username)}</p></div><form method="post" action="/admin/logout" class="logout">${hiddenCsrf(options.csrf)}<button class="secondary">Sign out</button></form></header><nav class="module-nav" aria-label="Modules">${nav}</nav>${guildHeading}${pageHeading}`;
   return page(options.title, `${header}${body}`);
 }
 
@@ -50,9 +55,29 @@ function navLinks(currentPath: string, guildId?: string): string {
   return `<ul>${links
     .map(
       (link) =>
-        `<li><a href="${escapeHtml(link.href)}"${currentPath.startsWith(link.href) ? ' aria-current="page"' : ''}>${escapeHtml(link.label)}</a></li>`,
+        `<li><a href="${escapeHtml(link.href)}"${isCurrentNavLink(currentPath, link.href, link.id) ? ' aria-current="page"' : ''}>${escapeHtml(link.label)}</a></li>`,
     )
     .join('')}</ul>`;
+}
+
+function isCurrentNavLink(currentPath: string, href: string, id: string): boolean {
+  return id === 'overview'
+    ? currentPath === href
+    : currentPath === href || currentPath.startsWith(`${href}/`);
+}
+
+function activeNavLabel(currentPath: string, guildId: string): string {
+  const base = `/admin/guilds/${guildId}`;
+  const links: Array<Pick<NavLink, 'id' | 'label' | 'href'>> = [
+    { id: 'game-servers', label: 'Game Servers', href: `${base}/game-servers` },
+    { id: 'competitive', label: 'Competitive', href: `${base}/competitive` },
+    { id: 'rewards', label: 'Rewards', href: `${base}/rewards` },
+    { id: 'audit', label: 'Audit', href: `${base}/audit` },
+  ];
+  return (
+    links.find((link) => isCurrentNavLink(currentPath, link.href, link.id))?.label ??
+    'Guild settings'
+  );
 }
 
 export function hiddenCsrf(csrf: string): string {
@@ -99,9 +124,14 @@ export function select(
   attributes = '',
   placeholder?: string,
   errors?: string[],
+  id = name,
 ): string {
   const errorHtml = fieldErrors(name, errors);
-  return `<label for="${name}">${escapeHtml(label)}${errorHtml}<select id="${name}" name="${name}" ${attributes}>${options(items, selected, placeholder)}</select></label>`;
+  const errorAttributes =
+    errors === undefined || errors.length === 0
+      ? ''
+      : ` aria-describedby="${escapeHtml(name)}-error" aria-invalid="true"`;
+  return `<label for="${escapeHtml(id)}">${escapeHtml(label)}${errorHtml}<select id="${escapeHtml(id)}" name="${escapeHtml(name)}"${errorAttributes} ${attributes}>${options(items, selected, placeholder)}</select></label>`;
 }
 
 export function multiSelect(
@@ -114,7 +144,11 @@ export function multiSelect(
 ): string {
   const summary = selectedSummary(selected, items);
   const errorHtml = fieldErrors(name, errors);
-  return `<div class="field"><label for="${name}">${escapeHtml(label)}</label><p class="hint">Hold Ctrl / Cmd to select multiple. ${summary}</p>${errorHtml}<select id="${name}" name="${name}" multiple ${attributes}>${options(items, selected)}</select></div>`;
+  const hintId = `${name}-hint`;
+  const errorId = `${name}-error`;
+  const describedBy = errors === undefined || errors.length === 0 ? hintId : `${hintId} ${errorId}`;
+  const invalid = errors === undefined || errors.length === 0 ? '' : ' aria-invalid="true"';
+  return `<div class="field"><label for="${escapeHtml(name)}">${escapeHtml(label)}</label><p class="hint" id="${escapeHtml(hintId)}">Choose one or more. On desktop, hold Ctrl / Cmd to select multiple. ${summary}</p>${errorHtml}<select id="${escapeHtml(name)}" name="${escapeHtml(name)}" multiple aria-describedby="${escapeHtml(describedBy)}"${invalid} ${attributes}>${options(items, selected)}</select></div>`;
 }
 
 export function selectedSummary(selected: string | string[], items: Option[]): string {
