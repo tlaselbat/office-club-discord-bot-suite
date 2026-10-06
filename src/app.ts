@@ -20,6 +20,7 @@ import { GuildSettingsService } from './modules/tenman/services/guild-settings-s
 import { WebSessionService } from './services/web-session-service.js';
 import { DatHostClient } from './integrations/dathost/client.js';
 import { GameServerAdminService } from './modules/game-servers/services/game-server-admin-service.js';
+import { GameServerCardService } from './modules/game-servers/card-service.js';
 import { GameServerDiagnosticsService } from './modules/game-servers/services/game-server-diagnostics-service.js';
 import { GameServerPanelService } from './modules/game-servers/panel-service.js';
 import { createArtifactStorage } from './modules/tenman/services/artifact-storage.js';
@@ -78,11 +79,17 @@ export async function createApplication(
     discord,
     environment.MATCH_TOKEN_SIGNING_SECRET,
   );
+  const gameServerCardService = new GameServerCardService(
+    prisma,
+    discord,
+    environment.MATCH_TOKEN_SIGNING_SECRET,
+  );
   const gameServerAdmin = new GameServerAdminService({
     prisma,
     discord,
     dathost,
     panelService: gameServerPanelService,
+    cardService: gameServerCardService,
   });
   const gameServerDiagnostics = new GameServerDiagnosticsService(prisma, dathost);
   let startupComplete = false;

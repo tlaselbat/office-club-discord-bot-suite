@@ -1,8 +1,26 @@
-# Managed game-server updates
+# Managed game-server updates and displays
 
-Each enabled, public game server with a persistent card receives an Announcements
-thread and a Changelog thread. The card remains the index: Latest Updates appears
-below Connect and Map & Rules in the same Components V2 message.
+Game-server registration, monitoring, public visibility, and Discord displays are
+separate controls. Registering an accessible DatHost CS2 server starts monitoring
+but does not publish anything to Discord. A Discord display is a desired
+deployment of one server card in one text channel; the same registration may have
+displays in several channels.
+
+Use the Game Servers admin page to publish, move, refresh/repair, or remove a
+display. Removing a display deletes only the bot-managed message and its deployment
+record; it does not unregister the DatHost server or stop polling. Moving creates
+the destination first, then removes the source. If a managed message is deleted,
+the desired deployment remains recorded and **Refresh / Repair** recreates it.
+
+Making a server private removes its managed public displays. Unregistering a server
+also removes its managed displays before the registration is deleted. Neither action
+changes the DatHost server itself. The old single “panel destination” is deprecated;
+there is no guild-wide card channel.
+
+Each enabled, public displayed server has one canonical Announcements thread and one
+canonical Changelog thread. Multiple card displays link to those same update threads;
+they do not create per-channel copies. The card remains the index: Latest Updates
+appears below Connect and Map & Rules in the same Components V2 message.
 
 ## Discord setup
 
@@ -57,18 +75,24 @@ the conservative 10-child Container limit documented by discord.js.
 
 ## Rollout checks
 
-1. Enable the intent and verify parent-channel permissions before rollout.
+1. Enable the intent and verify parent-channel permissions before publication.
 2. Apply the checked-in Prisma migration using the normal deployment migration
    procedure, regenerate the client during build, and restart the application.
-3. Confirm both threads appear for each existing displayed public server, and
-   that restarting does not duplicate them.
-4. Post a staff update in each thread. Check preview text, direct navigation,
+3. Register a DatHost server and confirm no card is automatically published. Publish
+   it to two approved text channels; confirm both cards share the canonical update
+   threads and that restarting does not duplicate either cards or threads.
+4. Delete one managed card manually, run **Refresh / Repair**, and confirm it is
+   recreated in the same channel. Move the other display and verify the destination
+   appears before the source is removed.
+5. Make the server private and confirm managed public cards are removed while the
+   DatHost registration remains. Re-publish only after making it public again.
+6. Post a staff update in each thread. Check preview text, direct navigation,
    independent NEW indicators, and the unchanged Connect / Map & Rules controls.
-5. Edit and delete the latest post; check that edits retain the deadline and
+7. Edit and delete the latest post; check that edits retain the deadline and
    deletion restores the previous eligible post without granting a new window.
-6. Archive a thread and verify navigation and restart preserve its ID. Delete
+8. Archive a thread and verify navigation and restart preserve its ID. Delete
    a managed thread and verify only that resource is replaced.
-7. Verify expiry and worker health. The deadline is exactly post time plus 48
+9. Verify expiry and worker health. The deadline is exactly post time plus 48
    hours; the visible Discord edit is subject to worker availability and API
    latency/rate limits. After downtime, expired indicators must not receive a new
    48-hour window.

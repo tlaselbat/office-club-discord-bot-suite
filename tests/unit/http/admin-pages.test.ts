@@ -3,6 +3,7 @@ import {
   auditPage,
   competitivePage,
   escapeHtml,
+  gameServerEditPage,
   gameServersPage,
   generalPage,
   guildIndex,
@@ -95,9 +96,6 @@ describe('admin page views', () => {
       csrf: 'csrf-token',
       moduleEnabled: true,
       settingsVersion: 1,
-      panelChannelId: '22345678901234567',
-      panelChannelName: '#servers',
-      panelMessageOk: true,
       textChannels: [{ id: '22345678901234567', name: '#servers' }],
       servers: [
         {
@@ -111,12 +109,25 @@ describe('admin page views', () => {
           stale: false,
           lastSuccessfulAt: new Date('2026-01-01T00:00:00Z'),
           consecutiveFailures: 0,
-          cardCount: 1,
+          displays: [{ id: 'card-1', channelName: '#servers' }],
           needsAttention: false,
           version: 3,
         },
       ],
       filter: 'all',
+      cards: [
+        {
+          id: 'card-1',
+          gameServerId: '32345678901234567',
+          serverName: 'Office CS2',
+          channelId: '22345678901234567',
+          channelName: '#servers',
+          messageId: '42345678901234567',
+          state: 'HEALTHY',
+          lastReconciledAt: new Date('2026-01-01T00:00:00Z'),
+          lastError: null,
+        },
+      ],
       diagnostics: {
         runAt: new Date('2026-01-01T00:00:00Z'),
         mode: 'persisted',
@@ -129,7 +140,71 @@ describe('admin page views', () => {
     expect(html).toContain('Office CS2');
     expect(html).toContain('ONLINE');
     expect(html).toContain('Production ready');
+    expect(html).toContain('Discord displays');
+    expect(html).toContain('Publish server card');
+    expect(html).not.toContain('Panel destination');
     expect(html).toContain('name="csrf" value="csrf-token"');
+  });
+
+  it('server details render persisted live state and independent display actions', () => {
+    const html = gameServerEditPage({
+      guildId: '12345678901234567',
+      guildName: 'Office',
+      username: 'owner',
+      csrf: 'csrf-token',
+      server: {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        displayName: 'Office CS2',
+        description: null,
+        enabled: true,
+        public: true,
+        connectDomain: null,
+        joinUrl: null,
+        imageUrl: null,
+        sortOrder: 0,
+        provider: 'dathost',
+        providerServerId: 'server',
+        version: 1,
+      },
+      textChannels: [{ id: '22345678901234567', name: 'servers' }],
+      cards: [
+        {
+          id: '123e4567-e89b-12d3-a456-426614174001',
+          channelId: '22345678901234567',
+          channelName: 'servers',
+          messageId: '32345678901234567',
+          state: 'HEALTHY',
+          lastReconciledAt: new Date('2026-01-01T00:00:00Z'),
+          lastError: null,
+        },
+      ],
+      snapshot: {
+        hostingState: 'ONLINE',
+        gameplayState: 'LIVE',
+        hostname: 'Office CS2',
+        rawIp: '127.0.0.1',
+        port: 27015,
+        map: 'de_dust2',
+        players: 2,
+        maxPlayers: 10,
+        datacenter: 'LA',
+        cpuPercent: 10,
+        memoryUsageMb: 512,
+        averagePingMs: 15,
+        packetLossPercent: 0,
+        serverVarMs: 0.5,
+        observedAt: new Date('2026-01-01T00:00:00Z'),
+        lastSuccessfulAt: new Date('2026-01-01T00:00:00Z'),
+        lastOnlineAt: new Date('2026-01-01T00:00:00Z'),
+        consecutiveFailures: 0,
+        stale: false,
+        lastError: null,
+      },
+    });
+    expect(html).toContain('Gameplay state');
+    expect(html).toContain('Open in Discord');
+    expect(html).toContain('Refresh / Repair');
+    expect(html).toContain('/displays/123e4567-e89b-12d3-a456-426614174001/move');
   });
 
   it('competitive page shows in-development notice and read-only managed guidance', () => {

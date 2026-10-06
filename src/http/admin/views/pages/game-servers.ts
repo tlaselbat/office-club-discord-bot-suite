@@ -22,9 +22,10 @@ export interface GameServersPageModel {
   csrf: string;
   moduleEnabled: boolean;
   settingsVersion: number | null;
+  /** @deprecated legacy panel fields are accepted only for page-fixture compatibility. */
   panelChannelId?: string | undefined;
   panelChannelName?: string | undefined;
-  panelMessageOk: boolean;
+  panelMessageOk?: boolean;
   textChannels: Array<{ id: string; name: string }>;
   servers: Array<{
     id: string;
@@ -37,11 +38,24 @@ export interface GameServersPageModel {
     stale: boolean;
     lastSuccessfulAt: Date | null;
     consecutiveFailures: number;
-    cardCount: number;
+    displays?: Array<{ id: string; channelName: string }>;
+    /** @deprecated compatibility with existing page fixtures. */
+    cardCount?: number;
     needsAttention: boolean;
     version: number;
   }>;
   filter: 'all' | 'healthy' | 'needs-attention' | 'disabled';
+  cards?: Array<{
+    id: string;
+    gameServerId: string;
+    serverName: string;
+    channelId: string;
+    channelName: string;
+    messageId: string | null;
+    state: string;
+    lastReconciledAt: Date | null;
+    lastError: string | null;
+  }>;
   diagnostics?: GameServerDiagnosticsReport;
   availableServers: Array<{ id: string; name: string; location: string | null }>;
   notice?: string;
@@ -49,10 +63,13 @@ export interface GameServersPageModel {
 }
 
 export function gameServersPage(model: GameServersPageModel): string {
+  const cards = model.cards ?? [];
   const noticeHtml = model.notice === undefined ? '' : notice(model.notice, 'success');
   const errorBlock = errorSummary(model.errors ?? []);
-  const moduleCard = `<p>Release: ${statusBadge('Production ready', 'production-ready')}</p><p>Operational: ${statusBadge(model.moduleEnabled ? 'Enabled' : 'Disabled', model.moduleEnabled ? 'enabled' : 'disabled')}</p><p class="actions">${model.moduleEnabled ? `<a class="button" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/disable-confirm">Disable module</a>` : actionForm(`/admin/guilds/${escapeHtml(model.id)}/game-servers/enable`, model.csrf, `<input type="hidden" name="version" value="${String(model.settingsVersion ?? 0)}"><button type="submit">Enable module</button>`)}</p>`;
-  const panelBody = `<p>Channel: ${model.panelChannelName === undefined ? statusBadge('Unconfigured', 'unconfigured') : escapeHtml(model.panelChannelName)}</p><p>Panel message: ${model.panelMessageOk ? statusBadge('OK', 'enabled') : statusBadge('Missing or broken', 'needs-attention')}</p>${panelDestinationForm(model)}<div class="actions"><form method="post" action="/admin/guilds/${escapeHtml(model.id)}/game-servers/repair">${hiddenCsrf(model.csrf)}<button type="submit">Repair panel</button></form></div>`;
+  const issues =
+    model.servers.filter((server) => server.needsAttention).length +
+    cards.filter((card) => card.state !== 'HEALTHY').length;
+  const moduleCard = `<p>Release: ${statusBadge('Production ready', 'production-ready')} · ${statusBadge(model.moduleEnabled ? 'Enabled' : 'Disabled', model.moduleEnabled ? 'enabled' : 'disabled')} · ${String(model.servers.length)} registered · ${String(cards.length)} displays · ${String(issues)} issues</p><p class="actions">${model.moduleEnabled ? `<a class="button" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/disable-confirm">Disable module</a>` : actionForm(`/admin/guilds/${escapeHtml(model.id)}/game-servers/enable`, model.csrf, `<input type="hidden" name="version" value="${String(model.settingsVersion ?? 0)}"><button type="submit">Enable module</button>`)}</p>`;
   const serverTable = serverListCard(model);
   const addBody =
     model.availableServers.length === 0
@@ -71,29 +88,14 @@ export function gameServersPage(model: GameServersPageModel): string {
       currentGuildId: model.id,
     },
     `${noticeHtml}${errorBlock}` +
-      card('Module status', moduleCard) +
-      card('Panel destination', panelBody) +
-      card(
-        'Diagnostics',
-        `<form method="post" action="/admin/guilds/${escapeHtml(model.id)}/game-servers/diagnostics">${hiddenCsrf(model.csrf)}<button type="submit">Run diagnostics</button></form>${diagnosticsBody}`,
-      ) +
+      card('Game Servers', moduleCard) +
       serverTable +
-      card('Register server', addBody),
-  );
-}
-
-function panelDestinationForm(model: GameServersPageModel): string {
-  const currentChannelId = model.panelChannelId ?? '';
-  return actionForm(
-    `/admin/guilds/${escapeHtml(model.id)}/game-servers/panel`,
-    model.csrf,
-    `${select(
-      'Server-card text channel',
-      'panelChannelId',
-      model.textChannels,
-      currentChannelId,
-      'required',
-    )}<input type="hidden" name="version" value="${String(model.settingsVersion ?? 'new')}"><button type="submit">Save panel destination</button>`,
+      displaysCard(model) +
+      card('Register server', addBody) +
+      card(
+        'Diagnostics & maintenance',
+        `<form method="post" action="/admin/guilds/${escapeHtml(model.id)}/game-servers/diagnostics">${hiddenCsrf(model.csrf)}<button type="submit">Run diagnostics</button></form>${diagnosticsBody}`,
+      ),
   );
 }
 
@@ -144,7 +146,11 @@ function serverListCard(model: GameServersPageModel): string {
         ? 'Never'
         : escapeHtml(server.lastSuccessfulAt.toISOString()),
       String(server.consecutiveFailures),
-      String(server.cardCount),
+      (server.displays ?? []).length === 0
+        ? 'None'
+        : (server.displays ?? [])
+            .map((display) => `#${escapeHtml(display.channelName)}`)
+            .join(', '),
       `${status}${actions}`,
     ];
   });
@@ -159,11 +165,48 @@ function serverListCard(model: GameServersPageModel): string {
         'State',
         'Last success',
         'Failures',
-        'Cards',
+        'Displays',
         'Status / Actions',
       ],
       rows,
     )}`,
+  );
+}
+
+function displaysCard(model: GameServersPageModel): string {
+  const publish =
+    model.servers.length === 0 || model.textChannels.length === 0
+      ? emptyState('Register a server and make a text channel available to publish a display.')
+      : actionForm(
+          `/admin/guilds/${escapeHtml(model.id)}/game-servers/displays`,
+          model.csrf,
+          `${select(
+            'Registered server',
+            'gameServerId',
+            model.servers.map((server) => ({ id: server.id, name: server.displayName })),
+            '',
+            'required',
+          )}${select('Discord text channel', 'channelId', model.textChannels, '', 'required')}<button type="submit">Publish server card</button>`,
+        );
+  const rows = (model.cards ?? []).map((card) => {
+    const link =
+      card.messageId === null
+        ? 'Not created'
+        : `<a href="https://discord.com/channels/${escapeHtml(model.id)}/${escapeHtml(card.channelId)}/${escapeHtml(card.messageId)}">Open in Discord</a>`;
+    const base = `/admin/guilds/${escapeHtml(model.id)}/game-servers/displays/${escapeHtml(card.id)}`;
+    const fields = `<input type="hidden" name="gameServerId" value="${escapeHtml(card.gameServerId)}">`;
+    return [
+      escapeHtml(card.serverName),
+      `#${escapeHtml(card.channelName)}`,
+      link,
+      statusBadge(card.state, card.state === 'HEALTHY' ? 'enabled' : 'needs-attention'),
+      card.lastReconciledAt === null ? 'Never' : escapeHtml(card.lastReconciledAt.toISOString()),
+      `<div class="actions">${actionForm(`${base}/reconcile`, model.csrf, `${fields}<button type="submit">Refresh / Repair</button>`)}${actionForm(`${base}/move`, model.csrf, `${select('Move to channel', 'channelId', model.textChannels, '', 'required')}<button type="submit">Move</button>`)}${actionForm(`${base}/remove`, model.csrf, `${fields}<button type="submit">Remove from channel</button>`)}</div>${card.lastError === null ? '' : `<p class="hint">${escapeHtml(card.lastError)}</p>`}`,
+    ];
+  });
+  return card(
+    'Discord displays',
+    `${publish}${rows.length === 0 ? emptyState('No Discord displays are published.') : table(['Server', 'Channel', 'Message', 'State', 'Last reconciled', 'Actions'], rows)}`,
   );
 }
 
@@ -205,15 +248,37 @@ export interface GameServerEditPageModel {
   snapshot?:
     | {
         hostingState: string;
+        gameplayState: string;
+        hostname: string | null;
+        rawIp: string | null;
+        port: number | null;
         map: string | null;
         players: number | null;
         maxPlayers: number | null;
         datacenter: string | null;
+        cpuPercent: number | null;
+        memoryUsageMb: number | null;
+        averagePingMs: number | null;
+        packetLossPercent: number | null;
+        serverVarMs: number | null;
         observedAt: Date;
+        lastSuccessfulAt: Date | null;
+        lastOnlineAt: Date | null;
+        consecutiveFailures: number;
+        stale: boolean;
         lastError: string | null;
       }
     | undefined;
-  cardState?: { channelId: string; messageId: string } | null | undefined;
+  textChannels: Array<{ id: string; name: string }>;
+  cards: Array<{
+    id: string;
+    channelId: string;
+    channelName: string;
+    messageId: string | null;
+    state: string;
+    lastReconciledAt: Date | null;
+    lastError: string | null;
+  }>;
   notice?: string | undefined;
   errors?: string[] | undefined;
   fieldErrors?: Record<string, string[]> | undefined;
@@ -223,13 +288,20 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
   const noticeHtml = model.notice === undefined ? '' : notice(model.notice, 'success');
   const errorBlock = errorSummary(model.errors ?? []);
   const snapshot = model.snapshot;
-  const readOnly = `<div class="read-only"><p>These values are read-only and reflect the latest observed state.</p>${snapshot === undefined ? '' : `<dl class="dl"><dt>State</dt><dd>${escapeHtml(snapshot.hostingState)}</dd><dt>Map</dt><dd>${escapeHtml(snapshot.map ?? 'Unknown')}</dd><dt>Players</dt><dd>${snapshot.players === null ? 'Unknown' : `${String(snapshot.players)}${snapshot.maxPlayers === null ? '' : ` / ${String(snapshot.maxPlayers)}`}`}</dd><dt>Data center</dt><dd>${escapeHtml(snapshot.datacenter ?? 'Unknown')}</dd><dt>Observed at</dt><dd>${escapeHtml(snapshot.observedAt.toISOString())}</dd>${snapshot.lastError === null ? '' : `<dt>Recent error</dt><dd>${escapeHtml(snapshot.lastError)}</dd>`}</dl>`}</div>`;
+  const readOnly = `<div class="read-only"><p>These values are read-only and reflect the latest observed state.</p>${snapshot === undefined ? emptyState('No observation has been recorded.') : `<dl class="dl"><dt>Hosting state</dt><dd>${escapeHtml(snapshot.hostingState)}</dd><dt>Gameplay state</dt><dd>${escapeHtml(snapshot.gameplayState)}</dd><dt>Hostname</dt><dd>${escapeHtml(snapshot.hostname ?? 'Unknown')}</dd><dt>Address</dt><dd>${escapeHtml(snapshot.rawIp ?? 'Unknown')}${snapshot.port === null ? '' : `:${String(snapshot.port)}`}</dd><dt>Data center</dt><dd>${escapeHtml(snapshot.datacenter ?? 'Unknown')}</dd><dt>Map</dt><dd>${escapeHtml(snapshot.map ?? 'Unknown')}</dd><dt>Players</dt><dd>${snapshot.players === null ? 'Unknown' : `${String(snapshot.players)}${snapshot.maxPlayers === null ? '' : ` / ${String(snapshot.maxPlayers)}`}`}</dd><dt>CPU</dt><dd>${snapshot.cpuPercent === null ? 'Unknown' : `${String(snapshot.cpuPercent)}%`}</dd><dt>Memory</dt><dd>${snapshot.memoryUsageMb === null ? 'Unknown' : `${String(snapshot.memoryUsageMb)} MB`}</dd><dt>Average ping</dt><dd>${snapshot.averagePingMs === null ? 'Unknown' : `${String(snapshot.averagePingMs)} ms`}</dd><dt>Packet loss</dt><dd>${snapshot.packetLossPercent === null ? 'Unknown' : `${String(snapshot.packetLossPercent)}%`}</dd><dt>Server var</dt><dd>${snapshot.serverVarMs === null ? 'Unknown' : `${String(snapshot.serverVarMs)} ms`}</dd><dt>Last successful</dt><dd>${snapshot.lastSuccessfulAt === null ? 'Never' : escapeHtml(snapshot.lastSuccessfulAt.toISOString())}</dd><dt>Last online</dt><dd>${snapshot.lastOnlineAt === null ? 'Never' : escapeHtml(snapshot.lastOnlineAt.toISOString())}</dd><dt>Failures</dt><dd>${String(snapshot.consecutiveFailures)}</dd><dt>Stale</dt><dd>${snapshot.stale ? 'Yes' : 'No'}</dd><dt>Observed at</dt><dd>${escapeHtml(snapshot.observedAt.toISOString())}</dd>${snapshot.lastError === null ? '' : `<dt>Recent error</dt><dd>${escapeHtml(snapshot.lastError)}</dd>`}</dl>`}</div>`;
   const cardInfo =
-    model.cardState === undefined
-      ? emptyState('No Discord card registered for this server.')
-      : model.cardState === null
-        ? emptyState('Card was removed or channel is inaccessible.')
-        : `<dl class="dl"><dt>Channel ID</dt><dd>${escapeHtml(model.cardState.channelId)}</dd><dt>Message ID</dt><dd>${escapeHtml(model.cardState.messageId)}</dd></dl>`;
+    model.cards.length === 0
+      ? emptyState('No Discord displays are published for this server.')
+      : model.cards
+          .map((card) => {
+            const base = `/admin/guilds/${escapeHtml(model.guildId)}/game-servers/displays/${escapeHtml(card.id)}`;
+            const message =
+              card.messageId === null
+                ? 'Not created'
+                : `<a href="https://discord.com/channels/${escapeHtml(model.guildId)}/${escapeHtml(card.channelId)}/${escapeHtml(card.messageId)}">Open in Discord</a>`;
+            return `<details><summary>#${escapeHtml(card.channelName)} · ${statusBadge(card.state, card.state === 'HEALTHY' ? 'enabled' : 'needs-attention')}</summary><p>${message}</p><p>Last reconciled: ${card.lastReconciledAt === null ? 'Never' : escapeHtml(card.lastReconciledAt.toISOString())}</p>${card.lastError === null ? '' : `<p class="hint">${escapeHtml(card.lastError)}</p>`}<div class="actions">${actionForm(`${base}/reconcile`, model.csrf, `<input type="hidden" name="gameServerId" value="${escapeHtml(model.server.id)}"><button type="submit">Refresh / Repair</button>`)}${actionForm(`${base}/move`, model.csrf, `${select('Move to channel', 'channelId', model.textChannels, '', 'required')}<button type="submit">Move</button>`)}${actionForm(`${base}/remove`, model.csrf, `<input type="hidden" name="gameServerId" value="${escapeHtml(model.server.id)}"><button type="submit">Remove</button>`)}</div></details>`;
+          })
+          .join('');
   const form = actionForm(
     `/admin/guilds/${escapeHtml(model.guildId)}/game-servers/${escapeHtml(model.server.id)}/edit`,
     model.csrf,
@@ -255,7 +327,8 @@ ${input('Sort order', 'sortOrder', model.server.sortOrder, 'number', 'min="0"', 
     },
     `<p><a href="/admin/guilds/${escapeHtml(model.guildId)}/game-servers">← Game Servers</a></p>${noticeHtml}${errorBlock}` +
       card('Server details', form) +
-      card('Snapshot and card', `${readOnly}<h3>Discord card</h3>${cardInfo}`),
+      card('Live state', readOnly) +
+      card('Discord displays', cardInfo),
   );
 }
 

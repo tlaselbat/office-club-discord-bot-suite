@@ -227,7 +227,7 @@ describe('Game Server rendering', () => {
   });
 
   it('renders Add Game Servers panel with title and Add Server button', () => {
-    const result = renderAddGameServersPanel([server], secret);
+    const result = renderAddGameServersPanel([server], secret, 'channel-1');
     const embed = result.embeds[0]?.toJSON();
     expect(embed?.title).toBe('OFFICE CLUB • ADD GAME SERVERS');
     expect(embed?.description).toContain('Select a configured game server');
@@ -240,7 +240,7 @@ describe('Game Server rendering', () => {
   });
 
   it('enables Add Server button when a server is selected', () => {
-    const result = renderAddGameServersPanel([server], secret, server.id);
+    const result = renderAddGameServersPanel([server], secret, 'channel-1', server.id);
     const rows = result.components.map((row) => row.toJSON());
     const addButton = rows[1]?.components[0] as { label: string; disabled: boolean };
     expect(addButton.label).toBe('Add Server');
@@ -250,7 +250,12 @@ describe('Game Server rendering', () => {
   });
 
   it('disables Add Server and marks option when the selected server already has a card', () => {
-    const result = renderAddGameServersPanel([{ ...server, hasCard: true }], secret, server.id);
+    const result = renderAddGameServersPanel(
+      [{ ...server, hasCard: true }],
+      secret,
+      'channel-1',
+      server.id,
+    );
     const rows = result.components.map((row) => row.toJSON());
     const addButton = rows[1]?.components[0] as { label: string; disabled: boolean };
     expect(addButton.disabled).toBe(true);

@@ -11,12 +11,11 @@ import {
 import { idSchema } from './shared.js';
 import type { SharedHelpers } from './shared.js';
 
-const panelDestinationSchema = z
-  .object({
-    csrf: z.string().min(1).max(128),
-    version: z.union([z.literal('new'), z.coerce.number().int().nonnegative()]),
-    panelChannelId: idSchema,
-  })
+const displaySchema = z
+  .object({ csrf: z.string().min(1).max(128), gameServerId: z.uuid(), channelId: idSchema })
+  .strict();
+const moveDisplaySchema = z
+  .object({ csrf: z.string().min(1).max(128), channelId: idSchema })
   .strict();
 
 const moduleToggleSchema = z
@@ -83,7 +82,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       shared.deps.prisma.gameServerSettings.findUnique({ where: { guildId } }),
       shared.deps.prisma.gameServer.findMany({
         where: { guildId },
-        include: { snapshot: true, cards: { select: { id: true } } },
+        include: { snapshot: true, cards: true },
         orderBy: [{ sortOrder: 'asc' }, { displayName: 'asc' }],
       }),
       fetchTextChannels(guildId),
@@ -93,10 +92,20 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       .catch(
         () => [] as Awaited<ReturnType<typeof shared.deps.gameServerAdmin.listAvailableServers>>,
       );
-    const panelMessageOk =
-      settings?.panelChannelId !== undefined &&
-      settings.panelChannelId !== null &&
-      settings.panelMessageId !== null;
+    const cards = servers.flatMap((server) =>
+      server.cards.map((card) => ({
+        id: card.id,
+        gameServerId: server.id,
+        serverName: server.displayName,
+        channelId: card.channelId,
+        channelName:
+          channels.find((channel) => channel.id === card.channelId)?.name ?? card.channelId,
+        messageId: card.messageId,
+        state: card.state,
+        lastReconciledAt: card.lastReconciledAt,
+        lastError: card.lastError,
+      })),
+    );
     return gameServersPage({
       id: guildId,
       name: shared.guild(guildId)?.name ?? '',
@@ -104,9 +113,6 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       csrf: auth.csrf,
       moduleEnabled: settings?.enabled ?? false,
       settingsVersion: settings?.version ?? null,
-      panelChannelId: settings?.panelChannelId ?? undefined,
-      panelChannelName: channels.find((channel) => channel.id === settings?.panelChannelId)?.name,
-      panelMessageOk,
       textChannels: channels,
       servers: servers.map((server) => ({
         id: server.id,
@@ -119,7 +125,11 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         stale: server.snapshot?.stale ?? true,
         lastSuccessfulAt: server.snapshot?.lastSuccessfulAt ?? null,
         consecutiveFailures: server.snapshot?.consecutiveFailures ?? 0,
-        cardCount: server.cards.length,
+        displays: server.cards.map((card) => ({
+          id: card.id,
+          channelName:
+            channels.find((channel) => channel.id === card.channelId)?.name ?? card.channelId,
+        })),
         needsAttention:
           server.enabled &&
           (server.snapshot === null ||
@@ -128,6 +138,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         version: server.version,
       })),
       filter: extras?.filter ?? 'all',
+      cards,
       availableServers: available,
       ...(extras?.diagnostics === undefined ? {} : { diagnostics: extras.diagnostics }),
       ...(extras?.errors === undefined ? {} : { errors: extras.errors }),
@@ -248,66 +259,87 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
     },
   );
 
-  app.post(
-    '/admin/guilds/:guildId/game-servers/panel',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      shared.headers(reply);
-      const auth = await shared.authenticatePost(request, reply);
-      if (auth === null) return;
-      const params = z.object({ guildId: idSchema }).safeParse(request.params);
-      if (!params.success || shared.guild(params.data.guildId) === undefined)
-        return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-      const body = panelDestinationSchema.safeParse(request.body);
-      if (!body.success)
-        return shared.renderError(
-          reply,
-          `/admin/guilds/${params.data.guildId}/game-servers`,
-          'Invalid panel channel.',
-        );
-      try {
-        await shared.deps.gameServerAdmin.updatePanelDestination({
-          guildId: params.data.guildId,
-          actorDiscordUserId: auth.discordUserId,
-          correlationId: shared.requestId(),
-          panelChannelId: body.data.panelChannelId,
-          expectedVersion: body.data.version === 'new' ? null : body.data.version,
-        });
-      } catch (error: unknown) {
-        const message =
-          error instanceof PublicError
-            ? error.publicMessage
-            : 'Could not update panel destination.';
-        const html = await buildGameServersPage(params.data.guildId, auth, { errors: [message] });
-        return reply.code(400).type('text/html').send(html);
-      }
-      return reply.redirect(`/admin/guilds/${params.data.guildId}/game-servers`, 303);
-    },
-  );
-
-  app.post(
-    '/admin/guilds/:guildId/game-servers/repair',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      shared.headers(reply);
-      const auth = await shared.authenticatePost(request, reply);
-      if (auth === null) return;
-      const params = z.object({ guildId: idSchema }).safeParse(request.params);
-      if (!params.success || shared.guild(params.data.guildId) === undefined)
-        return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-      try {
-        await shared.deps.gameServerAdmin.repairPanel(
-          params.data.guildId,
-          auth.discordUserId,
-          shared.requestId(),
-        );
-      } catch (error: unknown) {
-        const message =
-          error instanceof PublicError ? error.publicMessage : 'Could not repair panel.';
-        const html = await buildGameServersPage(params.data.guildId, auth, { errors: [message] });
-        return reply.code(400).type('text/html').send(html);
-      }
-      return reply.redirect(`/admin/guilds/${params.data.guildId}/game-servers`, 303);
-    },
-  );
+  for (const action of ['publish', 'move', 'remove', 'reconcile'] as const)
+    app.post(
+      `/admin/guilds/:guildId/game-servers/displays${action === 'publish' ? '' : '/:cardId/' + action}`,
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        shared.headers(reply);
+        const auth = await shared.authenticatePost(request, reply);
+        if (auth === null) return;
+        const params = z
+          .object({ guildId: idSchema, cardId: z.uuid().optional() })
+          .safeParse(request.params);
+        if (!params.success || shared.guild(params.data.guildId) === undefined)
+          return reply.code(404).type('text/html').send('<h1>Not found</h1>');
+        const cardId = params.data.cardId;
+        if (action !== 'publish' && cardId === undefined)
+          return shared.renderError(
+            reply,
+            `/admin/guilds/${params.data.guildId}/game-servers`,
+            'Invalid display request.',
+          );
+        const body = (
+          action === 'publish'
+            ? displaySchema
+            : action === 'move'
+              ? moveDisplaySchema
+              : z.object({ csrf: z.string().min(1).max(128), gameServerId: z.uuid() }).strict()
+        ).safeParse(request.body);
+        if (!body.success)
+          return shared.renderError(
+            reply,
+            `/admin/guilds/${params.data.guildId}/game-servers`,
+            'Invalid display request.',
+          );
+        try {
+          const base = {
+            guildId: params.data.guildId,
+            actorDiscordUserId: auth.discordUserId,
+            correlationId: shared.requestId(),
+          };
+          if (action === 'publish') {
+            const data = body.data as z.infer<typeof displaySchema>;
+            await shared.deps.gameServerAdmin.publishServerCard({
+              ...base,
+              gameServerId: data.gameServerId,
+              channelId: data.channelId,
+            });
+          } else if (action === 'move') {
+            const data = body.data as z.infer<typeof moveDisplaySchema>;
+            if (cardId === undefined)
+              throw new PublicError('INVALID_REQUEST', 'Invalid display request.');
+            await shared.deps.gameServerAdmin.moveServerCard({
+              ...base,
+              cardId,
+              channelId: data.channelId,
+            });
+          } else if (action === 'remove') {
+            const data = body.data as { gameServerId: string };
+            if (cardId === undefined)
+              throw new PublicError('INVALID_REQUEST', 'Invalid display request.');
+            await shared.deps.gameServerAdmin.removeServerCard({
+              ...base,
+              cardId,
+              gameServerId: data.gameServerId,
+            });
+          } else {
+            if (cardId === undefined)
+              throw new PublicError('INVALID_REQUEST', 'Invalid display request.');
+            await shared.deps.gameServerAdmin.reconcileServerCard(params.data.guildId, cardId);
+          }
+        } catch (error: unknown) {
+          const html = await buildGameServersPage(params.data.guildId, auth, {
+            errors: [
+              error instanceof PublicError
+                ? error.publicMessage
+                : 'Could not update Discord display.',
+            ],
+          });
+          return reply.code(400).type('text/html').send(html);
+        }
+        return reply.redirect(`/admin/guilds/${params.data.guildId}/game-servers`, 303);
+      },
+    );
 
   app.post(
     '/admin/guilds/:guildId/game-servers/diagnostics',
@@ -370,7 +402,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       include: { snapshot: true, cards: true },
     });
     if (server === null) return null;
-    const card = server.cards[0];
+    const channels = await fetchTextChannels(guildId);
     return gameServerEditPage({
       guildId,
       guildName: shared.guild(guildId)?.name ?? '',
@@ -395,20 +427,37 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           ? undefined
           : {
               hostingState: server.snapshot.hostingState,
+              gameplayState: server.snapshot.gameplayState,
+              hostname: server.snapshot.hostname,
+              rawIp: server.snapshot.rawIp,
+              port: server.snapshot.port,
               map: server.snapshot.map,
               players: server.snapshot.players,
               maxPlayers: server.snapshot.maxPlayers,
               datacenter: server.snapshot.datacenter,
+              cpuPercent: server.snapshot.cpuPercent,
+              memoryUsageMb: server.snapshot.memoryUsageMb,
+              averagePingMs: server.snapshot.averagePingMs,
+              packetLossPercent: server.snapshot.packetLossPercent,
+              serverVarMs: server.snapshot.serverVarMs,
               observedAt: server.snapshot.observedAt,
+              lastSuccessfulAt: server.snapshot.lastSuccessfulAt,
+              lastOnlineAt: server.snapshot.lastOnlineAt,
+              consecutiveFailures: server.snapshot.consecutiveFailures,
+              stale: server.snapshot.stale,
               lastError: server.snapshot.lastError,
             },
-      cardState:
-        card === undefined
-          ? undefined
-          : {
-              channelId: card.channelId,
-              messageId: card.messageId,
-            },
+      textChannels: channels,
+      cards: server.cards.map((card) => ({
+        id: card.id,
+        channelId: card.channelId,
+        channelName:
+          channels.find((channel) => channel.id === card.channelId)?.name ?? card.channelId,
+        messageId: card.messageId,
+        state: card.state,
+        lastReconciledAt: card.lastReconciledAt,
+        lastError: card.lastError,
+      })),
       ...(extras?.errors === undefined ? {} : { errors: extras.errors }),
       ...(extras?.notice === undefined ? {} : { notice: extras.notice }),
       ...(extras?.fieldErrors === undefined ? {} : { fieldErrors: extras.fieldErrors }),

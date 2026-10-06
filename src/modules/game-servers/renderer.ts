@@ -114,6 +114,7 @@ export interface CardFingerprint {
 export function renderAddGameServersPanel(
   servers: ServerView[],
   secret: string,
+  targetChannelId: string,
   selectedId?: string,
   ownerId?: string,
 ) {
@@ -137,6 +138,7 @@ export function renderAddGameServersPanel(
             createGameServerCustomId(
               {
                 action: 'select',
+                name: targetChannelId,
                 ...(ownerId === undefined ? {} : { ownerId }),
               },
               secret,
@@ -164,6 +166,7 @@ export function renderAddGameServersPanel(
             {
               action: 'add',
               ...(selectedId === undefined ? {} : { value: selectedId }),
+              name: targetChannelId,
               ...(ownerId === undefined ? {} : { ownerId }),
             },
             secret,

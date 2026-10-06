@@ -23,7 +23,6 @@ import type { JobHandler, LeasedJob } from '../../jobs/worker.js';
 import { gameServerCommands } from './commands.js';
 import { createGameServerCustomId, parseGameServerCustomId } from './custom-id.js';
 import { GameServerCardService } from './card-service.js';
-import { GameServerPanelService } from './panel-service.js';
 import { GameServerPollService, scheduleGameServerPoll } from './poll-service.js';
 import { DatHostGameServerProvider } from './provider.js';
 import { connectAddress, renderAddGameServersPanel } from './renderer.js';
@@ -64,16 +63,11 @@ export function createGameServersModule(dependencies?: GameServersModuleDependen
     cards,
   );
   const updates = new GameServerUpdateThreadService(dependencies.prisma, dependencies.discord);
-  const panelService = new GameServerPanelService(
-    dependencies.prisma,
-    dependencies.discord,
-    dependencies.componentSigningSecret,
-  );
   const admin = new GameServerAdminService({
     prisma: dependencies.prisma,
     discord: dependencies.discord,
     dathost: dependencies.dathost,
-    panelService,
+    cardService: cards,
   });
   const diagnostics = new GameServerDiagnosticsService(dependencies.prisma, dependencies.dathost);
 
@@ -187,23 +181,14 @@ async function handleCommand(
       throw new PublicError('GAME_SERVER_TEXT_CHANNEL_REQUIRED', 'Select a server text channel.');
     }
 
-    const settings = await dependencies.prisma.gameServerSettings.findUnique({
-      where: { guildId: interaction.guildId },
-    });
-    await admin.updatePanelDestination({
-      guildId: interaction.guildId,
-      actorDiscordUserId: interaction.user.id,
-      correlationId: randomUUID(),
-      panelChannelId: channel.id,
-      expectedVersion: settings?.version ?? null,
-    });
-
-    const servers = await loadAddPanelServers(dependencies.prisma, interaction.guildId);
+    assertCardDestinationPermissions(channel, dependencies);
+    const servers = await loadAddPanelServers(dependencies.prisma, interaction.guildId, channel.id);
 
     await interaction.editReply(
       renderAddGameServersPanel(
         servers,
         dependencies.componentSigningSecret,
+        channel.id,
         undefined,
         interaction.user.id,
       ),
@@ -360,12 +345,18 @@ async function handleComponent(
 
     await interaction.deferUpdate();
 
-    const servers = await loadAddPanelServers(dependencies.prisma, interaction.guildId);
+    if (payload.name === undefined) throw new Error('Game Server display channel is required');
+    const servers = await loadAddPanelServers(
+      dependencies.prisma,
+      interaction.guildId,
+      payload.name,
+    );
 
     await interaction.editReply(
       renderAddGameServersPanel(
         servers,
         dependencies.componentSigningSecret,
+        payload.name,
         gameServerId,
         interaction.user.id,
       ),
@@ -383,31 +374,25 @@ async function handleComponent(
       return;
     }
 
-    const settings = await dependencies.prisma.gameServerSettings.findUnique({
-      where: { guildId: interaction.guildId },
-    });
-
-    if (settings?.panelChannelId === null || settings?.panelChannelId === undefined) {
+    if (payload.name === undefined) {
       await interaction.editReply(
-        'No server-card destination is configured. Run `/servers admin setup` again.',
+        'No server-card destination was selected. Run `/servers admin setup` again.',
       );
       return;
     }
 
-    const channel = await dependencies.discord.channels
-      .fetch(settings.panelChannelId)
-      .catch(() => null);
+    const channel = await dependencies.discord.channels.fetch(payload.name).catch(() => null);
 
     if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
       await interaction.editReply(
-        'The configured server-card destination is unavailable. Run `/servers admin setup` again.',
+        'The selected server-card destination is unavailable. Run `/servers admin setup` again.',
       );
       return;
     }
 
     try {
       assertCardDestinationPermissions(channel, dependencies);
-      await cards.createCard(gameServerId, channel);
+      await cards.publishDeployment(gameServerId, channel);
       await scheduleGameServerUpdateReconcile(dependencies.prisma, gameServerId);
     } catch (error: unknown) {
       if (error instanceof PublicError) {
@@ -613,10 +598,10 @@ async function handleComponent(
   }
 }
 
-async function loadAddPanelServers(prisma: PrismaClient, guildId: string) {
+async function loadAddPanelServers(prisma: PrismaClient, guildId: string, channelId: string) {
   const servers = await prisma.gameServer.findMany({
     where: { guildId, enabled: true, public: true },
-    include: { snapshot: true, cards: { select: { id: true } } },
+    include: { snapshot: true, cards: { where: { channelId }, select: { id: true } } },
     orderBy: [{ sortOrder: 'asc' }, { displayName: 'asc' }],
   });
 

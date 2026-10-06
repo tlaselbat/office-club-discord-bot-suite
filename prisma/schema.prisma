@@ -206,6 +206,13 @@ enum GameServerPlayerCountSource {
   CACHE
 }
 
+enum GameServerCardState {
+  CREATING
+  HEALTHY
+  MISSING
+  ERROR
+}
+
 enum GameServerUpdateThreadType {
   ANNOUNCEMENTS
   CHANGELOG
@@ -499,7 +506,9 @@ model RewardVoiceSession {
 model GameServerSettings {
   guildId        String        @id @map("guild_id")
   enabled        Boolean       @default(true)
+  /// Deprecated: Discord displays are represented by GameServerCard deployments.
   panelChannelId String?       @map("panel_channel_id")
+  /// Deprecated: the Add Game Servers picker is ephemeral and is not persisted.
   panelMessageId String?       @map("panel_message_id")
   version        Int           @default(0)
   createdAt      DateTime      @default(now()) @map("created_at")
@@ -599,19 +608,22 @@ model GameServerSnapshot {
 }
 
 model GameServerCard {
-  id                    String        @id @default(uuid()) @db.Uuid
-  guildId               String        @map("guild_id")
-  gameServerId          String        @map("game_server_id") @db.Uuid
-  channelId             String        @map("channel_id")
-  messageId             String        @map("message_id")
-  lastKnownState        Json?         @map("last_known_state")
-  lastSuccessfulPollAt  DateTime?     @map("last_successful_poll_at")
-  createdAt             DateTime      @default(now()) @map("created_at")
-  updatedAt             DateTime      @updatedAt @map("updated_at")
-  guild                 GuildSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-  gameServer            GameServer    @relation(fields: [gameServerId], references: [id], onDelete: Cascade)
+  id                   String              @id @default(uuid()) @db.Uuid
+  guildId              String              @map("guild_id")
+  gameServerId         String              @map("game_server_id") @db.Uuid
+  channelId            String              @map("channel_id")
+  messageId            String?             @map("message_id")
+  state                GameServerCardState @default(CREATING)
+  lastReconciledAt     DateTime?           @map("last_reconciled_at")
+  lastError            String?             @map("last_error")
+  lastKnownState       Json?               @map("last_known_state")
+  lastSuccessfulPollAt DateTime?           @map("last_successful_poll_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  guild                GuildSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  gameServer           GameServer          @relation(fields: [gameServerId], references: [id], onDelete: Cascade)
 
-  @@unique([gameServerId])
+  @@unique([gameServerId, channelId])
   @@index([guildId])
   @@map("game_server_cards")
 }

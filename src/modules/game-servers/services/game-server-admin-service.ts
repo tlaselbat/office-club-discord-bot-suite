@@ -1,9 +1,10 @@
 import { ChannelType, PermissionFlagsBits } from 'discord.js';
-import type { Client, GuildBasedChannel } from 'discord.js';
+import type { Client, GuildBasedChannel, GuildTextBasedChannel } from 'discord.js';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
 import type { DatHostServerReader } from '../../../integrations/dathost/client.js';
 import { scheduleGameServerPoll } from '../poll-service.js';
+import type { GameServerCardService } from '../card-service.js';
 import type { GameServerPanelService } from '../panel-service.js';
 import { scheduleGameServerUpdateReconcile } from '../update-thread-service.js';
 
@@ -95,23 +96,38 @@ export interface AddGameServerCardCommand {
   correlationId: string;
 }
 
+export interface PublishGameServerCardCommand extends AddGameServerCardCommand {
+  channelId: string;
+}
+
+export interface MoveGameServerCardCommand {
+  guildId: string;
+  cardId: string;
+  channelId: string;
+  actorDiscordUserId: string;
+  correlationId: string;
+}
+
 export interface GameServerAdminServiceOptions {
   prisma: PrismaClient;
   discord: Client;
   dathost: DatHostServerReader;
-  panelService: GameServerPanelService;
+  cardService: GameServerCardService;
+  panelService?: GameServerPanelService;
 }
 
 export class GameServerAdminService {
   private readonly prisma: PrismaClient;
   private readonly discord: Client;
   private readonly dathost: DatHostServerReader;
-  private readonly panelService: GameServerPanelService;
+  private readonly cardService: GameServerCardService;
+  private readonly panelService: GameServerPanelService | undefined;
 
   public constructor(options: GameServerAdminServiceOptions) {
     this.prisma = options.prisma;
     this.discord = options.discord;
     this.dathost = options.dathost;
+    this.cardService = options.cardService;
     this.panelService = options.panelService;
   }
 
@@ -147,23 +163,6 @@ export class GameServerAdminService {
           'Configuration changed; reload and try again.',
         );
       }
-      if (command.enabled) {
-        const channel =
-          current.panelChannelId === null
-            ? null
-            : await this.discord.channels.fetch(current.panelChannelId).catch(() => null);
-        if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
-          throw new PublicError(
-            'PANEL_CHANNEL_INVALID',
-            'A valid server-card text channel must be configured before enabling Game Servers.',
-          );
-        }
-        assertPanelChannelPermissions(
-          channel as unknown as GuildBasedChannel,
-          this.discord,
-          'Panel channel',
-        );
-      }
       const toggled = await tx.gameServerSettings.updateMany({
         where: { guildId: command.guildId, version: current.version },
         data: { enabled: command.enabled, version: { increment: 1 } },
@@ -197,51 +196,14 @@ export class GameServerAdminService {
     });
   }
 
-  public async updatePanelDestination(
-    command: UpdateGameServerPanelDestinationCommand,
-  ): Promise<void> {
-    const guild = await this.discord.guilds.fetch(command.guildId);
-    const channel = await guild.channels.fetch(command.panelChannelId);
-    if (channel === null || channel.type !== ChannelType.GuildText) {
-      throw new PublicError('PANEL_CHANNEL_INVALID', 'Select a server text channel.');
-    }
-    assertPanelChannelPermissions(channel, this.discord, 'Panel channel');
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'game-server:settings:' + command.guildId}, 0))`;
-      const current = await tx.gameServerSettings.findUnique({
-        where: { guildId: command.guildId },
-      });
-      if ((current?.version ?? null) !== command.expectedVersion) {
-        throw new PublicError(
-          'STALE_CONFIGURATION',
-          'Configuration changed; reload and try again.',
-        );
-      }
-      await tx.gameServerSettings.upsert({
-        where: { guildId: command.guildId },
-        create: {
-          guildId: command.guildId,
-          panelChannelId: channel.id,
-          panelMessageId: null,
-        },
-        update: {
-          panelChannelId: channel.id,
-          panelMessageId: null,
-          version: { increment: 1 },
-        },
-      });
-      await tx.auditEvent.create({
-        data: {
-          guildId: command.guildId,
-          actorDiscordUserId: command.actorDiscordUserId,
-          eventType: 'game_server_panel_destination_updated',
-          result: 'success',
-          correlationId: command.correlationId,
-          metadata: { panelChannelId: channel.id },
-        },
-      });
-    });
+  public updatePanelDestination(command: UpdateGameServerPanelDestinationCommand): Promise<void> {
+    void command;
+    return Promise.reject(
+      new PublicError(
+        'GAME_SERVER_PANEL_DEPRECATED',
+        'The legacy server-card panel destination has been removed. Publish a display to a channel instead.',
+      ),
+    );
   }
 
   public async repairPanel(
@@ -249,6 +211,11 @@ export class GameServerAdminService {
     actorDiscordUserId: string,
     correlationId: string,
   ): Promise<{ reposted: boolean; panelMessageId: string | null }> {
+    if (this.panelService === undefined)
+      throw new PublicError(
+        'GAME_SERVER_PANEL_DEPRECATED',
+        'The legacy server-card panel has been removed.',
+      );
     const result = await this.panelService.reconcile(guildId);
     await this.prisma.auditEvent.create({
       data: {
@@ -261,6 +228,91 @@ export class GameServerAdminService {
       },
     });
     return result;
+  }
+
+  public async publishServerCard(
+    command: PublishGameServerCardCommand,
+  ): Promise<{ cardId: string }> {
+    const channel = await this.getDisplayChannel(command.guildId, command.channelId);
+    const deployment = await this.cardService.publishDeployment(command.gameServerId, channel);
+    await this.prisma.auditEvent.create({
+      data: {
+        guildId: command.guildId,
+        actorDiscordUserId: command.actorDiscordUserId,
+        eventType: 'game_server_display_published',
+        result: 'success',
+        correlationId: command.correlationId,
+        metadata: {
+          gameServerId: command.gameServerId,
+          cardId: deployment.id,
+          channelId: command.channelId,
+        },
+      },
+    });
+    return { cardId: deployment.id };
+  }
+
+  public async removeServerCard(
+    command: AddGameServerCardCommand & { cardId: string },
+  ): Promise<void> {
+    const card = await this.prisma.gameServerCard.findFirst({
+      where: { id: command.cardId, guildId: command.guildId, gameServerId: command.gameServerId },
+      select: { id: true, channelId: true },
+    });
+    if (card === null)
+      throw new PublicError('GAME_SERVER_CARD_NOT_FOUND', 'Display deployment not found.');
+    await this.cardService.removeDeployment(card.id);
+    await this.prisma.auditEvent.create({
+      data: {
+        guildId: command.guildId,
+        actorDiscordUserId: command.actorDiscordUserId,
+        eventType: 'game_server_display_removed',
+        result: 'success',
+        correlationId: command.correlationId,
+        metadata: {
+          gameServerId: command.gameServerId,
+          cardId: card.id,
+          channelId: card.channelId,
+        },
+      },
+    });
+  }
+
+  public async moveServerCard(command: MoveGameServerCardCommand): Promise<{ cardId: string }> {
+    const card = await this.prisma.gameServerCard.findFirst({
+      where: { id: command.cardId, guildId: command.guildId },
+      select: { id: true, gameServerId: true },
+    });
+    if (card === null)
+      throw new PublicError('GAME_SERVER_CARD_NOT_FOUND', 'Display deployment not found.');
+    const channel = await this.getDisplayChannel(command.guildId, command.channelId);
+    const deployment = await this.cardService.moveDeployment(card.id, channel);
+    await this.prisma.auditEvent.create({
+      data: {
+        guildId: command.guildId,
+        actorDiscordUserId: command.actorDiscordUserId,
+        eventType: 'game_server_display_moved',
+        result: 'success',
+        correlationId: command.correlationId,
+        metadata: {
+          gameServerId: card.gameServerId,
+          fromCardId: card.id,
+          cardId: deployment.id,
+          channelId: command.channelId,
+        },
+      },
+    });
+    return { cardId: deployment.id };
+  }
+
+  public async reconcileServerCard(guildId: string, cardId: string): Promise<void> {
+    const card = await this.prisma.gameServerCard.findFirst({
+      where: { id: cardId, guildId },
+      select: { id: true },
+    });
+    if (card === null)
+      throw new PublicError('GAME_SERVER_CARD_NOT_FOUND', 'Display deployment not found.');
+    await this.cardService.reconcileDeployment(card.id);
   }
 
   public async registerServer(command: CreateGameServerCommand): Promise<{ id: string }> {
@@ -405,6 +457,18 @@ export class GameServerAdminService {
         },
       });
     });
+    if (command.public === false) {
+      await this.cardService.removeDeploymentsForGameServer(command.gameServerId);
+    } else if (
+      displayName !== undefined ||
+      command.description !== undefined ||
+      command.connectDomain !== undefined ||
+      command.joinUrl !== undefined ||
+      command.imageUrl !== undefined ||
+      command.sortOrder !== undefined
+    ) {
+      await this.cardService.refreshCardsForGameServer(command.gameServerId);
+    }
   }
 
   public async setServerEnabled(command: ToggleGameServerEnabledCommand): Promise<void> {
@@ -477,14 +541,23 @@ export class GameServerAdminService {
         },
       });
     });
+    if (field === 'public' && !value)
+      await this.cardService.removeDeploymentsForGameServer(gameServerId);
   }
 
   public async removeServerRegistration(command: RemoveGameServerCommand): Promise<void> {
+    const current = await this.prisma.gameServer.findFirst({
+      where: { id: command.gameServerId, guildId: command.guildId },
+      select: { id: true },
+    });
+    if (current === null)
+      throw new PublicError('GAME_SERVER_NOT_FOUND', 'Game server registration not found.');
+    await this.cardService.removeDeploymentsForGameServer(current.id);
     await this.prisma.$transaction(async (tx) => {
-      const current = await tx.gameServer.findFirst({
+      const registration = await tx.gameServer.findFirst({
         where: { id: command.gameServerId, guildId: command.guildId },
       });
-      if (current === null) {
+      if (registration === null) {
         throw new PublicError('GAME_SERVER_NOT_FOUND', 'Game server registration not found.');
       }
       await tx.gameServer.delete({ where: { id: command.gameServerId } });
@@ -497,12 +570,24 @@ export class GameServerAdminService {
           correlationId: command.correlationId,
           metadata: {
             gameServerId: command.gameServerId,
-            displayName: current.displayName,
-            providerServerId: current.providerServerId,
+            displayName: registration.displayName,
+            providerServerId: registration.providerServerId,
           },
         },
       });
     });
+  }
+
+  private async getDisplayChannel(
+    guildId: string,
+    channelId: string,
+  ): Promise<GuildTextBasedChannel> {
+    const guild = await this.discord.guilds.fetch(guildId);
+    const channel = await guild.channels.fetch(channelId);
+    if (channel === null || channel.type !== ChannelType.GuildText)
+      throw new PublicError('GAME_SERVER_TEXT_CHANNEL_REQUIRED', 'Select a server text channel.');
+    assertPanelChannelPermissions(channel, this.discord, 'display channel');
+    return channel;
   }
 }
 

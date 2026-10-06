@@ -30,7 +30,12 @@ export class GameServerDiagnosticsService {
       this.prisma.gameServerSettings.findUnique({ where: { guildId } }),
       this.prisma.gameServer.findMany({
         where: { guildId },
-        include: { snapshot: true, cards: { select: { id: true } } },
+        include: {
+          snapshot: true,
+          cards: {
+            select: { id: true, channelId: true, messageId: true, state: true, lastError: true },
+          },
+        },
         orderBy: [{ sortOrder: 'asc' }, { displayName: 'asc' }],
       }),
     ]);
@@ -79,9 +84,7 @@ export class GameServerDiagnosticsService {
     };
   }
 
-  private settingsChecks(
-    settings: { enabled: boolean; panelChannelId: string | null } | null,
-  ): GameServerDiagnosticCheck[] {
+  private settingsChecks(settings: { enabled: boolean } | null): GameServerDiagnosticCheck[] {
     if (settings === null) {
       return [{ label: 'Module settings', ok: false, detail: 'Not configured' }];
     }
@@ -92,15 +95,6 @@ export class GameServerDiagnosticsService {
         detail: settings.enabled ? 'Enabled' : 'Disabled',
       },
     ];
-    if (settings.panelChannelId === null) {
-      checks.push({
-        label: 'Panel destination',
-        ok: false,
-        detail: 'No text channel configured',
-      });
-    } else {
-      checks.push({ label: 'Panel destination', ok: true, detail: 'Text channel configured' });
-    }
     return checks;
   }
 
@@ -147,7 +141,13 @@ export class GameServerDiagnosticsService {
         lastSuccessfulAt: Date | null;
         lastError: string | null;
       } | null;
-      cards: Array<{ id: string }>;
+      cards: Array<{
+        id: string;
+        channelId: string;
+        messageId: string | null;
+        state: string;
+        lastError: string | null;
+      }>;
     },
     settings: { enabled: boolean } | null,
   ): GameServerDiagnosticCheck[] {
@@ -163,14 +163,26 @@ export class GameServerDiagnosticsService {
         detail: server.public ? 'Public' : 'Private',
       },
     ];
-    if (server.public && server.cards.length === 0) {
-      checks.push({
-        label: 'Panel card',
-        ok: false,
-        detail: 'Public but no Discord card is registered',
-      });
+    if (server.cards.length > 0) {
+      for (const card of server.cards) {
+        const healthy = card.state === 'HEALTHY' && card.messageId !== null;
+        checks.push({
+          label: `Discord display (${card.channelId})`,
+          ok: healthy,
+          detail: healthy
+            ? 'Healthy'
+            : (card.lastError ??
+              (card.messageId === null
+                ? `Desired deployment is ${card.state.toLowerCase()} and has no message.`
+                : `Deployment is ${card.state.toLowerCase()}.`)),
+        });
+      }
     } else if (server.public) {
-      checks.push({ label: 'Panel card', ok: true, detail: 'Registered' });
+      checks.push({
+        label: 'Discord displays',
+        ok: true,
+        detail: 'No displays are published.',
+      });
     }
     if (server.snapshot === null) {
       checks.push({ label: 'Snapshot', ok: false, detail: 'No observation yet' });

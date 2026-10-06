@@ -31,6 +31,7 @@ export class GameServerPanelService {
     const payload = renderAddGameServersPanel(
       servers.map((server) => ({ ...server, hasCard: server.cards.length > 0 })),
       this.secret,
+      target.id,
     );
     const text = target as TextChannel;
     const existing =
