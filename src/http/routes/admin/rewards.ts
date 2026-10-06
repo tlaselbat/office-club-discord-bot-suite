@@ -287,13 +287,20 @@ export function registerRewardsRoutes(app: FastifyInstance, shared: SharedHelper
           `/admin/guilds/${params.data.guildId}/rewards`,
           'Invalid request.',
         );
-      await rewardSettings.setEnabled(
-        params.data.guildId,
-        true,
-        auth.discordUserId,
-        shared.requestId(),
-        body.data.version,
-      );
+      try {
+        await rewardSettings.setEnabled(
+          params.data.guildId,
+          true,
+          auth.discordUserId,
+          shared.requestId(),
+          body.data.version,
+        );
+      } catch (error: unknown) {
+        const message =
+          error instanceof PublicError ? error.publicMessage : 'Could not enable Rewards.';
+        const html = await buildRewardsPage(params.data.guildId, auth, { errors: [message] });
+        return reply.code(400).type('text/html').send(html);
+      }
       return reply.redirect(`/admin/guilds/${params.data.guildId}/rewards`, 303);
     },
   );
@@ -314,13 +321,20 @@ export function registerRewardsRoutes(app: FastifyInstance, shared: SharedHelper
           `/admin/guilds/${params.data.guildId}/rewards`,
           'Invalid request.',
         );
-      await rewardSettings.setEnabled(
-        params.data.guildId,
-        false,
-        auth.discordUserId,
-        shared.requestId(),
-        body.data.version,
-      );
+      try {
+        await rewardSettings.setEnabled(
+          params.data.guildId,
+          false,
+          auth.discordUserId,
+          shared.requestId(),
+          body.data.version,
+        );
+      } catch (error: unknown) {
+        const message =
+          error instanceof PublicError ? error.publicMessage : 'Could not disable Rewards.';
+        const html = await buildRewardsPage(params.data.guildId, auth, { errors: [message] });
+        return reply.code(400).type('text/html').send(html);
+      }
       return reply.redirect(`/admin/guilds/${params.data.guildId}/rewards`, 303);
     },
   );

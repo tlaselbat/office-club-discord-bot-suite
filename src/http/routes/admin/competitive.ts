@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { PublicError } from '../../../errors/public-error.js';
 import { competitivePage } from '../../admin/views.js';
 import type { SharedHelpers } from './shared.js';
 import { idSchema, isProductionReady } from './shared.js';
@@ -189,11 +190,24 @@ export function registerCompetitiveRoutes(app: FastifyInstance, shared: SharedHe
         const discordGuild = shared.guild(params.data.guildId);
         if (discordGuild === undefined)
           return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-        await shared.deps.resources[action](
-          params.data.guildId,
-          auth.discordUserId,
-          shared.requestId(),
-        );
+        try {
+          await shared.deps.resources[action](
+            params.data.guildId,
+            auth.discordUserId,
+            shared.requestId(),
+          );
+        } catch (error: unknown) {
+          const message =
+            error instanceof PublicError ? error.publicMessage : `Could not ${action} Competitive.`;
+          const html = await renderCompetitivePage(
+            params.data.guildId,
+            discordGuild,
+            auth,
+            undefined,
+            [message],
+          );
+          return reply.code(400).type('text/html').send(html);
+        }
         return reply.redirect(`/admin/guilds/${params.data.guildId}/competitive`, 303);
       },
     );
