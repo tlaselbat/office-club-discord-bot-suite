@@ -42,7 +42,10 @@ export function adminShell(options: ShellOptions, body: string): string {
 }
 
 function navLinks(currentPath: string, guildId?: string): string {
-  const base = guildId === undefined ? '/admin' : `/admin/guilds/${escapeHtml(guildId)}`;
+  if (guildId === undefined) {
+    return `<ul><li><a href="/admin"${currentPath === '/admin' ? ' aria-current="page"' : ''}>Guilds</a></li></ul>`;
+  }
+  const base = `/admin/guilds/${escapeHtml(guildId)}`;
   const links: NavLink[] = [
     { id: 'overview', label: 'Overview', href: base },
     { id: 'game-servers', label: 'Game Servers', href: `${base}/game-servers` },
