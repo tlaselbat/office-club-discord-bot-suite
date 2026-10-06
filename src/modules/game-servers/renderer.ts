@@ -66,6 +66,7 @@ export interface SnapshotView {
 
 export interface ServerView {
   id: string;
+  guildId: string;
   displayName: string;
   description: string | null;
   connectDomain: string | null;
@@ -77,6 +78,15 @@ export interface ServerView {
   providerServerId: string;
   snapshot: SnapshotView | null;
   hasCard?: boolean;
+  updateThreads?: UpdateThreadView[];
+}
+
+export interface UpdateThreadView {
+  type: 'ANNOUNCEMENTS' | 'CHANGELOG';
+  threadId: string;
+  latestMessageText: string | null;
+  latestMessageAt: Date | null;
+  notificationExpiresAt: Date | null;
 }
 
 export interface CardFingerprint {
@@ -92,6 +102,13 @@ export interface CardFingerprint {
   bannerImageUrl: string;
   thumbnailImageUrl: string;
   hasJoinUrl: boolean;
+  updateThreads: Array<{
+    type: UpdateThreadView['type'];
+    threadId: string;
+    latestMessageText: string | null;
+    latestMessageAt: string | null;
+    notificationExpiresAt: string | null;
+  }>;
 }
 
 export function renderAddGameServersPanel(
@@ -209,6 +226,8 @@ export function renderGameServerCard(server: ServerView, secret: string) {
       mapGallery,
       textDisplay(`\`${connectAddress(server) ?? 'Unavailable'}\``),
       actionRow,
+      { type: componentType.separator, divider: true, spacing: 1 },
+      ...renderUpdatesSection(server),
     ],
   };
 
@@ -276,7 +295,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
   return {
-    layoutVersion: 15,
+    layoutVersion: 16,
     accentColor: 0x2b8aef,
     displayName: server.displayName,
     status: statusLabel(snapshot),
@@ -288,7 +307,46 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
     bannerImageUrl: resolveMapImageUrl(map, server.imageUrl),
     thumbnailImageUrl: serverIdentityIconUrl(),
     hasJoinUrl: server.joinUrl !== null,
+    updateThreads: (server.updateThreads ?? [])
+      .map((thread) => ({
+        type: thread.type,
+        threadId: thread.threadId,
+        latestMessageText: thread.latestMessageText,
+        latestMessageAt: thread.latestMessageAt?.toISOString() ?? null,
+        notificationExpiresAt: thread.notificationExpiresAt?.toISOString() ?? null,
+      }))
+      .sort((a, b) => a.type.localeCompare(b.type)),
   };
+}
+
+export function hasFreshUpdate(thread: UpdateThreadView, now = new Date()): boolean {
+  return (
+    thread.notificationExpiresAt !== null && thread.notificationExpiresAt.getTime() > now.getTime()
+  );
+}
+
+function renderUpdatesSection(server: ServerView): Record<string, unknown>[] {
+  const threads = new Map((server.updateThreads ?? []).map((thread) => [thread.type, thread]));
+  return (['ANNOUNCEMENTS', 'CHANGELOG'] as const).map((type, index) => {
+    const thread = threads.get(type);
+    const label = type === 'ANNOUNCEMENTS' ? '📢 **Announcements**' : '🛠 **Changelog**';
+    const title = `${index === 0 ? '**Latest Updates**\n' : ''}${label}${thread !== undefined && hasFreshUpdate(thread) ? ' 🆕' : ''}`;
+    const detail =
+      thread?.latestMessageText === null || thread?.latestMessageText === undefined
+        ? `-# ${type === 'ANNOUNCEMENTS' ? 'No announcements yet.' : 'No changelog entries yet.'}`
+        : `${thread.latestMessageText}\n-# <t:${String(Math.floor((thread.latestMessageAt?.getTime() ?? Date.now()) / 1000))}:R>`;
+    if (thread === undefined) return textDisplay(`${title}\n${detail}`);
+    return {
+      type: componentType.section,
+      components: [textDisplay(`${title}\n${detail}`)],
+      accessory: {
+        type: componentType.button,
+        style: buttonStyle.link,
+        label: 'Open',
+        url: `https://discord.com/channels/${server.guildId}/${thread.threadId}`,
+      },
+    };
+  });
 }
 
 function connectButton(server: ServerView, secret: string): Record<string, unknown> {

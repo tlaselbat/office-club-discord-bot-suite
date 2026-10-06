@@ -5,6 +5,7 @@ import {
   GatewayIntentBits,
   GuildMemberRoleManager,
   MessageFlags,
+  Partials,
   PermissionFlagsBits,
   REST,
   Routes,
@@ -84,10 +85,12 @@ export async function registerCommands(
 
 export function createDiscordClient(dependencies: BotDependencies): Client {
   const client = new Client({
+    partials: [Partials.Message, Partials.Channel],
     intents: [
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
       GatewayIntentBits.GuildVoiceStates,
     ],
   });

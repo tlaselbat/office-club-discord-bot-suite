@@ -18,7 +18,7 @@ A Discord bot for Office Club communities: member rewards and a managed Counter-
 
 ### Earn rewards
 
-When the **Member Rewards** module is enabled, members earn configurable XP for activity in approved text and voice channels. The module can assign level roles and track progress toward a server guild-tag loyalty role. Message content is not requested or stored.
+When the **Member Rewards** module is enabled, members earn configurable XP for activity in approved text and voice channels. The module can assign level roles and track progress toward a server guild-tag loyalty role. Rewards use message metadata only. [Managed game-server updates](docs/game-server-updates.md) require Message Content Intent and store compact previews of official posts in their managed threads.
 
 ### Play CS2 10mans
 

@@ -76,7 +76,7 @@ Configure Member Rewards from `/admin/guilds/<guild-id>/rewards`, then enable it
 
 The structured level table accepts a level number, XP threshold, optional label, and optional Discord role. Thresholds must be nonnegative and strictly increasing. Configured roles must be unmanaged and below the bot's highest role. Manual XP adjustments require a member ID, nonzero signed amount, and reason; they create immutable ledger and audit records.
 
-Disabling Member Rewards preserves XP, streak history, settings, and managed roles. It stops new awards and closes active voice sessions so disabled time cannot be credited after re-enabling. Message content is neither requested nor stored.
+Disabling Member Rewards preserves XP, streak history, settings, and managed roles. It stops new awards and closes active voice sessions so disabled time cannot be credited after re-enabling. Rewards use message metadata only; the separate [game-server updates feature](game-server-updates.md) reads official thread posts and stores compact previews.
 
 ## Game profiles
 

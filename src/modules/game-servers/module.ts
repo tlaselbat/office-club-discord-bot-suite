@@ -2,6 +2,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  Events,
   MessageFlags,
   PermissionFlagsBits,
   StringSelectMenuBuilder,
@@ -9,6 +10,7 @@ import {
   type Client,
   type MessageComponentInteraction,
   type GuildTextBasedChannel,
+  type ClientEvents,
 } from 'discord.js';
 import type { Logger } from 'pino';
 import type { SuiteModule } from '../../core/modules/types.js';
@@ -22,6 +24,11 @@ import { GameServerCardService } from './card-service.js';
 import { GameServerPollService, scheduleGameServerPoll } from './poll-service.js';
 import { DatHostGameServerProvider } from './provider.js';
 import { connectAddress, renderAddGameServersPanel } from './renderer.js';
+import {
+  GameServerUpdateThreadService,
+  scheduleGameServerUpdateReconcile,
+  type UpdateExpiryPayload,
+} from './update-thread-service.js';
 
 export interface GameServersModuleDependencies {
   prisma: PrismaClient;
@@ -51,6 +58,7 @@ export function createGameServersModule(dependencies?: GameServersModuleDependen
     new DatHostGameServerProvider(dependencies.dathost),
     cards,
   );
+  const updates = new GameServerUpdateThreadService(dependencies.prisma, dependencies.discord);
 
   const handlers = new Map<string, JobHandler>([
     [
@@ -64,7 +72,39 @@ export function createGameServersModule(dependencies?: GameServersModuleDependen
       'GAME_SERVER_CARD_REFRESH',
       (job: LeasedJob) => cards.refreshCard((job.payload as { cardId: string }).cardId),
     ],
+    [
+      'GAME_SERVER_UPDATE_NOTIFICATION_EXPIRE',
+      (job: LeasedJob) => updates.expireNotification(job.payload as UpdateExpiryPayload),
+    ],
+    [
+      'GAME_SERVER_UPDATE_RECONCILE',
+      (job: LeasedJob) => updates.reconcile((job.payload as { gameServerId: string }).gameServerId),
+    ],
   ]);
+
+  const report = (operation: Promise<unknown>) => {
+    void operation.catch((error: unknown) =>
+      dependencies.logger.error(
+        { err: error },
+        'Game-server update handling failed; check thread permissions and worker retries',
+      ),
+    );
+  };
+  const onCreate = (message: ClientEvents['messageCreate'][0]) =>
+    report(updates.recordMessage(message));
+  const onEdit = (
+    _before: ClientEvents['messageUpdate'][0],
+    message: ClientEvents['messageUpdate'][1],
+  ) => report(updates.recordMessageEdit(message));
+  const onDelete = (message: ClientEvents['messageDelete'][0]) =>
+    report(updates.handleMessageDelete(message));
+  const onBulkDelete = (
+    messages: ClientEvents['messageDeleteBulk'][0],
+    channel: ClientEvents['messageDeleteBulk'][1],
+  ) => report(updates.handleMessagesDelete(channel.id, new Set(messages.keys())));
+  const onThreadDelete = (thread: ClientEvents['threadDelete'][0]) =>
+    report(updates.handleThreadDelete(thread.id));
+  let listening = false;
 
   return {
     key: 'game-servers',
@@ -80,12 +120,32 @@ export function createGameServersModule(dependencies?: GameServersModuleDependen
       }
     },
     start: async () => {
+      if (!listening) {
+        dependencies.discord.on(Events.MessageCreate, onCreate);
+        dependencies.discord.on(Events.MessageUpdate, onEdit);
+        dependencies.discord.on(Events.MessageDelete, onDelete);
+        dependencies.discord.on(Events.MessageBulkDelete, onBulkDelete);
+        dependencies.discord.on(Events.ThreadDelete, onThreadDelete);
+        listening = true;
+      }
       const registrations = await dependencies.prisma.gameServer.findMany({
         where: { enabled: true },
-        select: { id: true },
+        select: { id: true, public: true, cards: { select: { id: true } } },
       });
-      for (const registration of registrations)
+      for (const registration of registrations) {
         await scheduleGameServerPoll(dependencies.prisma, registration.id);
+        if (registration.public && registration.cards.length > 0)
+          await scheduleGameServerUpdateReconcile(dependencies.prisma, registration.id);
+      }
+    },
+    stop: () => {
+      dependencies.discord.off(Events.MessageCreate, onCreate);
+      dependencies.discord.off(Events.MessageUpdate, onEdit);
+      dependencies.discord.off(Events.MessageDelete, onDelete);
+      dependencies.discord.off(Events.MessageBulkDelete, onBulkDelete);
+      dependencies.discord.off(Events.ThreadDelete, onThreadDelete);
+      listening = false;
+      return Promise.resolve();
     },
   };
 }
@@ -208,6 +268,8 @@ async function handleCommand(
     });
 
     if (enabled === true) await scheduleGameServerPoll(dependencies.prisma, existing.id);
+    if (enabled === true || isPublic === true)
+      await scheduleGameServerUpdateReconcile(dependencies.prisma, existing.id);
     await interaction.editReply('Game Server registration updated.');
     return;
   }
@@ -345,6 +407,7 @@ async function handleComponent(
     try {
       assertCardDestinationPermissions(channel, dependencies);
       await cards.createCard(gameServerId, channel);
+      await scheduleGameServerUpdateReconcile(dependencies.prisma, gameServerId);
     } catch (error: unknown) {
       if (error instanceof PublicError) {
         await interaction.editReply(error.message);

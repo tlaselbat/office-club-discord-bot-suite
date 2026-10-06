@@ -7,10 +7,15 @@
 3. Configure the bot for the gateway capabilities used by the application:
    - Guilds
    - Guild messages
+   - Message Content Intent (privileged; required for managed game-server update previews)
    - Guild voice states
    - Server Members Intent (privileged; required for complete rewards role and guild-tag reconciliation)
 
-The Message Content intent is not required. Member Rewards uses message metadata and never reads or stores message bodies.
+Enable Message Content Intent before starting the bot with managed game-server updates.
+The game-server module reads official posts in its managed threads and stores compact
+previews. Member Rewards continues to use message metadata without storing message
+bodies. See [managed game-server updates](game-server-updates.md) for posting permissions
+and rollout checks.
 
 1. Copy the bot token to `DISCORD_TOKEN` and the 17-20 digit application ID to `DISCORD_CLIENT_ID`.
 
@@ -33,6 +38,7 @@ Grant the bot these channel permissions:
 - Move Members
 - Manage Roles (required for configured rewards level and guild-tag roles)
 - Manage Channels (required only for managed setup, recovery, and teardown)
+- Create Public Threads, Send Messages in Threads, and Manage Threads (in game-server card channels)
 
 The setup validator checks the permissions it needs in each configured channel. See [Permissions](permissions.md) for the application-role authorization model.
 

@@ -206,6 +206,11 @@ enum GameServerPlayerCountSource {
   CACHE
 }
 
+enum GameServerUpdateThreadType {
+  ANNOUNCEMENTS
+  CHANGELOG
+}
+
 model User {
   discordUserId             String                   @id @map("discord_user_id")
   displayName               String                   @map("display_name")
@@ -504,28 +509,53 @@ model GameServerSettings {
 }
 
 model GameServer {
-  id               String              @id @default(uuid()) @db.Uuid
-  guildId          String              @map("guild_id")
-  provider         GameServerProvider  @default(DATHOST)
-  providerServerId String              @map("provider_server_id")
-  displayName      String              @map("display_name")
+  id               String                   @id @default(uuid()) @db.Uuid
+  guildId          String                   @map("guild_id")
+  provider         GameServerProvider       @default(DATHOST)
+  providerServerId String                   @map("provider_server_id")
+  displayName      String                   @map("display_name")
   description      String?
-  enabled          Boolean             @default(true)
-  public           Boolean             @default(true)
-  connectDomain    String?             @map("connect_domain")
-  joinUrl          String?             @map("join_url")
-  imageUrl         String?             @map("image_url")
-  sortOrder        Int                 @default(0) @map("sort_order")
-  createdAt        DateTime            @default(now()) @map("created_at")
-  updatedAt        DateTime            @updatedAt @map("updated_at")
-  guild            GuildSettings       @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  enabled          Boolean                  @default(true)
+  public           Boolean                  @default(true)
+  connectDomain    String?                  @map("connect_domain")
+  joinUrl          String?                  @map("join_url")
+  imageUrl         String?                  @map("image_url")
+  sortOrder        Int                      @default(0) @map("sort_order")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
+  guild            GuildSettings            @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
   snapshot         GameServerSnapshot?
   cards            GameServerCard[]
+  updateThreads    GameServerUpdateThread[]
 
   @@unique([guildId, provider, providerServerId])
   @@index([enabled, provider])
   @@index([guildId, enabled, public, sortOrder])
   @@map("game_servers")
+}
+
+model GameServerUpdateThread {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  guildId               String                     @map("guild_id")
+  gameServerId          String                     @map("game_server_id") @db.Uuid
+  type                  GameServerUpdateThreadType
+  threadId              String                     @map("thread_id")
+  parentChannelId       String                     @map("parent_channel_id")
+  latestMessageId       String?                    @map("latest_message_id")
+  latestMessageText     String?                    @map("latest_message_text")
+  latestMessageAt       DateTime?                  @map("latest_message_at")
+  notificationStartedAt DateTime?                  @map("notification_started_at")
+  notificationExpiresAt DateTime?                  @map("notification_expires_at")
+  createdAt             DateTime                   @default(now()) @map("created_at")
+  updatedAt             DateTime                   @updatedAt @map("updated_at")
+  gameServer            GameServer                 @relation(fields: [gameServerId], references: [id], onDelete: Cascade)
+
+  @@unique([gameServerId, type])
+  @@unique([threadId])
+  @@index([guildId])
+  @@index([gameServerId])
+  @@index([notificationExpiresAt])
+  @@map("game_server_update_threads")
 }
 
 model GameServerSnapshot {

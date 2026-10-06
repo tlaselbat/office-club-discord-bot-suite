@@ -9,6 +9,7 @@ import type { ServerView } from '../../../../src/modules/game-servers/renderer.j
 import { cardFingerprint } from '../../../../src/modules/game-servers/renderer.js';
 
 const serverView: ServerView = {
+  guildId: 'guild-1',
   id: '513af1bb-31fa-4b17-bd2e-2ec450984cea',
   providerServerId: 'provider-1',
   displayName: '1v1 Arena',
@@ -230,7 +231,7 @@ describe('GameServerCardService', () => {
           findUnique: vi.fn().mockResolvedValue(
             createCard({
               fingerprint: {
-                layoutVersion: 15,
+                layoutVersion: 16,
                 accentColor: 0x2b8aef,
                 displayName: '1v1 Arena',
                 status: 'Online',
@@ -245,6 +246,7 @@ describe('GameServerCardService', () => {
                 thumbnailImageUrl:
                   'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-thumbnail.png',
                 hasJoinUrl: false,
+                updateThreads: [],
               },
             }),
           ),

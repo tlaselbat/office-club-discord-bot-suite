@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { type Client, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import type { PrismaClient } from '../../../../src/generated/prisma/client.js';
 import type { DatHostServerReader } from '../../../../src/integrations/dathost/client.js';
@@ -7,6 +8,52 @@ import {
   type GameServersModuleDependencies,
 } from '../../../../src/modules/game-servers/module.js';
 import { createGameServerCustomId } from '../../../../src/modules/game-servers/custom-id.js';
+import { GameServerUpdateThreadService } from '../../../../src/modules/game-servers/update-thread-service.js';
+
+describe('managed update event lifecycle', () => {
+  it('registers handlers once, backfills displayed servers through jobs, and removes listeners on stop', async () => {
+    const emitter = new EventEmitter();
+    const dependencies = mockDependencies({ discord: emitter });
+    vi.mocked(dependencies.prisma.gameServer.findMany).mockResolvedValue([
+      { id: gameServerId, public: true, cards: [{ id: 'card-1' }] },
+      { id: 'hidden', public: false, cards: [{ id: 'card-2' }] },
+      { id: 'undisplayed', public: true, cards: [] },
+    ] as never);
+    const create = vi
+      .spyOn(GameServerUpdateThreadService.prototype, 'recordMessage')
+      .mockResolvedValue();
+    const edit = vi
+      .spyOn(GameServerUpdateThreadService.prototype, 'recordMessageEdit')
+      .mockResolvedValue();
+    const deleted = vi
+      .spyOn(GameServerUpdateThreadService.prototype, 'handleMessageDelete')
+      .mockResolvedValue();
+    const threadDeleted = vi
+      .spyOn(GameServerUpdateThreadService.prototype, 'handleThreadDelete')
+      .mockResolvedValue();
+    const module = createGameServersModule(dependencies);
+    await module.start?.();
+    await module.start?.();
+    expect(emitter.listenerCount('messageCreate')).toBe(1);
+    const message = { id: 'post' };
+    emitter.emit('messageCreate', message);
+    emitter.emit('messageUpdate', {}, message);
+    emitter.emit('messageDelete', message);
+    emitter.emit('threadDelete', { id: 'thread' });
+    expect(create).toHaveBeenCalledWith(message);
+    expect(edit).toHaveBeenCalledWith(message);
+    expect(deleted).toHaveBeenCalledWith(message);
+    expect(threadDeleted).toHaveBeenCalledWith('thread');
+    const jobs = vi.mocked(dependencies.prisma.job.upsert).mock.calls.map(([arg]) => arg.create);
+    expect(jobs.filter((job) => job.type === 'GAME_SERVER_UPDATE_RECONCILE')).toEqual([
+      expect.objectContaining({ payload: { gameServerId } }),
+      expect.objectContaining({ payload: { gameServerId } }),
+    ]);
+    expect(module.jobHandlers?.has('GAME_SERVER_UPDATE_NOTIFICATION_EXPIRE')).toBe(true);
+    await module.stop?.();
+    expect(emitter.eventNames()).toEqual([]);
+  });
+});
 
 const secret = 'game-servers-test-secret';
 const guildId = '123456789012345678';
@@ -177,10 +224,7 @@ describe('Game Servers module interactions', () => {
     const dependencies = mockDependencies();
     const module = createGameServersModule(dependencies);
     const interaction = componentInteraction(
-      createGameServerCustomId(
-        { action: 'add', value: gameServerId, ownerId: userId },
-        secret,
-      ),
+      createGameServerCustomId({ action: 'add', value: gameServerId, ownerId: userId }, secret),
     );
 
     await module.handleInteraction?.({ interaction: interaction as never });
@@ -216,10 +260,7 @@ describe('Game Servers module interactions', () => {
 
     const module = createGameServersModule(dependencies);
     const interaction = componentInteraction(
-      createGameServerCustomId(
-        { action: 'add', value: gameServerId, ownerId: userId },
-        secret,
-      ),
+      createGameServerCustomId({ action: 'add', value: gameServerId, ownerId: userId }, secret),
     );
 
     await module.handleInteraction?.({ interaction: interaction as never });
@@ -234,10 +275,7 @@ describe('Game Servers module interactions', () => {
     const dependencies = mockDependencies();
     const module = createGameServersModule(dependencies);
     const interaction = componentInteraction(
-      createGameServerCustomId(
-        { action: 'add', value: gameServerId, ownerId: userId },
-        secret,
-      ),
+      createGameServerCustomId({ action: 'add', value: gameServerId, ownerId: userId }, secret),
     );
 
     interaction.memberPermissions = {

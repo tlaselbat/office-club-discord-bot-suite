@@ -33,7 +33,7 @@ export class GameServerCardService {
 
     const server = await this.prisma.gameServer.findFirst({
       where: { id: gameServerId, enabled: true, public: true },
-      include: { snapshot: true },
+      include: { snapshot: true, updateThreads: true },
     });
     if (server === null) {
       throw new PublicError(
@@ -61,7 +61,7 @@ export class GameServerCardService {
   public async refreshCard(cardId: string): Promise<{ rescheduleAt: Date } | undefined> {
     const card = await this.prisma.gameServerCard.findUnique({
       where: { id: cardId },
-      include: { gameServer: { include: { snapshot: true } } },
+      include: { gameServer: { include: { snapshot: true, updateThreads: true } } },
     });
     if (card === null || !card.gameServer.enabled) return undefined;
 
@@ -132,10 +132,13 @@ export async function scheduleGameServerCardRefresh(
   prisma: Pick<PrismaClient, 'job'>,
   cardId: string,
   runAt = new Date(),
+  revision?: string,
 ): Promise<void> {
+  // Update events use distinct revisions so an already-leased refresh cannot
+  // complete over a newly queued update. Polling retains its existing coalesced key.
   await scheduleJob(prisma, {
     type: 'GAME_SERVER_CARD_REFRESH',
-    idempotencyKey: `game-server:card:${cardId}`,
+    idempotencyKey: `game-server:card:${cardId}${revision === undefined ? '' : `:${revision}`}`,
     payload: { cardId },
     runAt,
   });
