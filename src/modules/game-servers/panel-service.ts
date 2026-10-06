@@ -9,15 +9,20 @@ export class GameServerPanelService {
     private readonly secret: string,
   ) {}
 
-  public async reconcile(guildId: string, channel?: TextBasedChannel): Promise<void> {
+  public async reconcile(
+    guildId: string,
+    channel?: TextBasedChannel,
+  ): Promise<{ reposted: boolean; panelMessageId: string | null }> {
     const settings = await this.prisma.gameServerSettings.findUnique({ where: { guildId } });
-    if (settings === null || !settings.enabled) return;
+    if (settings === null || !settings.enabled) return { reposted: false, panelMessageId: null };
     const target =
       channel ??
       (settings.panelChannelId === null
         ? null
         : await this.discord.channels.fetch(settings.panelChannelId).catch(() => null));
-    if (target === null || !target.isTextBased() || target.isDMBased()) return;
+    if (target === null || !target.isTextBased() || target.isDMBased()) {
+      return { reposted: false, panelMessageId: settings.panelMessageId };
+    }
     const servers = await this.prisma.gameServer.findMany({
       where: { guildId, enabled: true, public: true },
       include: { snapshot: true, cards: { select: { id: true } } },
@@ -38,6 +43,9 @@ export class GameServerPanelService {
         where: { guildId },
         data: { panelChannelId: text.id, panelMessageId: message.id },
       });
-    } else await existing.edit(payload);
+      return { reposted: true, panelMessageId: message.id };
+    }
+    await existing.edit(payload);
+    return { reposted: false, panelMessageId: existing.id };
   }
 }

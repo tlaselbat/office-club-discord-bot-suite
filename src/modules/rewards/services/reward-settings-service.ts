@@ -8,8 +8,8 @@ import { scheduleJob } from '../../../database/schedule-job.js';
 export interface RewardLevelInput {
   level: number;
   xpThreshold: number;
-  label?: string;
-  roleId?: string;
+  label?: string | undefined;
+  roleId?: string | undefined;
 }
 
 export interface UpdateRewardSettingsCommand {
@@ -24,7 +24,7 @@ export interface UpdateRewardSettingsCommand {
   textChannelIds: string[];
   voiceChannelIds: string[];
   tagRequiredSeconds: number;
-  tagRewardRoleId?: string;
+  tagRewardRoleId?: string | undefined;
   tagReconcileSeconds: number;
   levels: RewardLevelInput[];
 }

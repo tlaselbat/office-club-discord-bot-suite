@@ -100,7 +100,7 @@ export class GameServerPollService {
 }
 
 export async function scheduleGameServerPoll(
-  prisma: PrismaClient,
+  prisma: { job: PrismaClient['job'] },
   gameServerId: string,
   runAt = new Date(),
 ): Promise<void> {

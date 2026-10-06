@@ -19,6 +19,9 @@ import { GuildResourceService } from './modules/tenman/services/guild-resource-s
 import { GuildSettingsService } from './modules/tenman/services/guild-settings-service.js';
 import { WebSessionService } from './services/web-session-service.js';
 import { DatHostClient } from './integrations/dathost/client.js';
+import { GameServerAdminService } from './modules/game-servers/services/game-server-admin-service.js';
+import { GameServerDiagnosticsService } from './modules/game-servers/services/game-server-diagnostics-service.js';
+import { GameServerPanelService } from './modules/game-servers/panel-service.js';
 import { createArtifactStorage } from './modules/tenman/services/artifact-storage.js';
 import { MatchArtifactService } from './modules/tenman/services/match-artifact-service.js';
 import { WorkerRunner } from './jobs/runner.js';
@@ -70,6 +73,18 @@ export async function createApplication(
   const guildSettingsService = new GuildSettingsService(prisma, discord);
   const guildResourceService = new GuildResourceService(prisma, discord, logger);
   const diagnosticsService = new DiagnosticsService(prisma, discord, dathost);
+  const gameServerPanelService = new GameServerPanelService(
+    prisma,
+    discord,
+    environment.MATCH_TOKEN_SIGNING_SECRET,
+  );
+  const gameServerAdmin = new GameServerAdminService({
+    prisma,
+    discord,
+    dathost,
+    panelService: gameServerPanelService,
+  });
+  const gameServerDiagnostics = new GameServerDiagnosticsService(prisma, dathost);
   let startupComplete = false;
   const http = await createHttpServer({
     logger,
@@ -89,6 +104,8 @@ export async function createApplication(
       settings: guildSettingsService,
       resources: guildResourceService,
       diagnostics: diagnosticsService,
+      gameServerAdmin,
+      gameServerDiagnostics,
       sessions: new WebSessionService(prisma),
       publicBaseUrl: new URL(environment.PUBLIC_BASE_URL),
       clientId: environment.DISCORD_CLIENT_ID,

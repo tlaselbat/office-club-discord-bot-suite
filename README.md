@@ -79,7 +79,18 @@ Initial configuration requires Discord's native **Administrator** permission. Af
 
 ### Owner web panel
 
-At `https://<your-domain>/admin`, approved Discord owner accounts can configure connected guilds, enable or disable modules, manage Member Rewards settings, make audited manual XP adjustments, and run diagnostics. Access uses Discord OAuth and is restricted to the IDs in `PANEL_OWNER_DISCORD_USER_IDS`.
+At `https://<your-domain>/admin`, approved Discord owner accounts sign in with Discord OAuth. Access is restricted to the IDs in `PANEL_OWNER_DISCORD_USER_IDS`.
+
+The panel is organized as a shared shell with one page per module under a selected guild:
+
+- `/admin` — guild directory with a module summary for each connected guild.
+- `/admin/guilds/:guildId` — General overview: guild identity, Discord health, module summary, and recent audit activity.
+- `/admin/guilds/:guildId/game-servers` — Game Servers administration (production-ready): module state, panel destination, registered server list and edit, diagnostics, and safe local registration removal.
+- `/admin/guilds/:guildId/competitive` — Competitive status and read-only configuration guidance. Competitive is treated as in development and cannot be enabled from the panel.
+- `/admin/guilds/:guildId/rewards` — Member Rewards status and read-only configuration guidance. Rewards is treated as in development and cannot be enabled or edited from the panel.
+- `/admin/guilds/:guildId/audit` — recent administrative audit events for the guild.
+
+Game Servers is the only module approved for production administration through the webpanel. Competitive and Rewards remain visibly in development; their release gates are hardcoded deployment policy and cannot be toggled by a guild owner.
 
 ## Getting started as a server owner
 

@@ -9,11 +9,32 @@ describe('admin views', () => {
         {
           id: '12345678901234567',
           name: '<img src=x>',
-          tenManConfigured: false,
-          tenManEnabled: false,
-          rewardsConfigured: true,
-          rewardsEnabled: true,
-          managedState: 'NONE',
+          modules: [
+            {
+              key: 'game-servers',
+              label: 'Game Servers',
+              release: 'Production ready',
+              releaseVariant: 'production-ready',
+              operational: 'Enabled',
+              operationalVariant: 'enabled',
+            },
+            {
+              key: 'competitive',
+              label: 'Competitive',
+              release: 'In development',
+              releaseVariant: 'in-development',
+              operational: 'Unconfigured',
+              operationalVariant: 'unconfigured',
+            },
+            {
+              key: 'rewards',
+              label: 'Rewards',
+              release: 'In development',
+              releaseVariant: 'in-development',
+              operational: 'Enabled',
+              operationalVariant: 'enabled',
+            },
+          ],
         },
       ]),
     ).not.toContain('<img src=x>');
@@ -23,8 +44,11 @@ describe('admin views', () => {
     const html = rewardsPage({
       id: '12345678901234567',
       name: 'Office',
+      username: 'owner',
       csrf: 'csrf-token',
       adjustmentId: '123e4567-e89b-12d3-a456-426614174000',
+      inDevelopment: true,
+      releaseVariant: 'in-development',
       settings: {
         version: 1,
         enabled: true,
@@ -49,6 +73,6 @@ describe('admin views', () => {
 
     expect(html).not.toContain('<script>');
     expect(html).toContain('name="csrf" value="csrf-token"');
-    expect(html).toContain('/rewards/adjust');
+    expect(html).toContain('/rewards/settings');
   });
 });
