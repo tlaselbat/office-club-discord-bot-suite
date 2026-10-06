@@ -86,11 +86,11 @@ The panel is organized as a shared shell with one page per module under a select
 - `/admin` — guild directory with a module summary for each connected guild.
 - `/admin/guilds/:guildId` — General overview: guild identity, Discord health, module summary, and recent audit activity.
 - `/admin/guilds/:guildId/game-servers` — Game Servers administration (production-ready): module state, panel destination, registered server list and edit, diagnostics, and safe local registration removal.
-- `/admin/guilds/:guildId/competitive` — Competitive status and read-only configuration guidance. Competitive is treated as in development and cannot be enabled from the panel.
-- `/admin/guilds/:guildId/rewards` — Member Rewards status and read-only configuration guidance. Rewards is treated as in development and cannot be enabled or edited from the panel.
+- `/admin/guilds/:guildId/competitive` — Competitive status and read-only configuration guidance. Competitive is marked in development; owners may operationally enable or disable it per guild, but configuration stays read-only.
+- `/admin/guilds/:guildId/rewards` — Member Rewards status and read-only configuration guidance. Rewards is marked in development; owners may operationally enable or disable it per guild, but configuration and XP adjustments stay unavailable.
 - `/admin/guilds/:guildId/audit` — recent administrative audit events for the guild.
 
-Game Servers is the only module approved for production administration through the webpanel. Competitive and Rewards remain visibly in development; their release gates are hardcoded deployment policy and cannot be toggled by a guild owner.
+Game Servers is the only module approved for production administration through the webpanel. Competitive and Rewards remain visibly in development; their release gates are hardcoded deployment policy and cannot be toggled by a guild owner. Operational enable/disable is separate from release state and is available for every module on the General page and each module page.
 
 ## Getting started as a server owner
 

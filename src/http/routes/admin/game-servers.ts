@@ -76,9 +76,10 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       diagnostics?: Awaited<ReturnType<typeof shared.deps.gameServerDiagnostics.runPersisted>>;
       errors?: string[];
       notice?: string;
+      filter?: 'all' | 'healthy' | 'needs-attention' | 'disabled';
     },
   ) => {
-    const [settings, servers, channels, available] = await Promise.all([
+    const [settings, servers, channels] = await Promise.all([
       shared.deps.prisma.gameServerSettings.findUnique({ where: { guildId } }),
       shared.deps.prisma.gameServer.findMany({
         where: { guildId },
@@ -86,8 +87,12 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         orderBy: [{ sortOrder: 'asc' }, { displayName: 'asc' }],
       }),
       fetchTextChannels(guildId),
-      shared.deps.gameServerAdmin.listAvailableServers(guildId),
     ]);
+    const available = await shared.deps.gameServerAdmin
+      .listAvailableServers(guildId)
+      .catch(
+        () => [] as Awaited<ReturnType<typeof shared.deps.gameServerAdmin.listAvailableServers>>,
+      );
     const panelMessageOk =
       settings?.panelChannelId !== undefined &&
       settings.panelChannelId !== null &&
@@ -120,8 +125,9 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           (server.snapshot === null ||
             server.snapshot.stale ||
             server.snapshot.consecutiveFailures > 0),
+        version: server.version,
       })),
-      filter: 'all', // read from query in full implementation
+      filter: extras?.filter ?? 'all',
       availableServers: available,
       ...(extras?.diagnostics === undefined ? {} : { diagnostics: extras.diagnostics }),
       ...(extras?.errors === undefined ? {} : { errors: extras.errors }),
@@ -138,7 +144,14 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       const params = z.object({ guildId: idSchema }).safeParse(request.params);
       if (!params.success || shared.guild(params.data.guildId) === undefined)
         return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-      const html = await buildGameServersPage(params.data.guildId, auth);
+      const query = z
+        .object({
+          filter: z.enum(['all', 'healthy', 'needs-attention', 'disabled']).default('all'),
+        })
+        .safeParse(request.query);
+      const html = await buildGameServersPage(params.data.guildId, auth, {
+        filter: query.success ? query.data.filter : 'all',
+      });
       return reply.type('text/html').send(html);
     },
   );

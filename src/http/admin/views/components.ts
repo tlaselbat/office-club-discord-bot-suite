@@ -7,15 +7,10 @@ export function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;');
 }
 
-export interface NavLink {
+interface NavLink {
   id: string;
   label: string;
   href: string;
-}
-
-export interface GuildOption {
-  id: string;
-  name: string;
 }
 
 export interface ShellOptions {
@@ -24,7 +19,6 @@ export interface ShellOptions {
   csrf: string;
   currentPath: string;
   currentGuildId?: string | undefined;
-  guilds?: GuildOption[] | undefined;
 }
 
 export function page(title: string, body: string): string {
@@ -145,18 +139,6 @@ export function input(
   return `<label for="${name}">${escapeHtml(label)}${errorHtml}<input id="${name}" type="${type}" name="${name}" value="${safeValue}" ${attributes}></label>`;
 }
 
-export function checkbox(
-  label: string,
-  name: string,
-  checked: boolean,
-  value = '1',
-  attributes = '',
-  errors?: string[],
-): string {
-  const errorHtml = fieldErrors(name, errors);
-  return `<label class="checkbox">${errorHtml}<input type="checkbox" name="${name}" value="${escapeHtml(value)}"${checked ? ' checked' : ''} ${attributes}> ${escapeHtml(label)}</label>`;
-}
-
 export function fieldErrors(name: string, errors?: string[]): string {
   if (errors === undefined || errors.length === 0) return '';
   return `<span class="field-error" id="${name}-error">${escapeHtml(errors.join('. '))}</span>`;
@@ -187,8 +169,4 @@ export function table(headers: string[], rows: string[][]): string {
     .map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`)
     .join('')}</tbody>`;
   return `<div class="table-wrap"><table>${head}${body}</table></div>`;
-}
-
-export function definitionList(items: Array<[string, string]>): string {
-  return `<dl class="dl">${items.map(([term, definition]) => `<dt>${escapeHtml(term)}</dt><dd>${definition}</dd>`).join('')}</dl>`;
 }

@@ -113,6 +113,7 @@ describe('admin page views', () => {
           consecutiveFailures: 0,
           cardCount: 1,
           needsAttention: false,
+          version: 3,
         },
       ],
       filter: 'all',

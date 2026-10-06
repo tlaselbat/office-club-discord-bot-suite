@@ -10,7 +10,7 @@ import type { GuildResourceService } from '../../../modules/tenman/services/guil
 import type { GuildSettingsService } from '../../../modules/tenman/services/guild-settings-service.js';
 import type { WebSessionService } from '../../../services/web-session-service.js';
 import { csrfToken, sessionCookieName, verifyCsrf } from '../../admin/security.js';
-import { page } from '../../admin/views.js';
+import { escapeHtml, page } from '../../admin/views.js';
 
 export const idSchema = z.string().regex(/^\d{17,20}$/);
 export const csrfSchema = z.object({ csrf: z.string().min(1).max(128) });
@@ -99,15 +99,6 @@ export interface SharedHelpers {
       summary: string;
     }>
   >;
-}
-
-export function escapeHtml(value: unknown): string {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 }
 
 export function createSharedHelpers(deps: AdminRoutesDependencies): SharedHelpers {

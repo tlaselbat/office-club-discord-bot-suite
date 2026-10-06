@@ -39,6 +39,7 @@ export interface GameServersPageModel {
     consecutiveFailures: number;
     cardCount: number;
     needsAttention: boolean;
+    version: number;
   }>;
   filter: 'all' | 'healthy' | 'needs-attention' | 'disabled';
   diagnostics?: GameServerDiagnosticsReport;
@@ -131,7 +132,8 @@ function serverListCard(model: GameServersPageModel): string {
     const status = server.needsAttention
       ? statusBadge('Needs attention', 'needs-attention')
       : statusBadge('Healthy', 'enabled');
-    const actions = `<div class="actions">${actionForm(`/admin/guilds/${escapeHtml(model.id)}/game-servers/${escapeHtml(server.id)}/toggle-enabled`, model.csrf, `<button type="submit">${server.enabled ? 'Disable polling' : 'Enable polling'}</button>`, 'post')}${actionForm(`/admin/guilds/${escapeHtml(model.id)}/game-servers/${escapeHtml(server.id)}/toggle-public`, model.csrf, `<button type="submit">Make ${server.public ? 'private' : 'public'}</button>`, 'post')}<a class="button" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/${escapeHtml(server.id)}/edit">Edit</a><a class="button" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/${escapeHtml(server.id)}/remove-confirm">Remove</a></div>`;
+    const versionField = `<input type="hidden" name="version" value="${String(server.version)}">`;
+    const actions = `<div class="actions">${actionForm(`/admin/guilds/${escapeHtml(model.id)}/game-servers/${escapeHtml(server.id)}/toggle-enabled`, model.csrf, `${versionField}<button type="submit">${server.enabled ? 'Disable polling' : 'Enable polling'}</button>`, 'post')}${actionForm(`/admin/guilds/${escapeHtml(model.id)}/game-servers/${escapeHtml(server.id)}/toggle-public`, model.csrf, `${versionField}<button type="submit">Make ${server.public ? 'private' : 'public'}</button>`, 'post')}<a class="button" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/${escapeHtml(server.id)}/edit">Edit</a><a class="button" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/${escapeHtml(server.id)}/remove-confirm">Remove</a></div>`;
     return [
       escapeHtml(server.displayName),
       escapeHtml(server.provider),

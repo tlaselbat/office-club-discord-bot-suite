@@ -43,6 +43,9 @@ function moduleToggle(
   if (!module.configured || module.version === null) {
     return '';
   }
+  if (module.key === 'game-servers' && module.enabled) {
+    return `<a class="button" href="/admin/guilds/${escapeHtml(model.id)}/game-servers/disable-confirm">Disable</a>`;
+  }
   const action = module.enabled ? 'disable' : 'enable';
   return actionForm(
     `/admin/guilds/${escapeHtml(model.id)}/${module.key}/${action}`,
