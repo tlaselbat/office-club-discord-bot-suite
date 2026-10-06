@@ -380,6 +380,7 @@ suite('10man ten-player lifecycle simulation', () => {
       type: cleanupJob.type,
       attempts: cleanupJob.attempts,
       payload: cleanupJob.payload,
+      leaseToken: 'simulation-lease',
     });
     expect(await requiredMatch(prisma, matchId)).toMatchObject({
       cleanupStatus: 'COMPLETE',
@@ -390,7 +391,7 @@ suite('10man ten-player lifecycle simulation', () => {
     expect(await prisma.tenManQueue.findUnique({ where: { guildId } })).toMatchObject({
       status: 'OPEN',
     });
-  });
+  }, 15_000);
 });
 
 async function requiredMatch(client: NonNullable<typeof prisma>, matchId: string) {

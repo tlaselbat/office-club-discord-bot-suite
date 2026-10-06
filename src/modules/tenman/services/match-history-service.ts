@@ -36,17 +36,33 @@ export class MatchHistoryService {
       throw new PublicError('RESULT_ALREADY_REVERSED', 'This result was already reversed.');
     for (const change of changes) {
       const won = change.delta > 0;
-      await transaction.playerGuildStats.update({
+      const stats = await transaction.playerGuildStats.findUnique({
         where: {
           guildId_discordUserId: { guildId: match.guildId, discordUserId: change.discordUserId },
         },
-        data: {
-          rating: { decrement: change.delta },
-          wins: { decrement: won ? 1 : 0 },
-          losses: { decrement: won ? 0 : 1 },
-          matchesPlayed: { decrement: 1 },
-        },
+        select: { statsResetAt: true },
       });
+      // A reset establishes a new baseline. Historical changes still get marked
+      // reversed below, but must not be subtracted from the post-reset totals.
+      if (
+        stats !== null &&
+        (stats.statsResetAt === null || change.createdAt > stats.statsResetAt)
+      ) {
+        const guarded = await transaction.playerGuildStats.updateMany({
+          where: {
+            guildId: match.guildId,
+            discordUserId: change.discordUserId,
+            OR: [{ statsResetAt: null }, { statsResetAt: stats.statsResetAt }],
+          },
+          data: {
+            rating: { decrement: change.delta },
+            wins: { decrement: won ? 1 : 0 },
+            losses: { decrement: won ? 0 : 1 },
+            matchesPlayed: { decrement: 1 },
+          },
+        });
+        if (guarded.count !== 1) continue;
+      }
     }
     await transaction.matchRatingChange.updateMany({
       where: { matchId, reversedAt: null },

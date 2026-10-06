@@ -18,9 +18,24 @@ export class MatchZyEventService {
     return this.prisma.$transaction(async (transaction) => {
       const existing = await transaction.externalEvent.findUnique({
         where: { matchId_provider_dedupeKey: { matchId, provider: 'MATCHZY', dedupeKey } },
-        select: { id: true },
+        select: { id: true, payloadHash: true },
       });
-      if (existing !== null) return 'duplicate';
+      if (existing !== null) {
+        if (existing.payloadHash !== payloadHash) {
+          await transaction.reconciliationEvent.create({
+            data: {
+              matchId,
+              result: 'CONFLICT',
+              observation: {
+                dedupeKey,
+                storedPayloadHash: existing.payloadHash,
+                incomingPayloadHash: payloadHash,
+              },
+            },
+          });
+        }
+        return 'duplicate';
+      }
       const match = await transaction.match.findUnique({
         where: { id: matchId },
         select: {
@@ -30,6 +45,7 @@ export class MatchZyEventService {
           matchzyMatchId: true,
           selectedMap: true,
           resultStatus: true,
+          version: true,
         },
       });
       if (match === null || match.matchzyMatchId !== event.matchid)
@@ -54,14 +70,21 @@ export class MatchZyEventService {
       }
       const update = eventUpdate(match.state, event);
       if (update !== null) {
-        await transaction.match.update({
-          where: { id: matchId },
+        const cas = await transaction.match.updateMany({
+          where: { id: matchId, state: match.state, version: match.version },
           data: {
             ...update.data,
             lastMatchzyEventAt: new Date(),
             version: { increment: 1 },
           },
         });
+        if (cas.count !== 1) {
+          await transaction.externalEvent.update({
+            where: { id: journal.id },
+            data: { processedAt: new Date() },
+          });
+          return 'processed';
+        }
         if (update.toState !== null && update.toState !== match.state) {
           await transaction.matchStateTransition.create({
             data: {
@@ -124,8 +147,8 @@ export class MatchZyEventService {
           });
         }
       } else {
-        await transaction.match.update({
-          where: { id: matchId },
+        await transaction.match.updateMany({
+          where: { id: matchId, state: match.state, version: match.version },
           data: { lastMatchzyEventAt: new Date() },
         });
       }
@@ -210,7 +233,10 @@ function eventUpdate(
       data: { score: { team1: event.team1.score, team2: event.team2.score } },
     };
   }
-  if (event.event === 'series_end' && (state === 'LIVE' || state === 'PAUSED')) {
+  if (
+    event.event === 'series_end' &&
+    (state === 'MATCH_LOADED' || state === 'WARMUP' || state === 'LIVE' || state === 'PAUSED')
+  ) {
     return {
       toState: 'FINISHED',
       data: {

@@ -82,6 +82,7 @@ function createMockDiscord({ messageExists = true } = {}): Client {
   };
   return {
     channels: { fetch: vi.fn().mockResolvedValue(channel) },
+    user: { id: 'bot-1' },
   } as unknown as Client;
 }
 
@@ -112,6 +113,40 @@ function unknownMessageError(): DiscordAPIError {
 
 describe('GameServerCardService', () => {
   describe('publishDeployment', () => {
+    it('deletes a newly sent bot message if card persistence fails', async () => {
+      const message = {
+        id: 'msg-new',
+        author: { id: 'bot-1' },
+        delete: vi.fn().mockResolvedValue(undefined),
+      };
+      const channel = {
+        id: 'channel-1',
+        isTextBased: () => true,
+        isDMBased: () => false,
+        send: vi.fn().mockResolvedValue(message),
+      };
+      const prisma = createMockPrisma({
+        gameServerCard: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi
+            .fn()
+            .mockResolvedValue({ id: 'card-1', channelId: 'channel-1', messageId: null }),
+          findUnique: vi.fn().mockResolvedValue({ ...createCard(), messageId: null }),
+          update: vi.fn().mockRejectedValue(new Error('db unavailable')),
+        },
+      });
+      const discord = {
+        user: { id: 'bot-1' },
+        channels: { fetch: vi.fn().mockResolvedValue(channel) },
+      } as unknown as Client;
+      await expect(
+        new GameServerCardService(prisma, discord, 'secret').publishDeployment(
+          serverView.id,
+          channel as unknown as TextBasedChannel,
+        ),
+      ).rejects.toThrow('db unavailable');
+      expect(message.delete).toHaveBeenCalledOnce();
+    });
     it('creates a Discord message and persists the card registration', async () => {
       const prisma = createMockPrisma({
         gameServerCard: { findUnique: vi.fn().mockResolvedValue(createCard()) },
@@ -121,7 +156,10 @@ describe('GameServerCardService', () => {
       const channel = (await discord.channels.fetch('channel-1')) as unknown as TextBasedChannel;
       await service.publishDeployment(serverView.id, channel);
       const mockSend = (channel as unknown as { send: ReturnType<typeof vi.fn> }).send;
-      expect(mockSend).toHaveBeenCalledOnce();
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(
+        (channel as unknown as { messages: { fetch: ReturnType<typeof vi.fn> } }).messages.fetch,
+      ).toHaveBeenCalledWith('msg-1');
       const createFn = prisma.gameServerCard.create as unknown as ReturnType<typeof vi.fn>;
       expect(createFn).toHaveBeenCalledOnce();
       expect(createFn).toHaveBeenCalledWith(
@@ -151,6 +189,7 @@ describe('GameServerCardService', () => {
         isTextBased: vi.fn().mockReturnValue(true),
         isDMBased: vi.fn().mockReturnValue(false),
         send: vi.fn().mockResolvedValue({ id: 'msg-2' }),
+        messages: { fetch: vi.fn().mockResolvedValue(null) },
       } as unknown as TextBasedChannel);
       expect(prisma.gameServerCard.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ channelId: 'channel-2' }) }),

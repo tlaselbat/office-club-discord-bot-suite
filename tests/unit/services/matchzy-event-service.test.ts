@@ -6,11 +6,14 @@ import type { PrismaClient } from '../../../src/generated/prisma/client.js';
 const matchId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 
 function createMockPrisma(matchOverrides: object = {}): PrismaClient {
-  const externalEvents = new Map<string, { id: string }>();
+  const externalEvents = new Map<string, { id: string; payloadHash: string }>();
   const state = {
     match: {
       id: matchId,
       matchzyMatchId: 42,
+      version: 1,
+      resultStatus: 'APPLIED',
+      players: [],
       state: 'LIVE',
       cleanupStatus: 'NOT_REQUIRED',
       ...matchOverrides,
@@ -52,19 +55,25 @@ function createMockPrisma(matchOverrides: object = {}): PrismaClient {
         }) => {
           state.eventIdCounter += 1;
           const id = `event-${String(state.eventIdCounter)}`;
-          externalEvents.set(`${data.provider}:${data.dedupeKey}`, { id });
+          externalEvents.set(`${data.provider}:${data.dedupeKey}`, {
+            id,
+            payloadHash: data.payloadHash,
+          });
           return { id };
         },
       ),
       update: vi.fn().mockResolvedValue(undefined),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     match: {
       findUnique: vi.fn().mockResolvedValue(state.match),
       update: vi.fn().mockResolvedValue(undefined),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     matchStateTransition: { create: vi.fn().mockResolvedValue(undefined) },
     demoReference: { upsert: vi.fn().mockResolvedValue(undefined) },
     job: { upsert: vi.fn().mockResolvedValue(undefined) },
+    reconciliationEvent: { create: vi.fn().mockResolvedValue(undefined) },
   } as unknown as PrismaClient;
   return prisma;
 }
@@ -98,9 +107,9 @@ describe('MatchZyEventService', () => {
     const result = await service.ingest(matchId, seriesEndEvent() as never);
 
     expect(result).toBe('processed');
-    expect(prisma.match.update).toHaveBeenCalledWith(
+    expect(prisma.match.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: matchId },
+        where: expect.objectContaining({ id: matchId }),
         data: expect.objectContaining({ state: 'FINISHED', cleanupStatus: 'PENDING' }),
       }),
     );
@@ -149,5 +158,47 @@ describe('MatchZyEventService', () => {
     await expect(service.ingest(matchId, seriesEndEvent() as never)).rejects.toThrow(
       'MatchZy match ID mismatch',
     );
+  });
+
+  it('finishes when series_end arrives without going_live', async () => {
+    const prisma = createMockPrisma({ state: 'MATCH_LOADED', resultStatus: 'PENDING' });
+    const service = new MatchZyEventService(prisma, createMockArtifacts(), 1800);
+    await service.ingest(matchId, seriesEndEvent() as never);
+    expect(prisma.match.updateMany).toHaveBeenCalled();
+    expect(prisma.match.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ state: 'FINISHED', cleanupStatus: 'PENDING' }),
+      }),
+    );
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idempotencyKey: `match-dashboard:${matchId}:state` },
+      }),
+    );
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idempotencyKey: `cleanup:${matchId}` },
+      }),
+    );
+  });
+
+  it('records a conflicting payload hash for the same logical event', async () => {
+    const prisma = createMockPrisma();
+    const service = new MatchZyEventService(prisma, createMockArtifacts(), 1800);
+    await service.ingest(matchId, seriesEndEvent() as never);
+    await service.ingest(matchId, { ...seriesEndEvent(), team1_series_score: 12 } as never);
+    expect(prisma.reconciliationEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ result: 'CONFLICT' }),
+      }),
+    );
+  });
+
+  it('does not record a conflict for an identical duplicate payload', async () => {
+    const prisma = createMockPrisma();
+    const service = new MatchZyEventService(prisma, createMockArtifacts(), 1800);
+    await service.ingest(matchId, seriesEndEvent() as never);
+    await service.ingest(matchId, seriesEndEvent() as never);
+    expect(prisma.reconciliationEvent.create).not.toHaveBeenCalled();
   });
 });

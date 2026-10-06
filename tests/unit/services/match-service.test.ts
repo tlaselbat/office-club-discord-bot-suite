@@ -9,11 +9,12 @@ function createPrisma() {
         id: 'match-1',
         guildId: 'guild-1',
         state: 'TEAM_SELECTION',
+        version: 1,
         dathostServerId: null,
         cleanupStatus: 'NOT_REQUIRED',
         leaderDiscordUserId: 'leader-1',
       }),
-      update: vi.fn().mockResolvedValue(undefined),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     matchStateTransition: { create: vi.fn().mockResolvedValue(undefined) },
     job: { upsert: vi.fn().mockResolvedValue(undefined) },
@@ -39,7 +40,7 @@ describe('MatchService cancellation', () => {
 
     await new MatchService(prisma).cancel('match-1', administrator, 'corr-1');
 
-    expect(transaction.match.update).toHaveBeenCalledWith(
+    expect(transaction.match.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ cleanupStatus: 'PENDING', guildSlotActive: true }),
       }),

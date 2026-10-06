@@ -894,6 +894,7 @@ model PlayerGuildStats {
   wins          Int            @default(0)
   losses        Int            @default(0)
   matchesPlayed Int            @default(0) @map("matches_played")
+  statsResetAt  DateTime?       @map("stats_reset_at")
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
   guild         TenManSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)

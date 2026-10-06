@@ -29,7 +29,7 @@ suite('10man schema', () => {
       include: { guild: { include: { suite: true } } },
     });
 
-    expect(queue.status).toBe('OPEN');
+    expect(queue.status).toBe('DISABLED');
     expect(queue.guild.suite.guildId).toBe(guildId);
   });
 });

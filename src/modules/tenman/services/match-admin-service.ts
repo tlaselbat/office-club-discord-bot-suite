@@ -281,10 +281,11 @@ export class MatchAdminService {
       });
       if (user === null)
         throw new PublicError('PLAYER_NOT_FOUND', 'That player is not known to the bot.');
+      const statsResetAt = new Date();
       await transaction.playerGuildStats.upsert({
         where: { guildId_discordUserId: { guildId, discordUserId: targetDiscordUserId } },
-        update: { rating: 1000, wins: 0, losses: 0, matchesPlayed: 0 },
-        create: { guildId, discordUserId: targetDiscordUserId, rating: 1000 },
+        update: { rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, statsResetAt },
+        create: { guildId, discordUserId: targetDiscordUserId, rating: 1000, statsResetAt },
       });
       await audit(transaction, {
         guildId,

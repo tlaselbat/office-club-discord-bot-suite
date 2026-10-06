@@ -19,6 +19,7 @@ function createPrisma(
     disputes?: Dispute[];
     matchState?: string;
     resultStatus?: string;
+    serializeTransactions?: boolean;
     ratingChanges?: Array<{
       id: string;
       discordUserId: string;
@@ -32,9 +33,22 @@ function createPrisma(
   const resultStatus = overrides.resultStatus ?? 'APPLIED';
   const ratingChanges = overrides.ratingChanges ?? [];
 
+  let transactionTail = Promise.resolve();
   const prisma = {
     $executeRaw: vi.fn().mockResolvedValue(undefined),
-    $transaction: vi.fn(async (callback) => callback(prisma)),
+    $transaction: vi.fn(async (callback) => {
+      if (!overrides.serializeTransactions) return callback(prisma);
+      let release!: () => void;
+      const turn = new Promise<void>((resolve) => (release = resolve));
+      const previous = transactionTail;
+      transactionTail = transactionTail.then(() => turn);
+      await previous;
+      try {
+        return await callback(prisma);
+      } finally {
+        release();
+      }
+    }),
     matchResultDispute: {
       findFirst: vi
         .fn()
@@ -124,6 +138,8 @@ function createPrisma(
       updateMany: vi.fn().mockResolvedValue({ count: ratingChanges.length }),
     },
     playerGuildStats: {
+      findUnique: vi.fn().mockResolvedValue({ statsResetAt: null }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       update: vi.fn().mockResolvedValue(undefined),
     },
     auditEvent: { create: vi.fn().mockResolvedValue(undefined) },
@@ -161,6 +177,18 @@ describe('MatchResultDisputeService', () => {
 
     expect(result.status).toBe('already_pending');
     expect(result.id).toBe('existing');
+  });
+
+  it('serializes simultaneous submissions to one pending dispute', async () => {
+    const { prisma, disputes } = createPrisma({ serializeTransactions: true });
+    const service = new MatchResultDisputeService(prisma);
+    const results = await Promise.all([
+      service.createDispute(matchId, userId, 'first', 'corr-a'),
+      service.createDispute(matchId, userId, 'second', 'corr-b'),
+    ]);
+    expect(results.filter((result) => result.status === 'created')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'already_pending')).toHaveLength(1);
+    expect(disputes.filter((dispute) => dispute.status === 'PENDING')).toHaveLength(1);
   });
 
   it('lists pending disputes for a guild', async () => {
@@ -204,7 +232,7 @@ describe('MatchResultDisputeService', () => {
       'corr-4',
     );
 
-    expect(prisma.playerGuildStats.update).toHaveBeenCalled();
+    expect(prisma.playerGuildStats.updateMany).toHaveBeenCalled();
     expect(prisma.matchRatingChange.updateMany).toHaveBeenCalled();
     expect(disputes[0]?.status).toBe('RESOLVED');
   });

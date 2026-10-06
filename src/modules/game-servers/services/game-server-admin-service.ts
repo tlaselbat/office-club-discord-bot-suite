@@ -517,10 +517,16 @@ export class GameServerAdminService {
           'Configuration changed; reload and try again.',
         );
       }
-      await tx.gameServer.updateMany({
+      const updated = await tx.gameServer.updateMany({
         where: { id: gameServerId, guildId, version: current.version },
         data: { [field]: value, version: { increment: 1 } },
       });
+      if (updated.count !== 1) {
+        throw new PublicError(
+          'STALE_CONFIGURATION',
+          'Configuration changed; reload and try again.',
+        );
+      }
       if (field === 'enabled' && value) await scheduleGameServerPoll(tx, gameServerId);
       if (field === 'public' && value) await scheduleGameServerUpdateReconcile(tx, gameServerId);
       await tx.auditEvent.create({

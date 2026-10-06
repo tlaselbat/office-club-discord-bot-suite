@@ -167,6 +167,26 @@ export async function createApplication(
     },
     logger,
   );
+  const stop = async (): Promise<void> => {
+    startupComplete = false;
+    const failures: unknown[] = [];
+    for (const cleanup of [
+      () => worker.stop(),
+      () => modules.stop(),
+      () => discord.destroy(),
+      () => http.close(),
+      () => prisma.$disconnect(),
+    ]) {
+      try {
+        await cleanup();
+      } catch (error: unknown) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(failures, 'Application shutdown failed');
+    }
+  };
   return {
     prisma,
     http,
@@ -174,25 +194,23 @@ export async function createApplication(
     worker,
     async start() {
       startupComplete = false;
-      await prisma.$connect();
-      await http.listen({ host: environment.HOST, port: environment.PORT });
-      await discord.login(environment.DISCORD_TOKEN);
-      await prisma.guildSettings.createMany({
-        data: [...discord.guilds.cache.keys()].map((guildId) => ({ guildId })),
-        skipDuplicates: true,
-      });
-      await new StartupRecovery(prisma).run();
-      await modules.start();
-      worker.start();
-      startupComplete = true;
+      try {
+        await prisma.$connect();
+        await http.listen({ host: environment.HOST, port: environment.PORT });
+        await discord.login(environment.DISCORD_TOKEN);
+        await prisma.guildSettings.createMany({
+          data: [...discord.guilds.cache.keys()].map((guildId) => ({ guildId })),
+          skipDuplicates: true,
+        });
+        await new StartupRecovery(prisma).run();
+        await modules.start();
+        worker.start();
+        startupComplete = true;
+      } catch (error: unknown) {
+        await stop().catch(() => undefined);
+        throw error;
+      }
     },
-    async stop() {
-      startupComplete = false;
-      await worker.stop();
-      await modules.stop();
-      await discord.destroy();
-      await http.close();
-      await prisma.$disconnect();
-    },
+    stop,
   };
 }

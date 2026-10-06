@@ -8,6 +8,7 @@ import { renderMatchZyCommand } from '../integrations/matchzy/commands.js';
 import { assertCompetitiveBo1FiveVFive, gameProfileSchema } from '../domain/game-profile.js';
 import type { CredentialCipher } from './credential-cipher.js';
 import type { MatchCredentialService } from './match-credential-service.js';
+import { scheduleJob } from '../../../database/schedule-job.js';
 
 export class ProvisioningService {
   public constructor(
@@ -26,7 +27,7 @@ export class ProvisioningService {
       include: { players: true, profile: true },
     });
     if (match === null) throw new Error('Match not found');
-    if (!['TEAMS_LOCKED', 'SERVER_PROVISIONING'].includes(match.state)) {
+    if (!['TEAMS_LOCKED', 'SERVER_PROVISIONING', 'SERVER_BOOTING'].includes(match.state)) {
       this.logger.warn(
         { matchId, state: match.state },
         'Ignoring provision job for unexpected match state',
@@ -45,12 +46,14 @@ export class ProvisioningService {
       slots: match.profile.serverSlots,
     };
 
+    let expectedVersion = match.version;
     if (match.state === 'TEAMS_LOCKED') {
-      await this.prisma.$transaction(async (transaction) => {
-        await transaction.match.update({
-          where: { id: matchId },
-          data: { state: 'SERVER_PROVISIONING' },
+      const claimed = await this.prisma.$transaction(async (transaction) => {
+        const updated = await transaction.match.updateMany({
+          where: { id: matchId, state: 'TEAMS_LOCKED', version: match.version },
+          data: { state: 'SERVER_PROVISIONING', version: { increment: 1 } },
         });
+        if (updated.count !== 1) return false;
         await transaction.matchStateTransition.create({
           data: {
             matchId,
@@ -59,7 +62,21 @@ export class ProvisioningService {
             source: 'WORKER_PROVISION',
           },
         });
+        return true;
       });
+      if (!claimed) return;
+      expectedVersion = match.version + 1;
+    }
+
+    if (match.state === 'SERVER_BOOTING' && match.dathostServerId !== null) {
+      await this.dathost.startServer(match.dathostServerId);
+      await scheduleJob(this.prisma, {
+        type: 'POLL_SERVER_BOOT',
+        idempotencyKey: `poll-boot:${matchId}:${match.dathostServerId}`,
+        matchId,
+        payload: { matchId, serverId: match.dathostServerId, startedAt: Date.now() },
+      });
+      return;
     }
 
     const server = await this.orchestrator.provision(context);
@@ -83,16 +100,46 @@ export class ProvisioningService {
     const encryptedRcon = this.cipher.encrypt(rcon, `rcon:${matchId}:${server.id}`);
     const encryptedJoin = this.cipher.encrypt(password, `join:${matchId}:${server.id}`);
 
-    await this.prisma.$transaction(async (transaction) => {
-      await transaction.match.update({
-        where: { id: matchId },
+    const claimed = await this.prisma.$transaction(async (transaction) => {
+      const updated = await transaction.match.updateMany({
+        where: { id: matchId, state: 'SERVER_PROVISIONING', version: expectedVersion },
         data: {
           dathostServerId: server.id,
           encryptedRconPassword: encryptedRcon,
           encryptedJoinPassword: encryptedJoin,
           state: 'SERVER_BOOTING',
+          version: { increment: 1 },
         },
       });
+      if (updated.count !== 1) {
+        const current = await transaction.match.findUnique({
+          where: { id: matchId },
+          select: { state: true, dathostServerId: true },
+        });
+        if (
+          current !== null &&
+          ['FINISHED', 'CANCELED', 'FAILED'].includes(current.state) &&
+          current.dathostServerId === null
+        ) {
+          await transaction.match.update({
+            where: { id: matchId },
+            data: {
+              dathostServerId: server.id,
+              encryptedRconPassword: encryptedRcon,
+              encryptedJoinPassword: encryptedJoin,
+              cleanupStatus: 'PENDING',
+              guildSlotActive: true,
+            },
+          });
+          await scheduleJob(transaction, {
+            type: 'CLEANUP_MATCH',
+            idempotencyKey: `cleanup:${matchId}`,
+            matchId,
+            payload: { matchId },
+          });
+        }
+        return false;
+      }
       await transaction.matchStateTransition.create({
         data: {
           matchId,
@@ -101,18 +148,18 @@ export class ProvisioningService {
           source: 'WORKER_PROVISION',
         },
       });
+      return true;
     });
+    if (!claimed) return;
 
     this.logger.info({ matchId, serverId: server.id }, 'Starting DatHost duplicate');
     await this.dathost.startServer(server.id);
 
-    await this.prisma.job.create({
-      data: {
-        matchId,
-        type: 'POLL_SERVER_BOOT',
-        idempotencyKey: `poll-boot:${matchId}:${server.id}`,
-        payload: { matchId, serverId: server.id, startedAt: Date.now() },
-      },
+    await scheduleJob(this.prisma, {
+      matchId,
+      type: 'POLL_SERVER_BOOT',
+      idempotencyKey: `poll-boot:${matchId}:${server.id}`,
+      payload: { matchId, serverId: server.id, startedAt: Date.now() },
     });
   }
 
@@ -123,7 +170,15 @@ export class ProvisioningService {
     });
     if (match === null) throw new Error('Match not found');
     if (match.dathostServerId !== serverId) throw new Error('Boot poll server ID mismatch');
-    if (match.state === 'MATCH_LOADED') return;
+    if (match.state === 'MATCH_LOADED') {
+      await scheduleJob(this.prisma, {
+        type: 'VOICE_RECONCILE',
+        idempotencyKey: `voice:${matchId}:loaded`,
+        matchId,
+        payload: { matchId },
+      });
+      return;
+    }
     if (!['SERVER_BOOTING', 'SERVER_READY'].includes(match.state)) {
       throw new Error(`Boot poll cannot run from ${match.state}`);
     }
@@ -144,8 +199,12 @@ export class ProvisioningService {
     }
 
     if (match.state === 'SERVER_BOOTING') {
-      await this.prisma.$transaction(async (transaction) => {
-        await transaction.match.update({ where: { id: matchId }, data: { state: 'SERVER_READY' } });
+      const bootClaimed = await this.prisma.$transaction(async (transaction) => {
+        const updated = await transaction.match.updateMany({
+          where: { id: matchId, state: 'SERVER_BOOTING', version: match.version },
+          data: { state: 'SERVER_READY', version: { increment: 1 } },
+        });
+        if (updated.count !== 1) return false;
         await transaction.matchStateTransition.create({
           data: {
             matchId,
@@ -154,7 +213,9 @@ export class ProvisioningService {
             source: 'WORKER_BOOT_POLL',
           },
         });
+        return true;
       });
+      if (!bootClaimed) return;
     }
 
     const team1 = match.players.filter((player) => player.team === 'TEAM_1');
@@ -227,17 +288,23 @@ export class ProvisioningService {
 
     await this.dathost.sendConsole(serverId, loadCommand);
 
-    await this.prisma.$transaction(async (transaction) => {
-      await transaction.match.update({
-        where: { id: matchId },
+    const loaded = await this.prisma.$transaction(async (transaction) => {
+      const updated = await transaction.match.updateMany({
+        where: {
+          id: matchId,
+          state: 'SERVER_READY',
+          version: match.version + (match.state === 'SERVER_BOOTING' ? 1 : 0),
+        },
         data: {
           state: 'MATCH_LOADED',
           dathostIp: ip,
           dathostPort: ports.game,
           matchzyConfig: built.config as unknown as object,
           matchzyConfigHash: built.sha256,
+          version: { increment: 1 },
         },
       });
+      if (updated.count !== 1) return false;
       await transaction.matchStateTransition.create({
         data: {
           matchId,
@@ -246,17 +313,17 @@ export class ProvisioningService {
           source: 'WORKER_BOOT_POLL',
         },
       });
+      return true;
     });
+    if (!loaded) return;
 
     this.logger.info({ matchId, serverId, ip, port: ports.game }, 'MatchZy config loaded');
 
-    await this.prisma.job.create({
-      data: {
-        matchId,
-        type: 'VOICE_RECONCILE',
-        idempotencyKey: `voice:${matchId}:loaded`,
-        payload: { matchId },
-      },
+    await scheduleJob(this.prisma, {
+      matchId,
+      type: 'VOICE_RECONCILE',
+      idempotencyKey: `voice:${matchId}:loaded`,
+      payload: { matchId },
     });
   }
 }

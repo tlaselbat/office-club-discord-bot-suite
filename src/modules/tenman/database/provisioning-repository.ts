@@ -61,20 +61,29 @@ export class PrismaProvisioningRepository implements ProvisioningRepository {
     };
   }
 
-  public async createIntent(attempt: ProvisioningAttemptRecord): Promise<void> {
-    await this.prisma.provisioningAttempt.create({
-      data: {
-        id: attempt.id,
-        matchId: attempt.matchId,
-        status: attempt.status,
-        provisionalName: attempt.provisionalName,
-        requestedTemplateId: attempt.templateServerId,
-        requestedLocation: attempt.location,
-        requestStartedAt: attempt.requestStartedAt,
-        requestFinishedAt: attempt.requestFinishedAt,
-        dathostServerId: attempt.serverId,
-        candidateEvidence: { ownershipMarker: attempt.ownershipMarker } as Prisma.InputJsonValue,
-      },
+  public async createIntent(attempt: ProvisioningAttemptRecord): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${attempt.matchId}, 0))`;
+      const existing = await transaction.provisioningAttempt.findFirst({
+        where: { matchId: attempt.matchId, status: { in: UNRESOLVED_STATUSES } },
+        select: { id: true },
+      });
+      if (existing !== null) return false;
+      await transaction.provisioningAttempt.create({
+        data: {
+          id: attempt.id,
+          matchId: attempt.matchId,
+          status: attempt.status,
+          provisionalName: attempt.provisionalName,
+          requestedTemplateId: attempt.templateServerId,
+          requestedLocation: attempt.location,
+          requestStartedAt: attempt.requestStartedAt,
+          requestFinishedAt: attempt.requestFinishedAt,
+          dathostServerId: attempt.serverId,
+          candidateEvidence: { ownershipMarker: attempt.ownershipMarker } as Prisma.InputJsonValue,
+        },
+      });
+      return true;
     });
   }
 

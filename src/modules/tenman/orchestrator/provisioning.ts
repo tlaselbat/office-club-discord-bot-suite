@@ -32,7 +32,7 @@ export interface ProvisioningAttemptRecord {
 
 export interface ProvisioningRepository {
   findUnresolved(matchId: string): Promise<ProvisioningAttemptRecord | null>;
-  createIntent(attempt: ProvisioningAttemptRecord): Promise<void>;
+  createIntent(attempt: ProvisioningAttemptRecord): Promise<boolean>;
   markUnknown(attemptId: string, finishedAt: Date, reason: string): Promise<void>;
   identify(attemptId: string, server: DatHostServer, evidence: string): Promise<void>;
   markAmbiguous(attemptId: string, candidates: readonly DatHostServer[]): Promise<void>;
@@ -88,7 +88,9 @@ export class ProvisioningOrchestrator {
       requestFinishedAt: startedAt,
       serverId: null,
     };
-    await this.repository.createIntent(attempt);
+    // Another worker may have started the same job after its lease expired.
+    // Only the worker that persisted this intent may create a DatHost server.
+    if (!(await this.repository.createIntent(attempt))) return null;
     let destination: DatHostServer;
     try {
       destination = await this.dathost.createProvisionalServer({

@@ -12,8 +12,8 @@ export class MatchService {
       if (match === null || ['FINISHED', 'CANCELED', 'FAILED'].includes(match.state))
         throw new Error('Match is already terminal');
       assertAuthorized('STOP', actor, match);
-      await transaction.match.update({
-        where: { id: matchId },
+      const updated = await transaction.match.updateMany({
+        where: { id: matchId, state: match.state, version: match.version },
         data: {
           state: 'CANCELED',
           cleanupStatus: 'PENDING',
@@ -22,6 +22,7 @@ export class MatchService {
           version: { increment: 1 },
         },
       });
+      if (updated.count !== 1) throw new Error('Match changed while cancellation was in progress');
       await transaction.matchStateTransition.create({
         data: { matchId, fromState: match.state, toState: 'CANCELED', source: 'DISCORD_CANCEL' },
       });

@@ -126,8 +126,19 @@ describe('MatchAdminService', () => {
 
     expect(transaction.playerGuildStats.upsert).toHaveBeenCalledWith({
       where: { guildId_discordUserId: { guildId: 'guild-1', discordUserId: 'incoming' } },
-      update: { rating: 1000, wins: 0, losses: 0, matchesPlayed: 0 },
-      create: { guildId: 'guild-1', discordUserId: 'incoming', rating: 1000 },
+      update: {
+        rating: 1000,
+        wins: 0,
+        losses: 0,
+        matchesPlayed: 0,
+        statsResetAt: expect.any(Date),
+      },
+      create: {
+        guildId: 'guild-1',
+        discordUserId: 'incoming',
+        rating: 1000,
+        statsResetAt: expect.any(Date),
+      },
     });
     expect(transaction.auditEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({

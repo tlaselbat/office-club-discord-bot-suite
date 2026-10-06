@@ -1,11 +1,13 @@
 import type { PrismaClient } from '../generated/prisma/client.js';
 import type { JobStore, LeasedJob } from '../jobs/worker.js';
+import { randomUUID } from 'node:crypto';
 
 interface JobRow {
   id: string;
   type: string;
   attempts: number;
   payload: unknown;
+  lease_owner: string;
 }
 
 export class PrismaJobStore implements JobStore {
@@ -29,23 +31,32 @@ export class PrismaJobStore implements JobStore {
         LIMIT 1
       )
       UPDATE jobs
-      SET status = 'RUNNING', lease_owner = ${workerId}, lease_expires_at = ${leaseUntil}, updated_at = NOW()
+      SET status = 'RUNNING', lease_owner = ${workerId + ':' + randomUUID()}, lease_expires_at = ${leaseUntil}, updated_at = NOW()
       WHERE id IN (SELECT id FROM candidate)
-      RETURNING id, type, attempts, payload
+      RETURNING id, type, attempts, payload, lease_owner
     `;
-    return rows[0] ?? null;
+    const row = rows[0];
+    return row === undefined
+      ? null
+      : {
+          id: row.id,
+          type: row.type,
+          attempts: row.attempts,
+          payload: row.payload,
+          leaseToken: row.lease_owner,
+        };
   }
 
-  public async complete(jobId: string): Promise<void> {
-    await this.prisma.job.update({
-      where: { id: jobId },
+  public async complete(jobId: string, leaseToken: string): Promise<void> {
+    await this.prisma.job.updateMany({
+      where: { id: jobId, status: 'RUNNING', leaseOwner: leaseToken },
       data: { status: 'COMPLETE', leaseOwner: null, leaseExpiresAt: null, lastError: null },
     });
   }
 
-  public async reschedule(jobId: string, runAt: Date): Promise<void> {
-    await this.prisma.job.update({
-      where: { id: jobId },
+  public async reschedule(jobId: string, runAt: Date, leaseToken: string): Promise<void> {
+    await this.prisma.job.updateMany({
+      where: { id: jobId, status: 'RUNNING', leaseOwner: leaseToken },
       data: {
         status: 'PENDING',
         attempts: 0,
@@ -57,9 +68,9 @@ export class PrismaJobStore implements JobStore {
     });
   }
 
-  public async retry(jobId: string, runAt: Date, error: string): Promise<void> {
-    await this.prisma.job.update({
-      where: { id: jobId },
+  public async retry(jobId: string, runAt: Date, error: string, leaseToken: string): Promise<void> {
+    await this.prisma.job.updateMany({
+      where: { id: jobId, status: 'RUNNING', leaseOwner: leaseToken },
       data: {
         status: 'RETRY',
         attempts: { increment: 1 },
@@ -71,9 +82,9 @@ export class PrismaJobStore implements JobStore {
     });
   }
 
-  public async fail(jobId: string, error: string): Promise<void> {
-    await this.prisma.job.update({
-      where: { id: jobId },
+  public async fail(jobId: string, error: string, leaseToken: string): Promise<void> {
+    await this.prisma.job.updateMany({
+      where: { id: jobId, status: 'RUNNING', leaseOwner: leaseToken },
       data: {
         status: 'FAILED',
         attempts: { increment: 1 },

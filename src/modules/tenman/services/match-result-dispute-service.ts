@@ -13,49 +13,37 @@ export class MatchResultDisputeService {
     reason: string,
     correlationId: string,
   ): Promise<{ id: string; status: 'created' | 'already_pending' }> {
-    const existing = await this.prisma.matchResultDispute.findFirst({
-      where: { matchId, discordUserId, status: 'PENDING' },
-      select: { id: true },
+    return this.prisma.$transaction(async (transaction) => {
+      // Serialize the check/create pair without holding a lock across external I/O.
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${matchId}:${discordUserId}`}))`;
+      const existing = await transaction.matchResultDispute.findFirst({
+        where: { matchId, discordUserId, status: 'PENDING' },
+        select: { id: true },
+      });
+      if (existing !== null) return { id: existing.id, status: 'already_pending' as const };
+      const match = await transaction.match.findUnique({
+        where: { id: matchId },
+        select: { state: true, guildId: true },
+      });
+      if (match === null || !['FINISHED', 'CANCELED', 'FAILED'].includes(match.state)) {
+        throw new Error('Match is not in a terminal state');
+      }
+      const dispute = await transaction.matchResultDispute.create({
+        data: { matchId, discordUserId, reason: reason.slice(0, 1000) },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          matchId,
+          guildId: match.guildId,
+          actorDiscordUserId: discordUserId,
+          correlationId,
+          eventType: 'match_result_dispute_created',
+          result: 'success',
+          metadata: { disputeId: dispute.id, reasonLength: dispute.reason.length },
+        },
+      });
+      return { id: dispute.id, status: 'created' as const };
     });
-    if (existing !== null) {
-      return { id: existing.id, status: 'already_pending' };
-    }
-
-    const match = await this.prisma.match.findUnique({
-      where: { id: matchId },
-      select: { state: true },
-    });
-    if (match === null || !['FINISHED', 'CANCELED', 'FAILED'].includes(match.state)) {
-      throw new Error('Match is not in a terminal state');
-    }
-
-    const dispute = await this.prisma.matchResultDispute.create({
-      data: {
-        matchId,
-        discordUserId,
-        reason: reason.slice(0, 1000),
-      },
-    });
-
-    await this.prisma.auditEvent.create({
-      data: {
-        matchId,
-        guildId:
-          (
-            await this.prisma.match.findUnique({
-              where: { id: matchId },
-              select: { guildId: true },
-            })
-          )?.guildId ?? '',
-        actorDiscordUserId: discordUserId,
-        correlationId,
-        eventType: 'match_result_dispute_created',
-        result: 'success',
-        metadata: { disputeId: dispute.id, reasonLength: dispute.reason.length },
-      },
-    });
-
-    return { id: dispute.id, status: 'created' };
   }
 
   /** Lists pending result disputes for a guild, newest first. */

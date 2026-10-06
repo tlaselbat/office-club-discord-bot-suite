@@ -12,7 +12,10 @@ function createMockPrisma(): PrismaClient {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     matchStateTransition: { create: vi.fn().mockResolvedValue(undefined) },
-    job: { create: vi.fn().mockResolvedValue(undefined) },
+    job: {
+      create: vi.fn().mockResolvedValue(undefined),
+      upsert: vi.fn().mockResolvedValue(undefined),
+    },
     provisioningAttempt: { findFirst: vi.fn().mockResolvedValue(null) },
     $transaction: vi.fn(async (callback: (client: typeof prisma) => Promise<unknown>) =>
       callback(prisma),
@@ -91,6 +94,43 @@ function createMockCipher() {
 }
 
 describe('ProvisioningService', () => {
+  it('preserves a terminal match and rearms cleanup when cancellation wins during provisioning', async () => {
+    const prisma = createMockPrisma();
+    const match = createMatch({ state: 'SERVER_PROVISIONING', version: 4 });
+    prisma.match.findUnique = vi.fn().mockResolvedValue(match);
+    const orchestrator = createMockOrchestrator('server-owned');
+    let release!: (value: { id: string }) => void;
+    orchestrator.provision.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const dathost = createMockDathost();
+    const service = new ProvisioningService(
+      prisma,
+      orchestrator as never,
+      dathost as never,
+      createMockCredentials() as never,
+      createMockCipher() as never,
+      new URL('https://example.com'),
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    );
+    const running = service.runProvisionJob(matchId);
+    await vi.waitFor(() => expect(orchestrator.provision).toHaveBeenCalled());
+    prisma.match.updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    prisma.match.findUnique = vi
+      .fn()
+      .mockResolvedValue({ state: 'CANCELED', dathostServerId: null });
+    release({ id: 'server-owned' });
+    await running;
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idempotencyKey: `cleanup:${matchId}` },
+      }),
+    );
+    expect(dathost.startServer).not.toHaveBeenCalled();
+  });
+
   it('runs the provision job from TEAMS_LOCKED to SERVER_BOOTING', async () => {
     const prisma = createMockPrisma();
     prisma.match.findUnique = vi.fn().mockResolvedValue(createMatch());
@@ -117,9 +157,9 @@ describe('ProvisioningService', () => {
     );
     expect(dathost.updateServer).toHaveBeenCalledWith('server-1', expect.any(Object));
     expect(dathost.startServer).toHaveBeenCalledWith('server-1');
-    expect(prisma.job.create).toHaveBeenCalledWith(
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ type: 'POLL_SERVER_BOOT' }),
+        create: expect.objectContaining({ type: 'POLL_SERVER_BOOT' }),
       }),
     );
   });
@@ -152,15 +192,115 @@ describe('ProvisioningService', () => {
       expect.stringContaining('matchzy_loadmatch_url'),
     );
     expect(credentials.issue).toHaveBeenCalledTimes(2);
-    expect(prisma.match.update).toHaveBeenCalledWith(
+    expect(prisma.match.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ state: 'MATCH_LOADED' }),
       }),
     );
-    expect(prisma.job.create).toHaveBeenCalledWith(
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ type: 'VOICE_RECONCILE' }),
+        create: expect.objectContaining({ type: 'VOICE_RECONCILE' }),
       }),
     );
+  });
+
+  it('does not schedule voice work when cancellation wins the final boot transition', async () => {
+    const prisma = createMockPrisma();
+    prisma.match.findUnique = vi.fn().mockResolvedValue(
+      createMatch({
+        state: 'SERVER_BOOTING',
+        version: 2,
+        dathostServerId: 'server-1',
+      }),
+    );
+    prisma.match.updateMany = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    const service = new ProvisioningService(
+      prisma,
+      createMockOrchestrator('server-1') as never,
+      createMockDathost() as never,
+      createMockCredentials() as never,
+      createMockCipher() as never,
+      new URL('https://example.com'),
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    );
+
+    await service.runBootPollJob(matchId, 'server-1', Date.now());
+
+    expect(prisma.job.upsert).not.toHaveBeenCalled();
+  });
+
+  it('repairs a lost boot-poll schedule on a SERVER_BOOTING provision retry', async () => {
+    const prisma = createMockPrisma();
+    prisma.match.findUnique = vi
+      .fn()
+      .mockResolvedValue(createMatch({ state: 'SERVER_BOOTING', dathostServerId: 'server-1' }));
+    const dathost = createMockDathost();
+    const service = new ProvisioningService(
+      prisma,
+      createMockOrchestrator('server-1') as never,
+      dathost as never,
+      createMockCredentials() as never,
+      createMockCipher() as never,
+      new URL('https://example.com'),
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    );
+    await service.runProvisionJob(matchId);
+    expect(dathost.startServer).toHaveBeenCalledWith('server-1');
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { idempotencyKey: `poll-boot:${matchId}:server-1` } }),
+    );
+  });
+
+  it('repairs a lost voice schedule when a boot retry sees MATCH_LOADED', async () => {
+    const prisma = createMockPrisma();
+    prisma.match.findUnique = vi
+      .fn()
+      .mockResolvedValue(createMatch({ state: 'MATCH_LOADED', dathostServerId: 'server-1' }));
+    const service = new ProvisioningService(
+      prisma,
+      createMockOrchestrator('server-1') as never,
+      createMockDathost() as never,
+      createMockCredentials() as never,
+      createMockCipher() as never,
+      new URL('https://example.com'),
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    );
+    await service.runBootPollJob(matchId, 'server-1', Date.now());
+    expect(prisma.job.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { idempotencyKey: `voice:${matchId}:loaded` } }),
+    );
+  });
+
+  it('does not continue boot work when cancellation wins while polling is blocked', async () => {
+    const prisma = createMockPrisma();
+    prisma.match.findUnique = vi
+      .fn()
+      .mockResolvedValue(createMatch({ state: 'SERVER_BOOTING', dathostServerId: 'server-1' }));
+    const dathost = createMockDathost();
+    let release!: (value: unknown) => void;
+    dathost.getServer.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const service = new ProvisioningService(
+      prisma,
+      createMockOrchestrator('server-1') as never,
+      dathost as never,
+      createMockCredentials() as never,
+      createMockCipher() as never,
+      new URL('https://example.com'),
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    );
+    const running = service.runBootPollJob(matchId, 'server-1', Date.now());
+    await vi.waitFor(() => expect(dathost.getServer).toHaveBeenCalled());
+    prisma.match.updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    release({ id: 'server-1', booting: false, ip: '192.0.2.1', ports: { game: 27015 } });
+    await running;
+    expect(dathost.sendConsole).not.toHaveBeenCalled();
+    expect(prisma.match.updateMany).toHaveBeenCalled();
   });
 });

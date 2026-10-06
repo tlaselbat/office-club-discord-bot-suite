@@ -12,9 +12,10 @@ class MemoryAttempts implements ProvisioningRepository {
   public findUnresolved(): Promise<ProvisioningAttemptRecord | null> {
     return Promise.resolve(this.attempt);
   }
-  public createIntent(attempt: ProvisioningAttemptRecord): Promise<void> {
+  public createIntent(attempt: ProvisioningAttemptRecord): Promise<boolean> {
+    if (this.attempt !== null) return Promise.resolve(false);
     this.attempt = attempt;
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
   public markUnknown(_id: string, finishedAt: Date): Promise<void> {
     if (this.attempt !== null)
@@ -53,6 +54,29 @@ const server: DatHostServer = {
 };
 
 describe('provisioning orchestrator', () => {
+  it('creates only one owned server when two workers start with no visible intent', async () => {
+    const repository = new MemoryAttempts();
+    const createProvisionalServer = vi.fn().mockResolvedValue(server);
+    const orchestrator = new ProvisioningOrchestrator(
+      repository,
+      {
+        createProvisionalServer,
+        duplicateServer: vi.fn().mockResolvedValue(server),
+        listServers: vi.fn(),
+        updateServer: vi.fn().mockResolvedValue(server),
+      },
+      new Set(['template']),
+    );
+
+    const results = await Promise.all([
+      orchestrator.provision(context),
+      orchestrator.provision(context),
+    ]);
+
+    expect(createProvisionalServer).toHaveBeenCalledOnce();
+    expect(results.filter((result) => result !== null)).toHaveLength(1);
+  });
+
   it('persists the destination before duplicate and never blindly retries a lost response', async () => {
     const repository = new MemoryAttempts();
     const duplicateServer = vi.fn().mockRejectedValue(new Error('connection lost'));

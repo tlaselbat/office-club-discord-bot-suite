@@ -85,8 +85,14 @@ describe('application readiness', () => {
   it('stays unavailable if recovery fails', async () => {
     mocks.recover.mockRejectedValue(new Error('recovery failed'));
     await expect(app.start()).rejects.toThrow('recovery failed');
-    expect(await readyStatus()).toBe(503);
+    await expect(readyStatus()).rejects.toThrow();
     expect(mocks.workerStart).not.toHaveBeenCalled();
+  });
+
+  it('closes the HTTP listener when Discord login fails during startup', async () => {
+    mocks.discord.login.mockRejectedValue(new Error('login failed'));
+    await expect(app.start()).rejects.toThrow('login failed');
+    await expect(app.http.inject('/health/live')).rejects.toThrow();
   });
 
   it('reports Discord and database failures after startup', async () => {

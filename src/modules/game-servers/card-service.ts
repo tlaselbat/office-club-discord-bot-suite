@@ -82,20 +82,60 @@ export class GameServerCardService {
       return;
     }
     try {
+      if (card.messageId !== null) {
+        const known = await (channel as TextChannel).messages
+          .fetch(card.messageId)
+          .catch((error: unknown) => {
+            if (isUnknownMessageError(error)) return null;
+            throw error instanceof Error
+              ? error
+              : new Error('Could not fetch managed Discord message.');
+          });
+        if (known !== null) {
+          await known.edit(
+            renderGameServerCard(card.gameServer, this.secret) as unknown as MessageEditOptions,
+          );
+          await this.prisma.gameServerCard.update({
+            where: { id: card.id },
+            data: {
+              state: 'HEALTHY',
+              lastReconciledAt: new Date(),
+              lastError: null,
+              lastKnownState: cardFingerprint(card.gameServer) as unknown as Prisma.InputJsonValue,
+              lastSuccessfulPollAt: card.gameServer.snapshot?.lastSuccessfulAt ?? null,
+            },
+          });
+          return;
+        }
+        await this.prisma.gameServerCard.update({
+          where: { id: card.id },
+          data: {
+            messageId: null,
+            state: 'MISSING',
+            lastError: 'Managed Discord message is missing.',
+          },
+        });
+      }
       const message = await (channel as TextChannel).send(
         renderGameServerCard(card.gameServer, this.secret) as unknown as MessageCreateOptions,
       );
-      await this.prisma.gameServerCard.update({
-        where: { id: card.id },
-        data: {
-          messageId: message.id,
-          state: 'HEALTHY',
-          lastReconciledAt: new Date(),
-          lastError: null,
-          lastKnownState: cardFingerprint(card.gameServer) as unknown as Prisma.InputJsonValue,
-          lastSuccessfulPollAt: card.gameServer.snapshot?.lastSuccessfulAt ?? null,
-        },
-      });
+      try {
+        await this.prisma.gameServerCard.update({
+          where: { id: card.id },
+          data: {
+            messageId: message.id,
+            state: 'HEALTHY',
+            lastReconciledAt: new Date(),
+            lastError: null,
+            lastKnownState: cardFingerprint(card.gameServer) as unknown as Prisma.InputJsonValue,
+            lastSuccessfulPollAt: card.gameServer.snapshot?.lastSuccessfulAt ?? null,
+          },
+        });
+      } catch (persistenceError: unknown) {
+        if (message.author.id === this.discord.user?.id)
+          await message.delete().catch(() => undefined);
+        throw persistenceError;
+      }
     } catch (error: unknown) {
       await this.markDeployment(card.id, 'ERROR', errorMessage(error));
       throw error;
