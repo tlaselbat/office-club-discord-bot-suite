@@ -72,13 +72,17 @@ export function rewardsPage(model: RewardsPageModel): string {
   const moduleBody = `<p>Release: ${statusBadge('In development', model.releaseVariant)}</p><p>Operational: ${statusBadge(model.settings.enabled ? 'Enabled' : 'Disabled', model.settings.enabled ? 'enabled' : 'disabled')}</p>${model.settings.version === null ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/rewards/${model.settings.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.settings.version)}"><button type="submit"${model.settings.enabled ? ' class="danger"' : ''}>${model.settings.enabled ? 'Disable' : 'Enable'}</button>`)}`;
   const action = `/admin/guilds/${escapeHtml(model.id)}/rewards`;
   const disabled = model.inDevelopment ? 'disabled' : '';
+  const savedTagRole = model.roles.find((role) => role.id === model.settings.tagRewardRoleId)?.name;
+  const tagRoleSummary = savedTagRole
+    ? `<p class="hint">Saved role: ${escapeHtml(savedTagRole)}</p>`
+    : '';
   const settingsForm = actionForm(
     `${action}/settings`,
     model.csrf,
     `<input type="hidden" name="version" value="${String(model.settings.version ?? 'new')}">
 <fieldset class="card"><legend>Earning rules</legend>${input('Text XP', 'textXpAmount', model.settings.textXpAmount, 'number', `min="1" required ${disabled}`, model.fieldErrors?.textXpAmount)}${input('Text cooldown seconds', 'textCooldownSeconds', model.settings.textCooldownSeconds, 'number', `min="1" required ${disabled}`, model.fieldErrors?.textCooldownSeconds)}${input('Voice XP', 'voiceXpAmount', model.settings.voiceXpAmount, 'number', `min="1" required ${disabled}`, model.fieldErrors?.voiceXpAmount)}${input('Voice interval seconds', 'voiceIntervalSeconds', model.settings.voiceIntervalSeconds, 'number', `min="60" required ${disabled}`, model.fieldErrors?.voiceIntervalSeconds)}</fieldset>
 <fieldset class="card"><legend>Eligible channels</legend>${multiSelect('Reward text channels', 'textChannelIds', model.textChannels, model.settings.textChannelIds, disabled, model.fieldErrors?.textChannelIds)}${multiSelect('Reward voice channels', 'voiceChannelIds', model.voiceChannels, model.settings.voiceChannelIds, disabled, model.fieldErrors?.voiceChannelIds)}</fieldset>
-<fieldset class="card"><legend>Guild-tag reward</legend>${input('Guild-tag required seconds', 'tagRequiredSeconds', model.settings.tagRequiredSeconds, 'number', `min="60" required ${disabled}`, model.fieldErrors?.tagRequiredSeconds)}${select('Guild-tag reward role', 'tagRewardRoleId', model.roles, model.settings.tagRewardRoleId, `value="" ${disabled}`, 'None', model.fieldErrors?.tagRewardRoleId)}${input('Guild-tag reconcile seconds', 'tagReconcileSeconds', model.settings.tagReconcileSeconds, 'number', `min="60" required ${disabled}`, model.fieldErrors?.tagReconcileSeconds)}</fieldset>
+<fieldset class="card"><legend>Guild-tag reward</legend>${input('Guild-tag required seconds', 'tagRequiredSeconds', model.settings.tagRequiredSeconds, 'number', `min="60" required ${disabled}`, model.fieldErrors?.tagRequiredSeconds)}<div class="field">${select('Guild-tag reward role', 'tagRewardRoleId', model.roles, model.settings.tagRewardRoleId, `value="" ${disabled}`, 'None', model.fieldErrors?.tagRewardRoleId)}${tagRoleSummary}</div>${input('Guild-tag reconcile seconds', 'tagReconcileSeconds', model.settings.tagReconcileSeconds, 'number', `min="60" required ${disabled}`, model.fieldErrors?.tagReconcileSeconds)}</fieldset>
 ${model.inDevelopment ? '' : '<button type="submit">Save reward settings</button>'}`,
   );
   const levelsForm = levelsCard(model, action, disabled);
@@ -136,7 +140,7 @@ function levelsCard(model: RewardsPageModel, action: string, disabled: string): 
 <td><label><span class="level-field-label">Level</span><input type="number" name="levelNumbers" min="0" value="${String(level.level)}" ${disabled}></label></td>
 <td><label><span class="level-field-label">XP threshold</span><input type="number" name="levelThresholds" min="0" value="${String(level.xpThreshold)}" ${disabled}></label></td>
 <td><label><span class="level-field-label">Label</span><input type="text" name="levelLabels" maxlength="128" value="${escapeHtml(level.label ?? '')}" ${disabled}></label></td>
-<td><label><span class="level-field-label">Role</span><select name="levelRoleIds" ${disabled}><option value="">None</option>${options(model.roles, level.roleId ?? '')}</select></label></td>
+<td><label><span class="level-field-label">Role</span><select name="levelRoleIds" ${disabled}><option value="">None</option>${options(model.roles, level.roleId ?? '')}</select></label>${level.roleId ? `<p class="hint">Saved role: ${escapeHtml(model.roles.find((role) => role.id === level.roleId)?.name ?? level.roleId)}</p>` : ''}</td>
 <td><button class="danger" type="submit" formaction="${escapeHtml(`${action}/levels/remove/${String(index)}`)}" ${disabled}>Remove</button></td>
 </tr>`,
     )

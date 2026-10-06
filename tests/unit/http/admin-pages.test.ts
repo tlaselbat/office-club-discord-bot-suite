@@ -96,7 +96,12 @@ describe('admin page views', () => {
       csrf: 'csrf-token',
       moduleEnabled: true,
       settingsVersion: 1,
-      textChannels: [{ id: '22345678901234567', name: '#servers' }],
+      textChannels: [
+        {
+          id: '22345678901234567',
+          name: '#a very long Discord channel name that must remain readable',
+        },
+      ],
       servers: [
         {
           id: '32345678901234567',
@@ -135,11 +140,18 @@ describe('admin page views', () => {
         aggregate: [],
         servers: [],
       },
-      availableServers: [],
+      availableServers: [
+        {
+          id: 'available-server-1',
+          name: 'A very long DatHost server name that must remain readable',
+          location: 'Los Angeles',
+        },
+      ],
     });
     expect(html).toContain('Office CS2');
     expect(html).toContain('ONLINE');
     expect(html).toContain('class="server-grid"');
+    expect(html).toContain('class="server-card-title"');
     expect(html).toContain('Polling enabled');
     expect(html).toContain('Last success');
     expect(html).toContain('Failures');
@@ -154,6 +166,18 @@ describe('admin page views', () => {
     expect(html).toContain('Publish server card');
     expect(html).not.toContain('Panel destination');
     expect(html).toContain('name="csrf" value="csrf-token"');
+    expect(html).toContain(
+      'Selected: A very long DatHost server name that must remain readable (Los Angeles)',
+    );
+    expect(html).toContain('Selected: #a very long Discord channel name that must remain readable');
+    expect(html).toContain(
+      'id="providerServerId" name="providerServerId" aria-describedby="providerServerId-selected-value"',
+    );
+    expect(html).toContain('id="providerServerId-selected-value"');
+    expect(html).toContain(
+      'id="gameServerId" name="gameServerId" required aria-describedby="gameServerId-selected-value"',
+    );
+    expect(html).toContain('id="gameServerId-selected-value"');
   });
 
   it('server details render persisted live state and independent display actions', () => {
@@ -165,7 +189,8 @@ describe('admin page views', () => {
       server: {
         id: '123e4567-e89b-12d3-a456-426614174000',
         displayName: 'Office CS2',
-        description: null,
+        description:
+          'A longer server description that needs more than a single line to inspect and edit.',
         enabled: true,
         public: true,
         connectDomain: null,
@@ -215,6 +240,10 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('/displays/123e4567-e89b-12d3-a456-426614174001/move');
+    expect(html).toContain('<textarea id="description" name="description" rows="4"');
+    expect(html).toContain(
+      'A longer server description that needs more than a single line to inspect and edit.',
+    );
   });
 
   it('competitive page shows in-development notice and read-only managed guidance', () => {
@@ -244,8 +273,18 @@ describe('admin page views', () => {
         defaultServerLocation: '',
         defaultGameProfileKey: 'standard',
       },
-      textChannels: [],
-      voiceChannels: [],
+      textChannels: [
+        {
+          id: '22345678901234567',
+          name: 'long text channel name that remains readable outside the select',
+        },
+      ],
+      voiceChannels: [
+        {
+          id: '32345678901234567',
+          name: 'long voice channel name that remains readable outside the select',
+        },
+      ],
       roles: [],
       profiles: [],
       diagnostics: {
@@ -258,6 +297,9 @@ describe('admin page views', () => {
     });
     expect(html).toContain('In development');
     expect(html).toContain('read-only');
+    expect(html).toContain(
+      'Selected: long text channel name that remains readable outside the select',
+    );
   });
 
   it('rewards page shows in-development notice and disables forms', () => {

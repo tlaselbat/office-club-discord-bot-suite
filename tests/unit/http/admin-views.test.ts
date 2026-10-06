@@ -6,6 +6,7 @@ import {
   multiSelect,
   rewardsPage,
   select,
+  table,
 } from '../../../src/http/admin/views.js';
 
 describe('admin views', () => {
@@ -103,6 +104,14 @@ describe('admin views', () => {
     expect(html).toContain('id="channelIds-hint"');
     expect(html).toContain('aria-describedby="channelIds-hint channelIds-error"');
     expect(html).toContain('aria-invalid="true"');
+  });
+
+  it('keeps record labels visible when tables reflow on narrow screens', () => {
+    const html = table(['Time', 'Summary'], [['today', 'A long & useful summary']]);
+
+    expect(html).toContain('class="table--records"');
+    expect(html).toContain('<th scope="col">Summary</th>');
+    expect(html).toContain('<td data-label="Summary">A long & useful summary</td>');
   });
 
   it('escapes reward level labels and renders CSRF-protected forms', () => {

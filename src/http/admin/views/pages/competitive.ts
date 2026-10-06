@@ -61,9 +61,9 @@ export function competitivePage(model: CompetitivePageModel): string {
     `/admin/guilds/${escapeHtml(model.id)}/competitive/settings`,
     model.csrf,
     `<input type="hidden" name="version" value="${String(model.version ?? 'new')}">
-<fieldset class="card"><legend>Discord channels</legend>${select('Lobby text channel', 'lobbyTextChannelId', model.textChannels, value('lobbyTextChannelId'), attr)}${select('Lobby voice channel', 'lobbyVoiceChannelId', model.voiceChannels, value('lobbyVoiceChannelId'), attr)}${select('Team 1 voice channel', 'team1VoiceChannelId', model.voiceChannels, value('team1VoiceChannelId'), attr)}${select('Team 2 voice channel', 'team2VoiceChannelId', model.voiceChannels, value('team2VoiceChannelId'), attr)}</fieldset>
+<fieldset class="card"><legend>Discord channels</legend>${selectedValueSelect('Lobby text channel', 'lobbyTextChannelId', model.textChannels, value('lobbyTextChannelId'), attr)}${selectedValueSelect('Lobby voice channel', 'lobbyVoiceChannelId', model.voiceChannels, value('lobbyVoiceChannelId'), attr)}${selectedValueSelect('Team 1 voice channel', 'team1VoiceChannelId', model.voiceChannels, value('team1VoiceChannelId'), attr)}${selectedValueSelect('Team 2 voice channel', 'team2VoiceChannelId', model.voiceChannels, value('team2VoiceChannelId'), attr)}</fieldset>
 <fieldset class="card"><legend>Staff roles</legend>${multiSelect('Privileged roles', 'privilegedRoleIds', model.roles, value('privilegedRoleIds'), channelAttr)}${multiSelect('Moderator roles', 'moderatorRoleIds', model.roles, value('moderatorRoleIds'), channelAttr)}${multiSelect('Administrator roles', 'administratorRoleIds', model.roles, value('administratorRoleIds'), channelAttr)}</fieldset>
-<fieldset class="card"><legend>DatHost / profile</legend>${input('DatHost template ID', 'dathostTemplateServerId', String(value('dathostTemplateServerId')), 'text', attr)}${input('Default server location', 'defaultServerLocation', String(value('defaultServerLocation')), 'text', attr)}${select('Default game profile', 'defaultGameProfileKey', model.profiles, value('defaultGameProfileKey'), attr)}</fieldset>
+<fieldset class="card"><legend>DatHost / profile</legend>${input('DatHost template ID', 'dathostTemplateServerId', String(value('dathostTemplateServerId')), 'text', attr)}${input('Default server location', 'defaultServerLocation', String(value('defaultServerLocation')), 'text', attr)}${selectedValueSelect('Default game profile', 'defaultGameProfileKey', model.profiles, value('defaultGameProfileKey'), attr)}</fieldset>
 ${readOnly ? '' : `<button type="submit">Save settings</button>`}`,
   );
   const managedBody = `<p>Managed resource state: <strong>${escapeHtml(model.managedState)}</strong></p>${managedGuidance(model.managedState)}`;
@@ -84,6 +84,28 @@ ${readOnly ? '' : `<button type="submit">Save settings</button>`}`,
         `<form method="post" action="/admin/guilds/${escapeHtml(model.id)}/competitive/diagnostics">${hiddenCsrf(model.csrf)}<button type="submit">Run diagnostics</button></form>${diagnosticsBody}`,
       ),
   );
+}
+
+function selectedValueSelect(
+  label: string,
+  name: string,
+  items: Array<{ id: string; name: string }>,
+  selected: string | string[],
+  attributes: string,
+): string {
+  const hintId = `${name}-selected-value`;
+  return `${select(label, name, items, selected, `${attributes} aria-describedby="${hintId}"`)}<p class="hint selected-value" id="${hintId}">${selectedValueSummary(selected, items)}</p>`;
+}
+
+function selectedValueSummary(
+  selected: string | string[],
+  items: Array<{ id: string; name: string }>,
+): string {
+  const values = (Array.isArray(selected) ? selected : [selected]).filter((id) => id !== '');
+  const names = (values.length === 0 ? items.slice(0, 1).map((item) => item.id) : values)
+    .map((id) => items.find((item) => item.id === id)?.name ?? id)
+    .map((name) => escapeHtml(name));
+  return names.length === 0 ? 'No options available.' : `Selected: ${names.join(', ')}`;
 }
 
 function managedGuidance(state: string): string {

@@ -20,7 +20,7 @@ export function auditPage(model: AuditPageModel): string {
   const body =
     model.entries.length === 0
       ? emptyState('No audit activity for this guild.')
-      : table(
+      : `<div class="audit-table">${table(
           ['Time', 'Actor', 'Module', 'Action', 'Outcome', 'Summary'],
           model.entries.map((entry) => [
             formatTimestamp(entry.createdAt),
@@ -30,7 +30,7 @@ export function auditPage(model: AuditPageModel): string {
             escapeHtml(entry.result),
             escapeHtml(entry.summary),
           ]),
-        );
+        )}</div>`;
   return adminShell(
     {
       title: `${model.name} · Audit`,
