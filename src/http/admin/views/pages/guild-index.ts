@@ -10,6 +10,9 @@ export interface GuildSummary {
     releaseVariant: string;
     operational: string;
     operationalVariant: string;
+    configured: boolean;
+    enabled: boolean;
+    version: number | null;
   }>;
 }
 

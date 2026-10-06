@@ -1,4 +1,12 @@
-import { adminShell, card, emptyState, escapeHtml, statusBadge, table } from '../components.js';
+import {
+  actionForm,
+  adminShell,
+  card,
+  emptyState,
+  escapeHtml,
+  statusBadge,
+  table,
+} from '../components.js';
 
 export interface GeneralPageModel {
   id: string;
@@ -14,6 +22,9 @@ export interface GeneralPageModel {
     releaseVariant: string;
     operational: string;
     operationalVariant: string;
+    configured: boolean;
+    enabled: boolean;
+    version: number | null;
     primaryAction?: { label: string; href: string } | undefined;
   }>;
   recentAudit: Array<{
@@ -25,6 +36,21 @@ export interface GeneralPageModel {
   }>;
 }
 
+function moduleToggle(
+  model: GeneralPageModel,
+  module: GeneralPageModel['modules'][number],
+): string {
+  if (!module.configured || module.version === null) {
+    return '';
+  }
+  const action = module.enabled ? 'disable' : 'enable';
+  return actionForm(
+    `/admin/guilds/${escapeHtml(model.id)}/${module.key}/${action}`,
+    model.csrf,
+    `<input type="hidden" name="version" value="${String(module.version)}"><button type="submit">${module.enabled ? 'Disable' : 'Enable'}</button>`,
+  );
+}
+
 export function generalPage(model: GeneralPageModel): string {
   const status = model.discordAvailable
     ? statusBadge('Connected', 'enabled')
@@ -32,7 +58,7 @@ export function generalPage(model: GeneralPageModel): string {
   const moduleCards = model.modules
     .map(
       (module) =>
-        `<div class="module-card"><h3><a href="${escapeHtml(module.href)}">${escapeHtml(module.label)}</a></h3><p>${statusBadge(module.release, module.releaseVariant)} ${statusBadge(module.operational, module.operationalVariant)}</p>${module.primaryAction === undefined ? '' : `<p class="actions"><a class="button${module.operationalVariant === 'in-development' ? ' disabled' : ''}" href="${escapeHtml(module.primaryAction.href)}">${escapeHtml(module.primaryAction.label)}</a></p>`}</div>`,
+        `<div class="module-card"><h3><a href="${escapeHtml(module.href)}">${escapeHtml(module.label)}</a></h3><p>${statusBadge(module.release, module.releaseVariant)} ${statusBadge(module.operational, module.operationalVariant)}</p><p class="actions">${moduleToggle(model, module)}${module.primaryAction === undefined ? '' : `<a class="button" href="${escapeHtml(module.primaryAction.href)}">${escapeHtml(module.primaryAction.label)}</a>`}</p></div>`,
     )
     .join('');
   const auditBody =

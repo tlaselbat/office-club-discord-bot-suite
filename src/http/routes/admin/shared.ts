@@ -80,6 +80,9 @@ export interface SharedHelpers {
         releaseVariant: string;
         operational: string;
         operationalVariant: string;
+        configured: boolean;
+        enabled: boolean;
+        version: number | null;
       }
     >
   >;
@@ -241,6 +244,9 @@ export function createSharedHelpers(deps: AdminRoutesDependencies): SharedHelper
                 ? 'needs-attention'
                 : 'enabled'
               : 'disabled',
+        configured: gameServerSettings !== null,
+        enabled: gameServerSettings?.enabled ?? false,
+        version: gameServerSettings?.version ?? null,
       },
       competitive: {
         key: 'competitive' as const,
@@ -259,6 +265,9 @@ export function createSharedHelpers(deps: AdminRoutesDependencies): SharedHelper
             : tenManSettings.enabled
               ? 'enabled'
               : 'disabled',
+        configured: tenManSettings !== null,
+        enabled: tenManSettings?.enabled ?? false,
+        version: tenManSettings?.version ?? null,
       },
       rewards: {
         key: 'rewards' as const,
@@ -277,6 +286,9 @@ export function createSharedHelpers(deps: AdminRoutesDependencies): SharedHelper
             : rewardSettingsRow.enabled
               ? 'enabled'
               : 'disabled',
+        configured: rewardSettingsRow !== null,
+        enabled: rewardSettingsRow?.enabled ?? false,
+        version: rewardSettingsRow?.version ?? null,
       },
     };
   };

@@ -135,6 +135,9 @@ export function registerAdminRoutes(
               href: `/admin/guilds/${params.data.guildId}/game-servers`,
             }
           : undefined,
+      configured: module.configured,
+      enabled: module.enabled,
+      version: module.version,
     }));
     const model: GeneralPageModel = {
       id: params.data.guildId,

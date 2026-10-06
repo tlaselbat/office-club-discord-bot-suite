@@ -280,13 +280,6 @@ export function registerRewardsRoutes(app: FastifyInstance, shared: SharedHelper
       const params = z.object({ guildId: idSchema }).safeParse(request.params);
       if (!params.success || shared.guild(params.data.guildId) === undefined)
         return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-      if (!isProductionReady('rewards'))
-        return shared.renderError(
-          reply,
-          `/admin/guilds/${params.data.guildId}/rewards`,
-          'Rewards is not production-ready.',
-          403,
-        );
       const body = rewardToggleSchema.safeParse(request.body);
       if (!body.success)
         return shared.renderError(
@@ -314,13 +307,6 @@ export function registerRewardsRoutes(app: FastifyInstance, shared: SharedHelper
       const params = z.object({ guildId: idSchema }).safeParse(request.params);
       if (!params.success || shared.guild(params.data.guildId) === undefined)
         return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-      if (!isProductionReady('rewards'))
-        return shared.renderError(
-          reply,
-          `/admin/guilds/${params.data.guildId}/rewards`,
-          'Rewards is not production-ready.',
-          403,
-        );
       const body = rewardToggleSchema.safeParse(request.body);
       if (!body.success)
         return shared.renderError(

@@ -63,12 +63,12 @@ export interface RewardsPageModel {
 export function rewardsPage(model: RewardsPageModel): string {
   const devNotice = model.inDevelopment
     ? notice(
-        'Rewards is in development and cannot be enabled or edited through the webpanel.',
+        'Rewards is in development. Enable/disable is allowed, but configuration editing is read-only.',
         'warning',
       )
     : '';
   const errorBlock = errorSummary(model.errors ?? []);
-  const moduleBody = `<p>Release: ${statusBadge('In development', model.releaseVariant)}</p><p>Operational: ${statusBadge(model.settings.enabled ? 'Enabled' : 'Disabled', model.settings.enabled ? 'enabled' : 'disabled')}</p>${model.inDevelopment ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/rewards/${model.settings.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.settings.version ?? 0)}"><button type="submit">${model.settings.enabled ? 'Disable' : 'Enable'}</button>`)}`;
+  const moduleBody = `<p>Release: ${statusBadge('In development', model.releaseVariant)}</p><p>Operational: ${statusBadge(model.settings.enabled ? 'Enabled' : 'Disabled', model.settings.enabled ? 'enabled' : 'disabled')}</p>${model.settings.version === null ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/rewards/${model.settings.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.settings.version ?? 0)}"><button type="submit">${model.settings.enabled ? 'Disable' : 'Enable'}</button>`)}`;
   const action = `/admin/guilds/${escapeHtml(model.id)}/rewards`;
   const disabled = model.inDevelopment ? 'disabled' : '';
   const settingsForm = actionForm(

@@ -44,12 +44,12 @@ export function competitivePage(model: CompetitivePageModel): string {
     : '';
   const devNotice = model.inDevelopment
     ? notice(
-        'Competitive is in development and cannot be enabled or edited through the webpanel.',
+        'Competitive is in development. Enable/disable is allowed, but configuration editing is read-only.',
         'warning',
       )
     : '';
   const errorBlock = errorSummary(model.errors ?? []);
-  const moduleBody = `<p>Release: ${statusBadge(model.release, model.releaseVariant)}</p><p>Operational: ${statusBadge(model.enabled ? 'Enabled' : 'Disabled', model.enabled ? 'enabled' : 'disabled')}</p>${model.inDevelopment || model.locked ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/competitive/${model.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.version ?? 0)}"><button type="submit">${model.enabled ? 'Disable' : 'Enable'}</button>`)}`;
+  const moduleBody = `<p>Release: ${statusBadge(model.release, model.releaseVariant)}</p><p>Operational: ${statusBadge(model.enabled ? 'Enabled' : 'Disabled', model.enabled ? 'enabled' : 'disabled')}</p>${model.version === null ? '' : actionForm(`/admin/guilds/${escapeHtml(model.id)}/competitive/${model.enabled ? 'disable' : 'enable'}`, model.csrf, `<input type="hidden" name="version" value="${String(model.version ?? 0)}"><button type="submit">${model.enabled ? 'Disable' : 'Enable'}</button>`)}`;
   const diagnosticsBody =
     model.diagnostics === undefined
       ? '<p class="empty">Run diagnostics to see a live report.</p>'

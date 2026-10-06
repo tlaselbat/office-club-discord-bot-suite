@@ -189,13 +189,6 @@ export function registerCompetitiveRoutes(app: FastifyInstance, shared: SharedHe
         const discordGuild = shared.guild(params.data.guildId);
         if (discordGuild === undefined)
           return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-        if (!isProductionReady('competitive'))
-          return shared.renderError(
-            reply,
-            `/admin/guilds/${params.data.guildId}/competitive`,
-            'Competitive is not production-ready.',
-            403,
-          );
         await shared.deps.resources[action](
           params.data.guildId,
           auth.discordUserId,
