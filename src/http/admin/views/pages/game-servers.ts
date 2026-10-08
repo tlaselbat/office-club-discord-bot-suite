@@ -314,7 +314,20 @@ ${model.submitted === undefined ? '' : notice('These are unsaved edits. Saved va
 ${input('Sort order', 'sortOrder', value('sortOrder', model.server.sortOrder), 'number', 'min="0"', model.fieldErrors?.sortOrder)}
 </fieldset><fieldset class="game-server-config-group"><legend>Card Profile</legend>
 ${input('Display name', 'displayName', value('displayName', model.server.displayName), 'text', 'maxlength="64" required', model.fieldErrors?.displayName)}
+<div class="description-toolbar" role="group" aria-label="Description text styling">${[
+      ['Bold', '**'],
+      ['Italic', '*'],
+      ['Underline', '__'],
+      ['Strikethrough', '~~'],
+    ]
+      .map(
+        ([label, marker]) =>
+          `<button class="secondary" type="button" aria-controls="description" data-markdown-target="description" data-markdown-marker="${escapeHtml(marker)}">${escapeHtml(label)}</button>`,
+      )
+      .join('')}</div>
 ${textarea('Description', 'description', value('description', model.server.description), 'maxlength="500"', model.fieldErrors?.description)}
+<p class="hint" id="description-format-status" role="status">Select text, then choose a style. Formatting uses Discord Markdown and counts toward the 500-character limit.</p>
+<p class="hint">Text styles: <strong>Bold</strong> <code>**text**</code>; <em>Italic</em> <code>*text*</code>; <u>Underline</u> <code>__text__</code>; <s>Strikethrough</s> <code>~~text~~</code>. You can combine styles, such as <code>***text***</code> for bold italic. Styles appear on the Discord card after saving.</p>
 <p class="hint">Blank description uses: ${escapeHtml(DEFAULT_CARD_DESCRIPTION)}</p>
 ${input('Accent color', 'accentColor', value('accentColor', profile.accentColor), 'text', 'pattern="#[0-9a-fA-F]{6}" maxlength="7" required', model.fieldErrors?.accentColor)}
 ${input('Thumbnail HTTPS URL', 'thumbnailImageUrl', value('thumbnailImageUrl', profile.thumbnailImageUrl), 'url', 'maxlength="500"', model.fieldErrors?.thumbnailImageUrl)}

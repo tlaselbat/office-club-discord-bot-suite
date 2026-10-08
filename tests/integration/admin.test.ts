@@ -76,5 +76,6 @@ describe('owner panel', () => {
     expect(response.body).toContain('scope=identify');
     expect(response.headers['set-cookie']).toContain('Secure');
     expect(response.headers['content-security-policy']).toContain("default-src 'none'");
+    expect(response.headers['content-security-policy']).toContain("script-src 'self'");
   });
 });

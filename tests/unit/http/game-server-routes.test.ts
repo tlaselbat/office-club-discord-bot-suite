@@ -92,6 +92,9 @@ describe('Game Server configuration routes', () => {
     expect(response.body).toContain('value="https://example.com/icon.png"');
     expect(response.body).toContain('value="22345678901234567"');
     expect(response.body).toContain('Saved description');
+    expect(response.body).toContain('aria-label="Description text styling"');
+    expect(response.body).toContain('data-markdown-marker="**"');
+    expect(response.body).toContain('data-markdown-marker="__"');
   });
 
   it('saves typed profile fields through the authoritative service', async () => {

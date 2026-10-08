@@ -110,7 +110,7 @@ export function createSharedHelpers(deps: AdminRoutesDependencies): SharedHelper
       'cache-control': 'no-store',
       'x-robots-tag': 'noindex, nofollow',
       'content-security-policy':
-        "default-src 'none'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
     });
 
   const authenticate = async (
