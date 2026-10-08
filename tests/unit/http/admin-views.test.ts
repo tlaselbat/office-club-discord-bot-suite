@@ -4,12 +4,23 @@ import {
   escapeHtml,
   guildIndex,
   multiSelect,
+  panelCss,
   rewardsPage,
   select,
   table,
 } from '../../../src/http/admin/views.js';
 
 describe('admin views', () => {
+  it('lets the game server editor use its responsive two-column layout', () => {
+    expect(panelCss).toContain(
+      'form[action$="/edit"]{width:100%;max-width:none;min-width:0;display:grid',
+    );
+    expect(panelCss).toContain(
+      '@media(max-width:800px){form[action$="/edit"]{grid-template-columns:minmax(0,1fr)}',
+    );
+    expect(panelCss).toContain('.game-server-section-nav a[aria-current="location"]');
+  });
+
   it('marks only the current module in guild navigation', () => {
     const html = adminShell(
       {

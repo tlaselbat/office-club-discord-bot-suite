@@ -137,8 +137,74 @@ const buttonSchema = z.object({
 const httpsUrl = z.url().refine((value) => new URL(value).protocol === 'https:', 'Must use HTTPS');
 const emojiId = z.string().regex(/^\d{17,20}$/, 'Must be a Discord emoji ID');
 
+export const CARD_LAYOUT_VERSION = 1;
+const cardLayoutElementSchema = z.discriminatedUnion('type', [
+  z.object({
+    id: z.uuid(),
+    type: z.literal('text'),
+    label: z.string().trim().min(1).max(80),
+    template: validatedTemplate(),
+    visible: z.boolean(),
+    style: z.enum(CARD_LINE_STYLES),
+  }),
+  z.object({
+    id: z.uuid(),
+    type: z.literal('gallery'),
+    label: z.string().trim().min(1).max(80),
+    visible: z.boolean(),
+    items: z
+      .array(
+        z.object({
+          id: z.uuid(),
+          source: z.enum(['map', 'custom', 'fallback']),
+          url: httpsUrl.nullable().default(null),
+          description: z.string().max(1024),
+        }),
+      )
+      .min(1)
+      .max(10),
+  }),
+  z.object({
+    id: z.uuid(),
+    type: z.literal('separator'),
+    label: z.string().trim().min(1).max(80),
+    visible: z.boolean(),
+    divider: z.boolean(),
+    spacing: z.union([z.literal(1), z.literal(2)]),
+  }),
+  z.object({
+    id: z.uuid(),
+    type: z.literal('section'),
+    label: z.string().trim().min(1).max(80),
+    visible: z.boolean(),
+    template: validatedTemplate(),
+    style: z.enum(CARD_LINE_STYLES),
+    thumbnailUrl: httpsUrl.nullable().default(null),
+  }),
+  z.object({
+    id: z.uuid(),
+    type: z.literal('actions'),
+    label: z.string().trim().min(1).max(80),
+    visible: z.boolean(),
+  }),
+]);
+export type CardLayoutElement = z.infer<typeof cardLayoutElementSchema>;
+export const cardLayoutSchema = z
+  .object({
+    version: z.literal(CARD_LAYOUT_VERSION),
+    elements: z.array(cardLayoutElementSchema).min(1).max(35),
+  })
+  .superRefine((layout, context) => {
+    const ids = layout.elements.map((element) => element.id);
+    if (new Set(ids).size !== ids.length)
+      context.addIssue({ code: 'custom', message: 'Layout element IDs must be unique.' });
+    if (layout.elements.filter((element) => element.type === 'actions').length > 1)
+      context.addIssue({ code: 'custom', message: 'Only one action row is supported.' });
+  });
+
 /** Persisted card presentation overrides. Null image and emoji values inherit their legacy defaults. */
 export const cardProfileSchema = z.object({
+  layout: cardLayoutSchema.optional(),
   textLines: textLinesSchema.optional(),
   mapArtwork: z.boolean().optional(),
   accentColor: z
@@ -195,7 +261,7 @@ export function normalizeCardProfile(value: unknown): CardProfile {
     const parsed = schema.safeParse(input);
     return parsed.success ? parsed.data : schema.parse(undefined);
   };
-  return {
+  const normalized: CardProfile = {
     accentColor: field(cardProfileSchema.shape.accentColor, source.accentColor),
     thumbnailImageUrl: field(cardProfileSchema.shape.thumbnailImageUrl, source.thumbnailImageUrl),
     onlineEmojiId: field(cardProfileSchema.shape.onlineEmojiId, source.onlineEmojiId),
@@ -217,7 +283,114 @@ export function normalizeCardProfile(value: unknown): CardProfile {
     statusLabels: field(cardProfileSchema.shape.statusLabels, source.statusLabels),
     fieldOrder: field(cardProfileSchema.shape.fieldOrder, source.fieldOrder),
     buttons: field(cardProfileSchema.shape.buttons, source.buttons),
+    ...(source.layout === undefined
+      ? {}
+      : (() => {
+          const parsed = cardLayoutSchema.safeParse(source.layout);
+          return parsed.success ? { layout: parsed.data } : {};
+        })()),
   };
+  return normalized;
+}
+
+/** Stable legacy projection; generated IDs remain deterministic and do not create DB writes. */
+export function resolveCardLayout(
+  value: unknown,
+  legacyDescription?: string | null,
+): CardLayoutElement[] {
+  const profile = normalizeCardProfile(value);
+  if (profile.layout !== undefined) return profile.layout.elements;
+  const lines = resolveCardLines(value, legacyDescription);
+  const stableId = (key: string) => {
+    let hash = 2166136261;
+    for (const char of key) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    const hex = (hash >>> 0).toString(16).padStart(8, '0');
+    return `${hex.slice(0, 8)}-0000-4000-8000-${hex.padStart(12, '0').slice(-12)}`;
+  };
+  const element = (key: string, data: CardLayoutElement): CardLayoutElement => ({
+    ...data,
+    id: stableId(key),
+  });
+  const header = lines.slice(0, 3);
+  const headerText =
+    header
+      .map((line) => {
+        if (!line.visible || !line.template.trim()) return '';
+        const prefix = { large: '# ', medium: '## ', small: '### ', normal: '', subtext: '-# ' }[
+          line.style
+        ];
+        return prefix + line.template.replace(/^(?:#{1,3}|-#)\s+/, '');
+      })
+      .filter(Boolean)
+      .join('\n') || '\u200b';
+  const layout: CardLayoutElement[] = [
+    element('header', {
+      id: '',
+      type: 'section',
+      label: 'Header and thumbnail',
+      visible: true,
+      template: headerText,
+      style: 'normal',
+      thumbnailUrl: profile.thumbnailImageUrl,
+    }),
+  ];
+  for (let index = 3; index < 6; index++) {
+    const line = lines[index];
+    if (index === 4 && (profile.mapArtwork ?? profile.visibleFields.currentMap))
+      layout.push(
+        element('map-separator', {
+          id: '',
+          type: 'separator',
+          label: 'Map separator',
+          visible: true,
+          divider: true,
+          spacing: 1,
+        }),
+      );
+    if (line?.visible)
+      layout.push(
+        element(`text-${line.id}`, {
+          id: '',
+          type: 'text',
+          label: `Card ${line.id}`,
+          visible: true,
+          template: line.template,
+          style: line.style,
+        }),
+      );
+    if (index === 4 && (profile.mapArtwork ?? profile.visibleFields.currentMap))
+      layout.push(
+        element('map-gallery', {
+          id: '',
+          type: 'gallery',
+          label: 'Map artwork',
+          visible: true,
+          items: [
+            {
+              id: stableId('map-image'),
+              source: 'map',
+              url: null,
+              description: '{currentmap} map artwork',
+            },
+          ],
+        }),
+      );
+  }
+  if (profile.buttons.connect || profile.buttons.mapRules)
+    layout.push(
+      element('actions', { id: '', type: 'actions', label: 'Server actions', visible: true }),
+    );
+  layout.push(
+    element('updates-separator', {
+      id: '',
+      type: 'separator',
+      label: 'Updates separator',
+      visible: true,
+      divider: true,
+      spacing: 1,
+    }),
+  );
+  return layout;
 }
 
 function sanitizePersistedTemplate(value: unknown): unknown {

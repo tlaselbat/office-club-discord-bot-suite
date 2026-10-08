@@ -11,10 +11,9 @@ import path from 'node:path';
 import {
   cardAccentColor,
   DEFAULT_CARD_DESCRIPTION,
-  DEFAULT_CARD_TEMPLATES,
   isHttpsUrl,
   resolveCardProfile,
-  resolveCardLines,
+  resolveCardLayout,
   type CardLineStyle,
 } from './card-profile.js';
 import { createGameServerCustomId } from './custom-id.js';
@@ -195,96 +194,116 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const mapImageUrl = resolveMapImageUrl(map, server.imageUrl);
   const profile = resolveCardProfile(server.cardProfile);
   const values = cardPlaceholderValues(server, profile, location);
-  if (profile.textLines !== undefined)
-    return renderGenericCard(server, secret, profile, values, mapImageUrl, displayMap);
-  const headerLines = [
-    profile.visibleFields.title ? `# ${resolveCardTemplate(profile.templates.title, values)}` : '',
-    profile.visibleFields.subtitle
-      ? `### ${resolveSubtitle(profile.templates.subtitle, values, location)}`
-      : '',
-  ].filter(Boolean);
-  if (profile.visibleFields.playerCount) {
-    headerLines.push(`-# ${resolveCardTemplate(profile.templates.playerCount, values)}`);
-  }
-  const headerComponents: Record<string, unknown>[] = [textDisplay(headerLines.join('\n'))];
+  const layout = resolveCardLayout(server.cardProfile, server.description);
+  return renderLayoutCard(server, secret, profile, values, layout, mapImageUrl, displayMap);
+}
 
-  const headerSection = {
-    type: componentType.section,
-    components: headerComponents,
-    accessory: {
-      type: componentType.thumbnail,
-      media: { url: profile.thumbnailImageUrl },
-    },
-  };
-
-  const mapGallery = {
-    type: componentType.mediaGallery,
-    items: [
-      {
-        media: { url: mapImageUrl },
-        description: `${displayMap} map artwork`,
-      },
-    ],
-  };
-
-  const buttons = [
-    ...(profile.buttons.connect
-      ? [connectButton(server, secret, profile.buttons.connectLabel)]
-      : []),
-    ...(profile.buttons.mapRules
-      ? [mapRulesButton(server, secret, profile.buttons.mapRulesLabel)]
-      : []),
-  ];
-
-  const bodyComponents: Record<string, unknown>[] = [];
-  for (const field of profile.fieldOrder) {
-    if (!profile.visibleFields[field]) continue;
-    if (field === 'description') {
-      const legacyDescription = server.description?.trim();
-      const configuredTemplates =
-        server.cardProfile !== null &&
-        typeof server.cardProfile === 'object' &&
-        Object.hasOwn(server.cardProfile, 'templates');
-      const template =
-        !configuredTemplates &&
-        profile.templates.description === DEFAULT_CARD_DESCRIPTION &&
-        legacyDescription
-          ? legacyDescription
-          : profile.templates.description;
-      bodyComponents.push(textDisplay(resolveCardTemplate(template, values)));
+function renderLayoutCard(
+  server: ServerView,
+  secret: string,
+  profile: ReturnType<typeof resolveCardProfile>,
+  values: Record<string, string>,
+  layout: ReturnType<typeof resolveCardLayout>,
+  mapImageUrl: string,
+  displayMap: string,
+) {
+  const components: Record<string, unknown>[] = [];
+  for (const element of layout) {
+    if (!element.visible) continue;
+    if (element.type === 'text') {
+      const content = styleCardLine(resolveCardTemplate(element.template, values), element.style);
+      if (content.trim()) components.push(textDisplay(content));
+    } else if (element.type === 'section') {
+      const sectionText = resolveCardTemplate(element.template, values);
+      components.push({
+        type: componentType.section,
+        components: [textDisplay(sectionText)],
+        accessory: {
+          type: componentType.thumbnail,
+          media: { url: element.thumbnailUrl ?? profile.thumbnailImageUrl },
+        },
+      });
+    } else if (element.type === 'gallery') {
+      const items = element.items.map((item) => ({
+        media: {
+          url:
+            item.source === 'map'
+              ? mapImageUrl
+              : item.source === 'fallback'
+                ? resolveMapImageUrl(null, null)
+                : (item.url ?? resolveMapImageUrl(null, null)),
+        },
+        description: resolveCardTemplate(item.description || `${displayMap} map artwork`, values),
+      }));
+      components.push({ type: componentType.mediaGallery, items });
+    } else if (element.type === 'separator') {
+      components.push({
+        type: componentType.separator,
+        divider: element.divider,
+        spacing: element.spacing,
+      });
+    } else {
+      const buttons = [
+        ...(profile.buttons.connect
+          ? [connectButton(server, secret, profile.buttons.connectLabel)]
+          : []),
+        ...(profile.buttons.mapRules
+          ? [mapRulesButton(server, secret, profile.buttons.mapRulesLabel)]
+          : []),
+      ];
+      if (buttons.length) components.push({ type: componentType.actionRow, components: buttons });
     }
-    if (field === 'currentMap') {
-      bodyComponents.push(
-        { type: componentType.separator, divider: true, spacing: 1 },
-        textDisplay(resolveCardTemplate(profile.templates.currentMap, values)),
-        mapGallery,
-      );
-    }
-    if (field === 'serverAddress')
-      bodyComponents.push(
-        textDisplay(resolveCardTemplate(profile.templates.serverAddress, values)),
-      );
   }
-  if (buttons.length > 0)
-    bodyComponents.push({ type: componentType.actionRow, components: buttons });
-
+  if (profile.visibleFields.updates) components.push(...renderUpdatesSection(server));
   const container: Record<string, unknown> = {
     type: componentType.container,
     accentColor: cardAccentColor(profile.accentColor),
-    components: [
-      headerSection,
-      ...bodyComponents,
-      { type: componentType.separator, divider: true, spacing: 1 },
-      ...(profile.visibleFields.updates ? renderUpdatesSection(server) : []),
-    ],
+    components,
   };
-
+  validateRenderedLayout(container);
   enforceTextBudget(container);
   return {
     components: [container] as unknown[],
     flags: MessageFlags.IsComponentsV2 as number,
     allowedMentions: { parse: [] },
   };
+}
+
+function validateRenderedLayout(container: Record<string, unknown>): void {
+  const children = container.components as Record<string, unknown>[];
+  const count = (node: Record<string, unknown>): number =>
+    1 +
+    ((node.components ?? []) as Record<string, unknown>[]).reduce(
+      (total, child) => total + count(child),
+      0,
+    ) +
+    (node.accessory === undefined ? 0 : count(node.accessory as Record<string, unknown>));
+  if (count(container) > 40)
+    throw new Error('Card layout exceeds Discord’s 40 component message limit.');
+  if (children.length > 10)
+    throw new Error('Card layout exceeds Discord’s 10 top-level container components.');
+  for (const child of children) {
+    if (child.type === componentType.section) {
+      const content = child.components as Record<string, unknown>[];
+      const accessoryType = (child.accessory as Record<string, unknown> | undefined)?.type;
+      if (
+        content.length < 1 ||
+        content.length > 3 ||
+        content.some((part) => part.type !== componentType.textDisplay) ||
+        ![componentType.thumbnail, componentType.button].includes(accessoryType as 11 | 2)
+      )
+        throw new Error(
+          'Card Sections require one to three text components and a valid accessory.',
+        );
+    }
+    if (
+      child.type === componentType.mediaGallery &&
+      ((child.items as unknown[]).length < 1 || (child.items as unknown[]).length > 10)
+    )
+      throw new Error('Discord media galleries require one to ten items.');
+    if (child.type === componentType.actionRow && (child.components as unknown[]).length > 5)
+      throw new Error('Discord action rows support at most five buttons.');
+  }
 }
 
 /** Styles apply to the first line only; embedded Markdown remains user controlled. */
@@ -293,64 +312,6 @@ export function styleCardLine(content: string, style: CardLineStyle): string {
   if (style === 'normal') return content;
   const prefix = { large: '# ', medium: '## ', small: '### ', subtext: '-# ' }[style];
   return prefix + content.replace(/^(?:#{1,3}|-#)\s+/, '');
-}
-
-function renderGenericCard(
-  server: ServerView,
-  secret: string,
-  profile: ReturnType<typeof resolveCardProfile>,
-  values: Record<string, string>,
-  mapImageUrl: string,
-  displayMap: string,
-) {
-  const lines = resolveCardLines(profile, server.description).map((line) =>
-    line.visible ? styleCardLine(resolveCardTemplate(line.template, values), line.style) : '',
-  );
-  const header = lines
-    .slice(0, 3)
-    .filter((content) => content.trim())
-    .join('\n');
-  const components: Record<string, unknown>[] = [
-    {
-      type: componentType.section,
-      components: [textDisplay(header || '\u200b')],
-      accessory: { type: componentType.thumbnail, media: { url: profile.thumbnailImageUrl } },
-    },
-  ];
-  const artwork = profile.mapArtwork ?? profile.visibleFields.currentMap;
-  for (let index = 3; index < 6; index++) {
-    if (index === 4 && artwork)
-      components.push({ type: componentType.separator, divider: true, spacing: 1 });
-    const content = lines[index];
-    if (content?.trim()) components.push(textDisplay(content));
-    if (index === 4 && artwork)
-      components.push({
-        type: componentType.mediaGallery,
-        items: [{ media: { url: mapImageUrl }, description: `${displayMap} map artwork` }],
-      });
-  }
-  const buttons = [
-    ...(profile.buttons.connect
-      ? [connectButton(server, secret, profile.buttons.connectLabel)]
-      : []),
-    ...(profile.buttons.mapRules
-      ? [mapRulesButton(server, secret, profile.buttons.mapRulesLabel)]
-      : []),
-  ];
-  if (buttons.length) components.push({ type: componentType.actionRow, components: buttons });
-  components.push({ type: componentType.separator, divider: true, spacing: 1 });
-  if (profile.visibleFields.updates) components.push(...renderUpdatesSection(server));
-  const container = {
-    type: componentType.container,
-    accentColor: cardAccentColor(profile.accentColor),
-    components,
-  };
-  enforceTextBudget(container);
-  return {
-    components: [container] as unknown[],
-    flags: MessageFlags.IsComponentsV2 as number,
-    allowedMentions: { parse: [] },
-  };
 }
 
 /** Discord permits 4000 text characters across the entire Components V2 message. */
@@ -558,17 +519,6 @@ export function resolveCardTemplate(template: string, values: Record<string, str
     // Telemetry and configured text must never trigger Discord mentions.
     return value.replace(/@/g, '@\u200b').replace(/`/g, '\\`');
   });
-}
-
-function resolveSubtitle(
-  template: string,
-  values: Record<string, string>,
-  location: string | null,
-): string {
-  if (template !== DEFAULT_CARD_TEMPLATES.subtitle) return resolveCardTemplate(template, values);
-  const withoutLocation = { ...values, location: '' };
-  const status = resolveCardTemplate(template, withoutLocation);
-  return location === null ? status : `${status} · ${location}`;
 }
 
 function configuredStatusLabel(

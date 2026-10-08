@@ -7,6 +7,7 @@ import {
   cardProfileSchema,
   resolveCardLines,
   normalizeCardProfile,
+  resolveCardLayout,
   resolveCardProfile,
   validateCardTemplate,
 } from '../../../../src/modules/game-servers/card-profile.js';
@@ -117,5 +118,55 @@ describe('generic card line contract', () => {
       template: 'Keep {servername} ',
       style: 'normal',
     });
+  });
+  it('projects legacy cards into a deterministic ordered layout and recovers invalid layouts', () => {
+    const first = resolveCardLayout({}, 'Legacy description');
+    const second = resolveCardLayout({}, 'Legacy description');
+    expect(first).toEqual(second);
+    expect(new Set(first.map((element) => element.id)).size).toBe(first.length);
+    expect(first.map((element) => element.type)).toEqual([
+      'section',
+      'text',
+      'separator',
+      'text',
+      'gallery',
+      'text',
+      'actions',
+      'separator',
+    ]);
+    expect(first.find((element) => element.label === 'Card description')).toMatchObject({
+      type: 'text',
+      template: 'Legacy description',
+    });
+    const invalid = normalizeCardProfile({
+      layout: { version: 1, elements: [{ id: 'bad', type: 'text' }] },
+    });
+    expect(invalid.layout).toBeUndefined();
+    expect(resolveCardLayout({ layout: { version: 1, elements: [] } }).length).toBeGreaterThan(0);
+  });
+  it('validates unique IDs, one action row, HTTPS gallery sources, and gallery bounds', () => {
+    const layout = resolveCardLayout({});
+    expect(cardProfileSchema.safeParse({ layout: { version: 1, elements: layout } }).success).toBe(
+      true,
+    );
+    expect(
+      cardProfileSchema.safeParse({ layout: { version: 1, elements: [...layout, layout[0]] } })
+        .success,
+    ).toBe(false);
+    const galleries = layout.map((element) =>
+      element.type === 'gallery'
+        ? {
+            ...element,
+            items: element.items.map((item) => ({
+              ...item,
+              source: 'custom' as const,
+              url: 'http://bad.example',
+            })),
+          }
+        : element,
+    );
+    expect(
+      cardProfileSchema.safeParse({ layout: { version: 1, elements: galleries } }).success,
+    ).toBe(false);
   });
 });

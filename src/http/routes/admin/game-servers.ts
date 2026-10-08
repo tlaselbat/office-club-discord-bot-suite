@@ -20,6 +20,7 @@ import {
   validateCardTemplate,
   CARD_LINE_IDS,
   CARD_LINE_STYLES,
+  cardLayoutSchema,
 } from '../../../modules/game-servers/card-profile.js';
 
 const optionalHttpsUrl = z
@@ -82,6 +83,8 @@ const serverEditSchema = z
     currentMapTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.currentMap),
     serverAddressTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.serverAddress),
     linesVersion: z.literal('1').optional(),
+    layoutVersion: z.literal('1').optional(),
+    layoutJson: z.string().max(30000).optional(),
     lineOrder: z.string().max(100).optional(),
     titleStyle: z.enum(CARD_LINE_STYLES).default('large'),
     subtitleStyle: z.enum(CARD_LINE_STYLES).default('small'),
@@ -580,6 +583,17 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         return reply.code(400).type('text/html').send(html);
       }
       const profile = cardProfileSchema.safeParse({
+        ...(body.data.layoutVersion === '1'
+          ? (() => {
+              let layout: unknown;
+              try {
+                layout = JSON.parse(body.data.layoutJson ?? '');
+              } catch {
+                layout = null;
+              }
+              return { layout };
+            })()
+          : {}),
         ...(body.data.linesVersion === '1'
           ? {
               textLines: (body.data.lineOrder ?? CARD_LINE_IDS.join(',')).split(',').map((id) => {
@@ -647,8 +661,25 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         return reply.code(400).type('text/html').send(html);
       }
       if (!profile.success) {
+        let submittedLayout: unknown = null;
+        if (body.data.layoutVersion === '1') {
+          try {
+            submittedLayout = JSON.parse(body.data.layoutJson ?? '') as unknown;
+          } catch {
+            submittedLayout = null;
+          }
+        }
+        const layoutInvalid =
+          body.data.layoutVersion === '1' && !cardLayoutSchema.safeParse(submittedLayout).success;
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
-          errors: ['Review the Card Profile fields and try again.'],
+          errors: [
+            ...(layoutInvalid
+              ? [
+                  'The Card Layout is invalid. Check unique IDs, HTTPS image URLs, and supported element settings.',
+                ]
+              : []),
+            'Review the Card Profile fields and try again.',
+          ],
           fieldErrors: z.flattenError(profile.error).fieldErrors,
           submitted,
         });

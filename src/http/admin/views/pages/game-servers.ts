@@ -23,6 +23,7 @@ import {
   CARD_LINE_STYLES,
   DEFAULT_CARD_LINE_STYLES,
   resolveCardLines,
+  resolveCardLayout,
   type CardLine,
   DEFAULT_CARD_DESCRIPTION,
   DEFAULT_CARD_TEMPLATES,
@@ -310,6 +311,11 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
       ? profile.buttons[key]
       : model.submitted[key === 'connect' ? 'showConnectButton' : 'showMapRulesButton'] === '1';
   const savedLines = resolveCardLines(model.server.cardProfile, model.server.description);
+  const savedLayout = resolveCardLayout(model.server.cardProfile, model.server.description);
+  const layoutJsonValue =
+    typeof model.submitted?.layoutJson === 'string'
+      ? model.submitted.layoutJson
+      : JSON.stringify(savedLayout);
   const requestedOrder =
     typeof model.submitted?.lineOrder === 'string'
       ? model.submitted.lineOrder.split(',')
@@ -414,10 +420,11 @@ ${input('Sort order', 'sortOrder', value('sortOrder', model.server.sortOrder), '
 </fieldset><fieldset id="card-designer" class="game-server-config-group"><legend>Card Profile</legend>
 ${input('Display name', 'displayName', value('displayName', model.server.displayName), 'text', 'maxlength="64" required', model.fieldErrors?.displayName)}
 <fieldset id="card-text-settings" class="game-server-config-group"><legend>Card text lines</legend>
-<input type="hidden" name="linesVersion" value="1"><input type="hidden" name="lineOrder" id="card-line-order" value="${escapeHtml(editorLines.map((line) => line.id).join(','))}">
+<input type="hidden" name="linesVersion" value="1"><input type="hidden" name="lineOrder" id="card-line-order" value="${escapeHtml(editorLines.map((line) => line.id).join(','))}"><input type="hidden" name="layoutVersion" value="1"><input type="hidden" name="layoutJson" id="card-layout-json" value="${escapeHtml(layoutJsonValue)}">
 <input type="hidden" name="fieldOrder" value="${escapeHtml(profile.fieldOrder.join(','))}">
-<p class="hint">Reorder with Up/Down. Hidden or empty lines do not appear.</p><details class="inline-help"><summary>Text and Discord layout help</summary><p>Line names stay fixed while display order changes. The first three positions share the thumbnail section; map artwork stays after the fifth position. Text styles use Discord Markdown, and Small text uses <code>-#</code>. Discord controls final spacing and limits total card text to 4,000 characters.</p></details>
-<div id="card-line-editors">${editorLines.map(lineEditor).join('')}</div>
+<p class="hint">Manage text and layout elements below. Reorder with Up/Down. Hidden or empty elements do not appear.</p><details class="inline-help"><summary>Text and Discord layout help</summary><p>Text styles use Discord Markdown, and Small text uses <code>-#</code>. Sections keep thumbnails attached as Discord requires. Discord controls final spacing and limits total card text to 4,000 characters.</p></details>
+<div class="actions" aria-label="Add card layout element"><button type="button" class="secondary" data-add-layout="text">Add Text Line</button><button type="button" class="secondary" data-add-layout="gallery">Add Image Gallery</button><button type="button" class="secondary" data-add-layout="separator">Add Separator</button><button type="button" class="secondary" data-add-layout="section">Add Text + Thumbnail Section</button></div><div id="card-layout-editors"></div>
+<div id="card-line-editors" hidden>${editorLines.map(lineEditor).join('')}</div>
 <label class="checkbox"><input type="checkbox" name="showMapArtwork" value="1"${(model.submitted === undefined ? (profile.mapArtwork ?? profile.visibleFields.currentMap) : model.submitted.showMapArtwork === '1') ? ' checked' : ''}> Show map artwork</label>
 <label class="checkbox"><input type="checkbox" name="showUpdates" value="1"${cardChecked('updates') ? ' checked' : ''}> Show Latest Updates sections</label>
 <label class="checkbox"><input type="checkbox" name="showConnectButton" value="1"${buttonChecked('connect') ? ' checked' : ''}> Show Connect button</label>${input('Connect button label', 'connectButtonLabel', typeof model.submitted?.connectButtonLabel === 'string' ? model.submitted.connectButtonLabel : profile.buttons.connectLabel, 'text', 'maxlength="80" required')}
