@@ -18,6 +18,8 @@ import {
   cardProfileSchema,
   isHttpsUrl,
   validateCardTemplate,
+  CARD_LINE_IDS,
+  CARD_LINE_STYLES,
 } from '../../../modules/game-servers/card-profile.js';
 
 const optionalHttpsUrl = z
@@ -73,12 +75,21 @@ const serverEditSchema = z
     offlineEmojiId: z.string().max(20).optional(),
     warningEmojiId: z.string().max(20).optional(),
     pendingEmojiId: z.string().max(20).optional(),
-    titleTemplate: z.string().max(100).default(DEFAULT_CARD_TEMPLATES.title),
-    subtitleTemplate: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.subtitle),
+    titleTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.title),
+    subtitleTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.subtitle),
     descriptionTemplate: z.string().max(500).optional(),
-    playerCountTemplate: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.playerCount),
-    currentMapTemplate: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.currentMap),
-    serverAddressTemplate: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.serverAddress),
+    playerCountTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.playerCount),
+    currentMapTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.currentMap),
+    serverAddressTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.serverAddress),
+    linesVersion: z.literal('1').optional(),
+    lineOrder: z.string().max(100).optional(),
+    titleStyle: z.enum(CARD_LINE_STYLES).default('large'),
+    subtitleStyle: z.enum(CARD_LINE_STYLES).default('small'),
+    playerCountStyle: z.enum(CARD_LINE_STYLES).default('subtext'),
+    descriptionStyle: z.enum(CARD_LINE_STYLES).default('normal'),
+    currentMapStyle: z.enum(CARD_LINE_STYLES).default('normal'),
+    serverAddressStyle: z.enum(CARD_LINE_STYLES).default('normal'),
+    showMapArtwork: z.literal('1').optional(),
     showTitle: z.literal('1').optional(),
     showSubtitle: z.literal('1').optional(),
     showDescription: z.literal('1').optional(),
@@ -569,6 +580,20 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         return reply.code(400).type('text/html').send(html);
       }
       const profile = cardProfileSchema.safeParse({
+        ...(body.data.linesVersion === '1'
+          ? {
+              textLines: (body.data.lineOrder ?? CARD_LINE_IDS.join(',')).split(',').map((id) => {
+                const key = id.trim() as (typeof CARD_LINE_IDS)[number];
+                return {
+                  id: key,
+                  template: body.data[`${key}Template`] ?? '',
+                  style: body.data[`${key}Style`],
+                  visible: submitted[`show${key.charAt(0).toUpperCase()}${key.slice(1)}`] === '1',
+                };
+              }),
+              mapArtwork: body.data.showMapArtwork === '1',
+            }
+          : {}),
         accentColor: body.data.accentColor,
         thumbnailImageUrl: body.data.thumbnailImageUrl || null,
         onlineEmojiId: body.data.onlineEmojiId || null,
@@ -612,7 +637,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         },
       });
       const templateErrors = CARD_TEMPLATE_FIELDS.flatMap((field) =>
-        validateCardTemplate(profile.success ? profile.data.templates[field] : ''),
+        validateCardTemplate(body.data[`${field}Template`] ?? body.data.description ?? ''),
       );
       if (templateErrors.length > 0) {
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {

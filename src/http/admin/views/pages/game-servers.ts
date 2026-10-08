@@ -15,9 +15,15 @@ import {
   statusBadge,
   table,
 } from '../components.js';
+import { cardPlaceholderValues } from '../../../../modules/game-servers/renderer.js';
 import { formatTimestamp } from '../time.js';
 import {
   CARD_PLACEHOLDERS,
+  CARD_LINE_IDS,
+  CARD_LINE_STYLES,
+  DEFAULT_CARD_LINE_STYLES,
+  resolveCardLines,
+  type CardLine,
   DEFAULT_CARD_DESCRIPTION,
   DEFAULT_CARD_TEMPLATES,
   DEFAULT_STATUS_LABELS,
@@ -283,6 +289,7 @@ export interface GameServerEditPageModel {
 export function gameServerEditPage(model: GameServerEditPageModel): string {
   const profile = normalizeCardProfile(model.server.cardProfile);
   const effective = resolveCardProfile(model.server.cardProfile);
+  const inherited = resolveCardProfile(undefined);
   const savedTemplatesExist =
     model.server.cardProfile !== null &&
     typeof model.server.cardProfile === 'object' &&
@@ -302,19 +309,30 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
     model.submitted === undefined
       ? profile.buttons[key]
       : model.submitted[key === 'connect' ? 'showConnectButton' : 'showMapRulesButton'] === '1';
-  const templateValue = (key: keyof typeof profile.templates): string => {
-    const field = `${key}Template`;
-    return typeof model.submitted?.[field] === 'string'
-      ? model.submitted[field]
-      : key === 'description' &&
-          !(
-            model.server.cardProfile !== null &&
-            typeof model.server.cardProfile === 'object' &&
-            Object.hasOwn(model.server.cardProfile, 'templates')
-          )
-        ? model.server.description?.trim() || DEFAULT_CARD_TEMPLATES.description
-        : profile.templates[key];
-  };
+  const savedLines = resolveCardLines(model.server.cardProfile, model.server.description);
+  const requestedOrder =
+    typeof model.submitted?.lineOrder === 'string'
+      ? model.submitted.lineOrder.split(',')
+      : savedLines.map((line) => line.id);
+  const validOrder =
+    requestedOrder.length === 6 &&
+    new Set(requestedOrder).size === 6 &&
+    requestedOrder.every((id) => CARD_LINE_IDS.includes(id as CardLine['id']));
+  const editorLines = (validOrder ? requestedOrder : savedLines.map((line) => line.id)).map(
+    (id) => {
+      const saved = savedLines.find((line) => line.id === id);
+      if (saved === undefined) throw new Error('Invalid card line ID');
+      return {
+        ...saved,
+        template: value(`${id}Template`, saved.template),
+        style: value(`${id}Style`, saved.style),
+        visible:
+          model.submitted === undefined
+            ? saved.visible
+            : model.submitted[`show${id.charAt(0).toUpperCase()}${id.slice(1)}`] === '1',
+      };
+    },
+  );
   const noticeHtml = model.notice === undefined ? '' : notice(model.notice, 'success');
   const errorBlock = errorSummary(model.errors ?? []);
   const snapshot = model.snapshot;
@@ -336,74 +354,55 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
     ([name, description]) =>
       `<option value="{${name}}">{${name}} — ${escapeHtml(description)}</option>`,
   ).join('');
-  const previewSnapshot = model.snapshot;
-  const previewStatus =
-    previewSnapshot === undefined
-      ? profile.statusLabels.pending
-      : previewSnapshot.stale
-        ? profile.statusLabels.stale
-        : previewSnapshot.hostingState === 'STOPPED'
-          ? profile.statusLabels.offline
-          : previewSnapshot.hostingState === 'STARTING'
-            ? profile.statusLabels.starting
-            : previewSnapshot.hostingState === 'RUNNING' &&
-                previewSnapshot.gameplayState === 'AVAILABLE'
-              ? profile.statusLabels.online
-              : profile.statusLabels.unavailable;
-  const previewHost = model.server.connectDomain ?? previewSnapshot?.rawIp ?? '';
-  const previewPort =
-    previewSnapshot?.port === null || previewSnapshot?.port === undefined
-      ? ''
-      : String(previewSnapshot.port);
-  const currentPreviewValues =
-    previewSnapshot === undefined
-      ? null
-      : {
-          playercount:
-            previewSnapshot.players === null
-              ? 'Unknown'
-              : previewSnapshot.maxPlayers === null
-                ? String(previewSnapshot.players)
-                : `${String(previewSnapshot.players)}/${String(previewSnapshot.maxPlayers)}`,
-          players: previewSnapshot.players === null ? 'Unknown' : String(previewSnapshot.players),
-          maxplayers:
-            previewSnapshot.maxPlayers === null ? 'Unknown' : String(previewSnapshot.maxPlayers),
-          status: previewStatus,
-          statusicon: '•',
-          online: `• ${previewStatus}`,
-          location: previewSnapshot.datacenter ?? '',
-          serveraddress: previewHost
-            ? `${previewHost}${previewPort ? `:${previewPort}` : ''}`
-            : 'Unavailable',
-          severaddress: previewHost
-            ? `${previewHost}${previewPort ? `:${previewPort}` : ''}`
-            : 'Unavailable',
-          serverip: previewHost,
-          serverport: previewPort,
-          currentmap: previewSnapshot.map ?? 'Unknown',
-          servername: model.server.displayName,
-          lastupdated:
-            previewSnapshot.lastSuccessfulAt === null
-              ? 'Unknown'
-              : formatTimestamp(previewSnapshot.lastSuccessfulAt),
-        };
-  const templateControl = (
-    key: keyof typeof profile.templates,
-    label: string,
-    maxLength: number,
-  ): string =>
-    `${textarea(
-      label,
-      `${key}Template`,
-      templateValue(key),
-      `maxlength="${String(maxLength)}" data-card-template`,
-      model.fieldErrors?.[`${key}Template`],
-    )}<button type="button" class="secondary" data-reset-template="${key}" data-reset-value="${escapeHtml(DEFAULT_CARD_TEMPLATES[key])}">Restore default</button>`;
+  const currentPreviewValues = cardPlaceholderValues(
+    {
+      ...model.server,
+      guildId: model.guildId,
+      snapshot:
+        model.snapshot === undefined
+          ? null
+          : { ...model.snapshot, host: model.snapshot.rawIp, monitoringObservedAt: null },
+    },
+    effective,
+  );
+  const styleNames = {
+    large: 'Large heading',
+    medium: 'Medium heading',
+    small: 'Small heading',
+    normal: 'Normal',
+    subtext: 'Subtext',
+  };
+  const lineEditor = (line: (typeof editorLines)[number]): string => {
+    const name = `Card Line ${String(CARD_LINE_IDS.indexOf(line.id) + 1)}`;
+    const target = `${line.id}Template`;
+    const defaultTemplate =
+      line.id === 'subtitle'
+        ? '{statusicon} {status} · {location}'
+        : DEFAULT_CARD_TEMPLATES[line.id];
+    return `<fieldset class="card-line-editor" data-card-line="${line.id}"><legend>${name}</legend>
+<label class="checkbox"><input type="checkbox" name="show${line.id.charAt(0).toUpperCase()}${line.id.slice(1)}" value="1"${line.visible ? ' checked' : ''}> Show ${name}</label>
+<div class="description-toolbar" role="group" aria-label="${name} text styling">${[
+      ['Bold', '**'],
+      ['Italic', '*'],
+      ['Underline', '__'],
+      ['Strikethrough', '~~'],
+      ['Inline code', String.fromCharCode(96)],
+    ]
+      .map(
+        ([label, marker]) =>
+          `<button class="secondary" type="button" aria-controls="${target}" data-markdown-target="${target}" data-markdown-marker="${escapeHtml(marker)}">${escapeHtml(label ?? '')}</button>`,
+      )
+      .join('')}</div>
+<label for="${line.id}Style">${name} heading style</label><select id="${line.id}Style" name="${line.id}Style" data-line-style>${CARD_LINE_STYLES.map((style) => `<option value="${style}"${line.style === style ? ' selected' : ''}>${styleNames[style]}</option>`).join('')}</select>
+${textarea(`${name} template`, target, line.template, 'maxlength="500" data-card-template', model.fieldErrors?.[target])}
+<p class="hint" id="${target}-format-status" role="status">Select text to apply formatting, or insert a placeholder at the cursor.</p>
+<div class="actions"><select aria-label="${name} placeholder" data-line-placeholder>${placeholderOptions}</select><button type="button" class="secondary" data-insert-line-placeholder="${target}">Insert placeholder</button><button type="button" class="secondary" data-reset-line="${line.id}" data-reset-value="${escapeHtml(defaultTemplate)}" data-reset-style="${DEFAULT_CARD_LINE_STYLES[line.id]}">Restore default</button><button type="button" class="secondary" data-move-line="up" aria-label="Move ${name} up">Up</button><button type="button" class="secondary" data-move-line="down" aria-label="Move ${name} down">Down</button></div></fieldset>`;
+  };
   const form = actionForm(
     `/admin/guilds/${escapeHtml(model.guildId)}/game-servers/${escapeHtml(model.server.id)}/edit`,
     model.csrf,
     `<input type="hidden" name="version" value="${escapeHtml(value('version', model.server.version))}">
-${model.submitted === undefined ? '' : notice('These are unsaved edits. Saved values are shown below. Reload before retrying a configuration conflict.', 'warning')}
+${model.submitted === undefined ? '' : '<input type="hidden" data-submitted-edits>' + notice('These are unsaved edits. Saved values are shown below. Reload before retrying a configuration conflict.', 'warning')}
 <fieldset class="game-server-config-group"><legend>Registration and monitoring</legend>
 <label class="checkbox"><input type="checkbox" name="enabled" value="1"${checked('enabled') ? ' checked' : ''}> Enable polling</label>
 <p class="hint">Disabling polling preserves existing displays and their last observation.</p>
@@ -412,33 +411,15 @@ ${model.submitted === undefined ? '' : notice('These are unsaved edits. Saved va
 ${input('Sort order', 'sortOrder', value('sortOrder', model.server.sortOrder), 'number', 'min="0"', model.fieldErrors?.sortOrder)}
 </fieldset><fieldset class="game-server-config-group"><legend>Card Profile</legend>
 ${input('Display name', 'displayName', value('displayName', model.server.displayName), 'text', 'maxlength="64" required', model.fieldErrors?.displayName)}
-<div class="description-toolbar" role="group" aria-label="Description text styling">${[
-      ['Bold', '**'],
-      ['Italic', '*'],
-      ['Underline', '__'],
-      ['Strikethrough', '~~'],
-    ]
-      .map(
-        ([label, marker]) =>
-          `<button class="secondary" type="button" aria-controls="descriptionTemplate" data-markdown-target="descriptionTemplate" data-markdown-marker="${escapeHtml(marker)}">${escapeHtml(label)}</button>`,
-      )
-      .join('')}</div>
-${templateControl('description', 'Description template', 500)}
-<p class="hint" id="descriptionTemplate-format-status" role="status">Select text, then choose a style. Formatting uses Discord Markdown and counts toward the 500-character limit.</p>
-<p class="hint">Text styles: <strong>Bold</strong> <code>**text**</code>; <em>Italic</em> <code>*text*</code>; <u>Underline</u> <code>__text__</code>; <s>Strikethrough</s> <code>~~text~~</code>. You can combine styles, such as <code>***text***</code> for bold italic. Styles appear on the Discord card after saving.</p>
-<p class="hint">Blank description uses: ${escapeHtml(DEFAULT_CARD_DESCRIPTION)}</p>
-<fieldset class="game-server-config-group"><legend>Card text templates</legend>
-<p class="hint">Insert supported placeholders with the picker. Current mode uses cached DatHost telemetry when available; other modes use examples. Preview approximates text; Discord applies the final Component V2 layout.</p>
-<label for="card-placeholder-picker">Placeholder reference</label><div class="actions"><select id="card-placeholder-picker">${placeholderOptions}</select><button type="button" class="secondary" data-insert-placeholder>Insert into focused template</button></div>
-${templateControl('title', 'Title template', 100)}<label class="checkbox"><input type="checkbox" name="showTitle" value="1"${cardChecked('title') ? ' checked' : ''}> Show title</label>
-${templateControl('subtitle', 'Status and location template', 250)}<label class="checkbox"><input type="checkbox" name="showSubtitle" value="1"${cardChecked('subtitle') ? ' checked' : ''}> Show status and location</label>
-<label class="checkbox"><input type="checkbox" name="showDescription" value="1"${cardChecked('description') ? ' checked' : ''}> Show description</label>
-${templateControl('playerCount', 'Player count template', 250)}<label class="checkbox"><input type="checkbox" name="showPlayerCount" value="1"${cardChecked('playerCount') ? ' checked' : ''}> Show player count</label>
-${templateControl('currentMap', 'Current map template', 250)}<label class="checkbox"><input type="checkbox" name="showCurrentMap" value="1"${cardChecked('currentMap') ? ' checked' : ''}> Show current map</label>
-${templateControl('serverAddress', 'Server address template', 250)}<label class="checkbox"><input type="checkbox" name="showServerAddress" value="1"${cardChecked('serverAddress') ? ' checked' : ''}> Show server address</label>
+<fieldset class="game-server-config-group"><legend>Card text lines</legend>
+<input type="hidden" name="linesVersion" value="1"><input type="hidden" name="lineOrder" id="card-line-order" value="${escapeHtml(editorLines.map((line) => line.id).join(','))}">
+<input type="hidden" name="fieldOrder" value="${escapeHtml(profile.fieldOrder.join(','))}">
+<p class="hint">Line names are stable identifiers. Up/Down changes display order without replacing content. Every placeholder works in every line. Empty or hidden lines display no text.</p>
+<p class="hint">Discord layout: the first three positions share the thumbnail section. Map artwork stays after the fifth position, independently of text visibility. Separators, buttons, and updates retain their separate layout positions.</p>
+<p class="hint">Text styles: Bold **text**, Italic *text*, Underline __text__, Strikethrough ~~text~~, Inline code &#96;text&#96;. Combine styles with ***text***. Heading styles affect the first text row; embedded Markdown remains supported. Discord allows 4,000 text characters across the whole card, including updates; oversized resolved text is shortened.</p>
+<div id="card-line-editors">${editorLines.map(lineEditor).join('')}</div>
+<label class="checkbox"><input type="checkbox" name="showMapArtwork" value="1"${(model.submitted === undefined ? (profile.mapArtwork ?? profile.visibleFields.currentMap) : model.submitted.showMapArtwork === '1') ? ' checked' : ''}> Show map artwork</label>
 <label class="checkbox"><input type="checkbox" name="showUpdates" value="1"${cardChecked('updates') ? ' checked' : ''}> Show Latest Updates sections</label>
-${input('Field order (comma separated)', 'fieldOrder', typeof model.submitted?.fieldOrder === 'string' ? model.submitted.fieldOrder : profile.fieldOrder.join(','), 'text', 'maxlength="100" required', model.fieldErrors?.fieldOrder)}
-<p class="hint">Order these body sections: description, currentMap, serverAddress. Title, status, and player count stay together in the native card header.</p>
 <label class="checkbox"><input type="checkbox" name="showConnectButton" value="1"${buttonChecked('connect') ? ' checked' : ''}> Show Connect button</label>${input('Connect button label', 'connectButtonLabel', typeof model.submitted?.connectButtonLabel === 'string' ? model.submitted.connectButtonLabel : profile.buttons.connectLabel, 'text', 'maxlength="80" required')}
 <label class="checkbox"><input type="checkbox" name="showMapRulesButton" value="1"${buttonChecked('mapRules') ? ' checked' : ''}> Show Map & Rules button</label>${input('Map & Rules button label', 'mapRulesButtonLabel', typeof model.submitted?.mapRulesButtonLabel === 'string' ? model.submitted.mapRulesButtonLabel : profile.buttons.mapRulesLabel, 'text', 'maxlength="80" required')}
 ${input('Online status label', 'onlineStatusLabel', typeof model.submitted?.onlineStatusLabel === 'string' ? model.submitted.onlineStatusLabel : profile.statusLabels.online, 'text', 'maxlength="80" required')}
@@ -447,7 +428,7 @@ ${input('Starting status label', 'startingStatusLabel', typeof model.submitted?.
 ${input('Stale status label', 'staleStatusLabel', typeof model.submitted?.staleStatusLabel === 'string' ? model.submitted.staleStatusLabel : profile.statusLabels.stale, 'text', 'maxlength="80" required')}
 ${input('Pending status label', 'pendingStatusLabel', typeof model.submitted?.pendingStatusLabel === 'string' ? model.submitted.pendingStatusLabel : profile.statusLabels.pending, 'text', 'maxlength="80" required')}
 ${input('Unavailable status label', 'unavailableStatusLabel', typeof model.submitted?.unavailableStatusLabel === 'string' ? model.submitted.unavailableStatusLabel : profile.statusLabels.unavailable, 'text', 'maxlength="80" required')}
-<div class="read-only" id="card-template-preview" data-current-values="${escapeHtml(JSON.stringify(currentPreviewValues))}"><p><strong>Template preview</strong></p><label for="card-preview-mode">Preview state</label><select id="card-preview-mode"><option value="current">Current cached state${currentPreviewValues === null ? ' (using examples)' : ''}</option><option value="online">Online</option><option value="offline">Offline</option><option value="missing">Telemetry unavailable</option></select><p data-preview="title"></p><p data-preview="subtitle"></p><p data-preview="description"></p><p data-preview="playerCount"></p><p data-preview="currentMap"></p><p data-preview="serverAddress"></p></div>
+<div class="read-only" id="card-template-preview" data-current-values="${escapeHtml(JSON.stringify(currentPreviewValues))}" ${(['online', 'offline', 'warning', 'pending'] as const).map((state) => `data-${state}-emoji="${escapeHtml(inherited[`${state}EmojiId`] === null ? '' : `<:${state}_dot:${String(inherited[`${state}EmojiId`])}>`)}"`).join(' ')} data-raw-host="${escapeHtml(model.snapshot?.rawIp ?? '')}" data-hosting-state="${escapeHtml(model.snapshot?.hostingState ?? 'PENDING')}" data-gameplay-state="${escapeHtml(model.snapshot?.gameplayState ?? '')}" data-stale="${model.snapshot?.stale ? 'true' : 'false'}"><p><strong>Unsaved card preview</strong></p><p class="hint">Approximate browser Markdown rendering. Discord determines final spacing, custom emoji appearance, timestamps, and component layout. This preview shows text lines; thumbnail, artwork, buttons, and updates retain separate positions.</p><label for="card-preview-mode">Preview state</label><select id="card-preview-mode"><option value="current">Current cached state</option><option value="online">Online example</option><option value="offline">Offline example</option><option value="missing">Telemetry unavailable example</option></select><div id="card-preview-lines"></div></div>
 </fieldset>
 ${input('Accent color', 'accentColor', value('accentColor', profile.accentColor), 'text', 'pattern="#[0-9a-fA-F]{6}" maxlength="7" required', model.fieldErrors?.accentColor)}
 ${input('Thumbnail HTTPS URL', 'thumbnailImageUrl', value('thumbnailImageUrl', profile.thumbnailImageUrl), 'url', 'maxlength="500"', model.fieldErrors?.thumbnailImageUrl)}
@@ -473,7 +454,7 @@ ${input('HTTPS join URL', 'joinUrl', value('joinUrl', model.server.joinUrl), 'ur
 <p class="hint">The join URL appears in the server detail response. The card Connect button provides the server address.</p>
 </fieldset>
 <div class="notice warning">This webpanel changes only the bot's local registration. It does not mutate the DatHost server.</div>
-<p class="hint" id="card-config-dirty-status" role="status">All changes saved.</p><button type="button" class="secondary" data-reset-card-profile data-defaults="${escapeHtml(JSON.stringify({ titleTemplate: DEFAULT_CARD_TEMPLATES.title, subtitleTemplate: DEFAULT_CARD_TEMPLATES.subtitle, descriptionTemplate: DEFAULT_CARD_TEMPLATES.description, playerCountTemplate: DEFAULT_CARD_TEMPLATES.playerCount, currentMapTemplate: DEFAULT_CARD_TEMPLATES.currentMap, serverAddressTemplate: DEFAULT_CARD_TEMPLATES.serverAddress, showTitle: true, showSubtitle: true, showDescription: true, showPlayerCount: true, showCurrentMap: true, showServerAddress: true, showUpdates: true, fieldOrder: 'description,currentMap,serverAddress', showConnectButton: true, showMapRulesButton: true, connectButtonLabel: 'Connect', mapRulesButtonLabel: 'Map & Rules', onlineStatusLabel: DEFAULT_STATUS_LABELS.online, offlineStatusLabel: DEFAULT_STATUS_LABELS.offline, startingStatusLabel: DEFAULT_STATUS_LABELS.starting, staleStatusLabel: DEFAULT_STATUS_LABELS.stale, pendingStatusLabel: DEFAULT_STATUS_LABELS.pending, unavailableStatusLabel: DEFAULT_STATUS_LABELS.unavailable, accentColor: '#2b8aef', thumbnailImageUrl: '', imageUrl: '', onlineEmojiId: '', offlineEmojiId: '', warningEmojiId: '', pendingEmojiId: '' }))}">Restore all card defaults</button><button type="submit">Save server</button>`,
+<p class="hint" id="card-config-dirty-status" role="status">All changes saved.</p><button type="button" class="secondary" data-reset-card-profile data-defaults="${escapeHtml(JSON.stringify({ titleTemplate: DEFAULT_CARD_TEMPLATES.title, subtitleTemplate: '{statusicon} {status} · {location}', descriptionTemplate: DEFAULT_CARD_TEMPLATES.description, playerCountTemplate: DEFAULT_CARD_TEMPLATES.playerCount, currentMapTemplate: DEFAULT_CARD_TEMPLATES.currentMap, serverAddressTemplate: DEFAULT_CARD_TEMPLATES.serverAddress, showTitle: true, showSubtitle: true, showDescription: true, showPlayerCount: true, showCurrentMap: true, showServerAddress: true, showUpdates: true, fieldOrder: 'description,currentMap,serverAddress', lineOrder: CARD_LINE_IDS.join(','), showMapArtwork: true, ...Object.fromEntries(CARD_LINE_IDS.map((id) => [`${id}Style`, DEFAULT_CARD_LINE_STYLES[id]])), showConnectButton: true, showMapRulesButton: true, connectButtonLabel: 'Connect', mapRulesButtonLabel: 'Map & Rules', onlineStatusLabel: DEFAULT_STATUS_LABELS.online, offlineStatusLabel: DEFAULT_STATUS_LABELS.offline, startingStatusLabel: DEFAULT_STATUS_LABELS.starting, staleStatusLabel: DEFAULT_STATUS_LABELS.stale, pendingStatusLabel: DEFAULT_STATUS_LABELS.pending, unavailableStatusLabel: DEFAULT_STATUS_LABELS.unavailable, accentColor: '#2b8aef', thumbnailImageUrl: '', imageUrl: '', onlineEmojiId: '', offlineEmojiId: '', warningEmojiId: '', pendingEmojiId: '' }))}">Restore all card defaults</button><button type="submit">Save server</button>`,
   );
   return adminShell(
     {
@@ -487,7 +468,7 @@ ${input('HTTPS join URL', 'joinUrl', value('joinUrl', model.server.joinUrl), 'ur
       card('Server configuration', form) +
       card(
         'Saved Card Profile',
-        `<p>These values reflect saved configuration, before any unsaved edits above.</p><dl class="dl"><dt>Name</dt><dd>${escapeHtml(model.server.displayName)}</dd><dt>Description template</dt><dd>${escapeHtml(savedDescription)}</dd><dt>Online label</dt><dd>${escapeHtml(profile.statusLabels.online)}</dd><dt>Offline label</dt><dd>${escapeHtml(profile.statusLabels.offline)}</dd><dt>Field order</dt><dd>${escapeHtml(profile.fieldOrder.join(', '))}</dd><dt>Accent</dt><dd>${escapeHtml(profile.accentColor)}</dd><dt>Thumbnail</dt><dd>${escapeHtml(effective.thumbnailImageUrl)}</dd>${(['online', 'offline', 'warning', 'pending'] as const).map((state) => `<dt>${state} emoji</dt><dd>${escapeHtml(effective[`${state}EmojiId`] ?? 'Plain dot')}</dd>`).join('')}</dl>`,
+        `<p>These values reflect saved configuration, before any unsaved edits above.</p><dl class="dl"><dt>Name</dt><dd>${escapeHtml(model.server.displayName)}</dd><dt>Description template</dt><dd>${escapeHtml(savedDescription)}</dd><dt>Online label</dt><dd>${escapeHtml(profile.statusLabels.online)}</dd><dt>Offline label</dt><dd>${escapeHtml(profile.statusLabels.offline)}</dd><dt>Saved text lines</dt><dd>${savedLines.map((line) => `Card Line ${String(CARD_LINE_IDS.indexOf(line.id) + 1)}: ${escapeHtml(line.template)} (${escapeHtml(line.style)}, ${line.visible ? 'visible' : 'hidden'})`).join('<br>')}</dd><dt>Accent</dt><dd>${escapeHtml(profile.accentColor)}</dd><dt>Thumbnail</dt><dd>${escapeHtml(effective.thumbnailImageUrl)}</dd>${(['online', 'offline', 'warning', 'pending'] as const).map((state) => `<dt>${state} emoji</dt><dd>${escapeHtml(effective[`${state}EmojiId`] ?? 'Plain dot')}</dd>`).join('')}</dl>`,
       ) +
       card('Live state', readOnly) +
       card('Discord displays', cardInfo),

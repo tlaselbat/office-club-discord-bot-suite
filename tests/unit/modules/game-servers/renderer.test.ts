@@ -9,9 +9,19 @@ import {
   resolveMapImageUrl,
   displayMapName,
   cardFingerprint,
+  styleCardLine,
+  cardPlaceholderValues,
+  resolveCardTemplate,
   type ServerView,
   type UpdateThreadView,
 } from '../../../../src/modules/game-servers/renderer.js';
+
+import {
+  CARD_PLACEHOLDERS,
+  CARD_LINE_IDS,
+  resolveCardLines,
+  resolveCardProfile,
+} from '../../../../src/modules/game-servers/card-profile.js';
 
 const baseSnapshot = {
   hostingState: 'RUNNING',
@@ -693,5 +703,136 @@ describe('Game Server rendering', () => {
       'Average ping: 31.0 ms',
     );
     expect(json?.fields?.some((field) => field.name === 'Host')).toBe(false);
+  });
+});
+
+describe('generic card line rendering', () => {
+  it('renders migrated defaults exactly like a legacy card', () => {
+    expect(
+      renderGameServerCard(
+        { ...server, cardProfile: { textLines: resolveCardLines({}), mapArtwork: true } },
+        secret,
+      ),
+    ).toEqual(renderGameServerCard(server, secret));
+  });
+  it.each(CARD_LINE_IDS)('resolves every placeholder independently in %s', (id) => {
+    const template =
+      CARD_PLACEHOLDERS.map(([name]) => `{${name}}`).join(' / ') + ' / {severaddress}';
+    const lines = resolveCardLines({}).map((line) => ({
+      ...line,
+      visible: line.id === id,
+      style: 'normal' as const,
+      template,
+    }));
+    const profile = { textLines: lines, visibleFields: { updates: false } };
+    const content = textContents(
+      firstContainer(renderGameServerCard({ ...server, cardProfile: profile }, secret)),
+    );
+    expect(content).toContain('0/16 / 0 / 16 /');
+    expect(content).toContain('Los Angeles / arena.example.com:27015');
+    expect(content).toContain('aim_map_office / 1v1 Arena');
+    expect(content).not.toMatch(/\{[a-z]+\}/i);
+  });
+  it('honors array order and each style regardless of ID', () => {
+    const styles = ['medium', 'large', 'normal', 'subtext', 'small', 'normal'] as const;
+    const lines = resolveCardLines({})
+      .reverse()
+      .map((line, index) => ({
+        ...line,
+        template: `Line${String(index)}`,
+        style: styles[index] ?? 'normal',
+      }));
+    const text = textContents(
+      firstContainer(
+        renderGameServerCard(
+          { ...server, cardProfile: { textLines: lines, visibleFields: { updates: false } } },
+          secret,
+        ),
+      ),
+    );
+    expect(text).toBe('## Line0\n# Line1\nLine2\n-# Line3\n### Line4\nLine5');
+    expect(cardFingerprint({ ...server, cardProfile: { textLines: lines } })).not.toEqual(
+      cardFingerprint(server),
+    );
+  });
+  it.each([true, false])(
+    'keeps artwork and thumbnail independent of empty text (visible=%s)',
+    (visible) => {
+      const lines = resolveCardLines({}).map((line) => ({ ...line, visible, template: '   ' }));
+      const container = firstContainer(
+        renderGameServerCard(
+          { ...server, cardProfile: { textLines: lines, mapArtwork: true } },
+          secret,
+        ),
+      );
+      expect(containerComponents(container)[0]?.type).toBe(9);
+      expect(containerComponents(container).some((component) => component.type === 12)).toBe(true);
+      const client = new Client({ intents: [] });
+      const transform = client.options.jsonTransformer;
+      if (transform === undefined) throw new Error('Missing Discord transformer');
+      const api = transform(container) as APIContainerComponent;
+      expect(() => new ContainerBuilder(api).toJSON()).not.toThrow();
+      const noArtwork = firstContainer(
+        renderGameServerCard(
+          { ...server, cardProfile: { textLines: lines, mapArtwork: false } },
+          secret,
+        ),
+      );
+      expect(containerComponents(noArtwork).some((component) => component.type === 12)).toBe(false);
+      const inherited = firstContainer(
+        renderGameServerCard(
+          { ...server, cardProfile: { textLines: lines, visibleFields: { currentMap: false } } },
+          secret,
+        ),
+      );
+      expect(containerComponents(inherited).some((component) => component.type === 12)).toBe(false);
+    },
+  );
+  it('styles the first heading once and preserves multiline Markdown', () => {
+    expect(styleCardLine('### Existing\n## Embedded\n**Bold**', 'large')).toBe(
+      '# Existing\n## Embedded\n**Bold**',
+    );
+    expect(styleCardLine('-# Existing', 'subtext')).toBe('-# Existing');
+    expect(styleCardLine('## Existing', 'normal')).toBe('## Existing');
+    expect(styleCardLine('   ', 'large')).toBe('');
+    expect(
+      resolveCardTemplate(
+        '{SERVERNAME} {severaddress}',
+        cardPlaceholderValues({ ...server, displayName: '@everyone' }, resolveCardProfile({})),
+      ),
+    ).toContain('@\u200beveryone');
+  });
+  it('bounds expanded text and update sections to Discord limits', () => {
+    const lines = resolveCardLines({}).map((line) => ({
+      ...line,
+      template: '{servername}'.repeat(30),
+    }));
+    const view = {
+      ...server,
+      displayName: 'x'.repeat(500),
+      cardProfile: { textLines: lines },
+      updateThreads: [
+        {
+          type: 'ANNOUNCEMENTS' as const,
+          threadId: '123456789012345678',
+          latestMessageText: 'update'.repeat(3000),
+          latestMessageAt: new Date(),
+          notificationExpiresAt: null,
+        },
+      ],
+    };
+    const container = firstContainer(renderGameServerCard(view, secret));
+    // textContents adds one newline between each display; subtract those separators.
+    const contents = containerComponents(container).flatMap((component) =>
+      component.type === 9
+        ? (component.components as Record<string, unknown>[]).map((child) => String(child.content))
+        : component.type === 10
+          ? [String(component.content)]
+          : [],
+    );
+    expect(contents.reduce((sum, content) => sum + content.length, 0)).toBeLessThanOrEqual(4000);
+    expect(contents.every((content) => content.trim().length > 0)).toBe(true);
+    expect(componentCount(container)).toBeLessThanOrEqual(40);
+    expect(contents.join('')).toContain('update');
   });
 });

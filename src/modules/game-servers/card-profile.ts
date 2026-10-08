@@ -49,12 +49,12 @@ export const CARD_PLACEHOLDERS = [
 ] as const;
 
 const templateFieldSchema = z.object({
-  title: z.string().max(100).default(DEFAULT_CARD_TEMPLATES.title),
-  subtitle: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.subtitle),
-  description: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.description),
-  playerCount: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.playerCount),
-  currentMap: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.currentMap),
-  serverAddress: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.serverAddress),
+  title: validatedTemplate().default(DEFAULT_CARD_TEMPLATES.title),
+  subtitle: validatedTemplate().default(DEFAULT_CARD_TEMPLATES.subtitle),
+  description: validatedTemplate().default(DEFAULT_CARD_TEMPLATES.description),
+  playerCount: validatedTemplate().default(DEFAULT_CARD_TEMPLATES.playerCount),
+  currentMap: validatedTemplate().default(DEFAULT_CARD_TEMPLATES.currentMap),
+  serverAddress: validatedTemplate().default(DEFAULT_CARD_TEMPLATES.serverAddress),
 });
 const placeholderNames = new Set<string>(CARD_PLACEHOLDERS.map(([name]) => name));
 export function validateCardTemplate(template: string): string[] {
@@ -67,6 +67,49 @@ export function validateCardTemplate(template: string): string[] {
   }
   return [...new Set(errors)];
 }
+function validatedTemplate() {
+  return z
+    .string()
+    .max(500)
+    .superRefine((template, context) => {
+      for (const message of validateCardTemplate(template))
+        context.addIssue({ code: 'custom', message });
+    });
+}
+
+export const CARD_LINE_IDS = [
+  'title',
+  'subtitle',
+  'playerCount',
+  'description',
+  'currentMap',
+  'serverAddress',
+] as const;
+export const CARD_LINE_STYLES = ['large', 'medium', 'small', 'normal', 'subtext'] as const;
+export type CardLineStyle = (typeof CARD_LINE_STYLES)[number];
+export const DEFAULT_CARD_LINE_STYLES: Record<(typeof CARD_LINE_IDS)[number], CardLineStyle> = {
+  title: 'large',
+  subtitle: 'small',
+  playerCount: 'subtext',
+  description: 'normal',
+  currentMap: 'normal',
+  serverAddress: 'normal',
+};
+const cardLineSchema = z.object({
+  id: z.enum(CARD_LINE_IDS),
+  template: validatedTemplate(),
+  visible: z.boolean(),
+  style: z.enum(CARD_LINE_STYLES),
+});
+export type CardLine = z.infer<typeof cardLineSchema>;
+const textLinesSchema = z
+  .array(cardLineSchema)
+  .length(6)
+  .refine(
+    (lines) => new Set(lines.map((line) => line.id)).size === 6,
+    'Each line ID must occur exactly once',
+  );
+
 const visibleFieldSchema = z.object({
   title: z.boolean().default(true),
   subtitle: z.boolean().default(true),
@@ -96,6 +139,8 @@ const emojiId = z.string().regex(/^\d{17,20}$/, 'Must be a Discord emoji ID');
 
 /** Persisted card presentation overrides. Null image and emoji values inherit their legacy defaults. */
 export const cardProfileSchema = z.object({
+  textLines: textLinesSchema.optional(),
+  mapArtwork: z.boolean().optional(),
   accentColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
@@ -157,12 +202,78 @@ export function normalizeCardProfile(value: unknown): CardProfile {
     offlineEmojiId: field(cardProfileSchema.shape.offlineEmojiId, source.offlineEmojiId),
     warningEmojiId: field(cardProfileSchema.shape.warningEmojiId, source.warningEmojiId),
     pendingEmojiId: field(cardProfileSchema.shape.pendingEmojiId, source.pendingEmojiId),
-    templates: field(cardProfileSchema.shape.templates, source.templates),
+    templates: Object.fromEntries(
+      CARD_TEMPLATE_FIELDS.map((key) => [
+        key,
+        field(
+          templateFieldSchema.shape[key],
+          sanitizePersistedTemplate((source.templates as Record<string, unknown> | null)?.[key]),
+        ),
+      ]),
+    ) as CardProfile['templates'],
+    ...normalizeTextLines(source.textLines),
+    ...(typeof source.mapArtwork === 'boolean' ? { mapArtwork: source.mapArtwork } : {}),
     visibleFields: field(cardProfileSchema.shape.visibleFields, source.visibleFields),
     statusLabels: field(cardProfileSchema.shape.statusLabels, source.statusLabels),
     fieldOrder: field(cardProfileSchema.shape.fieldOrder, source.fieldOrder),
     buttons: field(cardProfileSchema.shape.buttons, source.buttons),
   };
+}
+
+function sanitizePersistedTemplate(value: unknown): unknown {
+  return typeof value === 'string'
+    ? value.replace(/\{([^{}]+)\}/g, (match: string) =>
+        validateCardTemplate(match).length ? '' : match,
+      )
+    : value;
+}
+
+function normalizeTextLines(value: unknown): { textLines?: CardLine[] } {
+  if (!Array.isArray(value) || value.length !== 6) return {};
+  const ids = value.map((line: unknown) =>
+    line !== null && typeof line === 'object' ? (line as Record<string, unknown>).id : undefined,
+  );
+  if (new Set(ids).size !== 6 || ids.some((id) => !CARD_LINE_IDS.includes(id as CardLine['id'])))
+    return {};
+  return {
+    textLines: value.map((line: Record<string, unknown>) => {
+      const id = line.id as CardLine['id'];
+      return {
+        id,
+        template: validatedTemplate().safeParse(sanitizePersistedTemplate(line.template)).success
+          ? (sanitizePersistedTemplate(line.template) as string)
+          : DEFAULT_CARD_TEMPLATES[id],
+        visible: typeof line.visible === 'boolean' ? line.visible : true,
+        style: z.enum(CARD_LINE_STYLES).safeParse(line.style).success
+          ? (line.style as CardLineStyle)
+          : DEFAULT_CARD_LINE_STYLES[id],
+      };
+    }),
+  };
+}
+
+/** Materializes six generic lines without persisting a migration or changing legacy rendering. */
+export function resolveCardLines(
+  profileValue: unknown,
+  legacyDescription?: string | null,
+): CardLine[] {
+  const profile = normalizeCardProfile(profileValue);
+  if (profile.textLines !== undefined) return profile.textLines;
+  const hasTemplates =
+    profileValue !== null &&
+    typeof profileValue === 'object' &&
+    Object.hasOwn(profileValue, 'templates');
+  return (['title', 'subtitle', 'playerCount', ...profile.fieldOrder] as const).map((id) => ({
+    id,
+    template:
+      id === 'description' && !hasTemplates && legacyDescription?.trim()
+        ? legacyDescription.trim()
+        : id === 'subtitle' && profile.templates.subtitle === DEFAULT_CARD_TEMPLATES.subtitle
+          ? '{statusicon} {status} \u00b7 {location}'
+          : profile.templates[id],
+    visible: profile.visibleFields[id],
+    style: DEFAULT_CARD_LINE_STYLES[id],
+  }));
 }
 
 export function isHttpsUrl(value: string | null | undefined): value is string {

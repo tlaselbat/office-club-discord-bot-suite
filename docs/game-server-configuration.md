@@ -35,19 +35,39 @@ not provide them. Unavailable values render as an empty string or a clear
 fallback, and any unknown token is rejected before saving. Resolved values
 cannot trigger Discord mentions.
 
-The preview loads cached server values when present and supports online,
-offline, and unavailable example states. When no cached snapshot exists, the
-current-state preview is explicitly labeled as using examples. The preview is
-a text approximation; Discord remains responsible for final Component V2
-Markdown and media rendering.
+All six editors use generic stable names, Card Line 1 through Card Line 6. Their
+internal IDs remain unchanged when Up/Down controls reorder them. Every line
+supports all placeholders, show/hide, reset, bold, italic, underline,
+strikethrough, inline code, and large/medium/small/normal/subtext styles. Heading
+styles affect the first text row; embedded Markdown is preserved. Empty lines
+are omitted. Each template accepts up to 500 characters.
 
-Editable fields include title, status/location subtitle, description, player
-count, current map, and address. Description, map, and address can be reordered
-through the comma-separated field order. Title, status, and player count stay
-together in the native header section. Existing map artwork, thumbnail, accent, and status emoji
-controls remain available. The Latest Updates sections can be hidden. Each
-existing action can be hidden and relabeled;
-its signed interaction behavior is unchanged.
+The ordered `textLines` array is optional. Records without it keep the exact
+legacy renderer and configured templates, visibility, body order, description
+fallback, artwork, buttons, and deployments. The editor materializes those saved
+values without writing them. Saving explicitly adopts generic lines. Submissions
+from an old editor cannot erase a saved generic profile; they must reload first.
+No database migration is required.
+
+The preview shares placeholder substitution and heading rules with the renderer.
+It loads cached values, including pending state when no snapshot exists, and has
+online, offline, and unavailable examples. It updates order, visibility, labels,
+formatting, and heading styles before saving. Markdown is rendered through safe
+DOM text nodes; no user HTML or URL is executed. Browser spacing, custom emojis,
+and Discord-specific Markdown remain approximate.
+
+Components V2 keeps the first three ordered positions in the thumbnail section.
+The artwork separator is before position five and the gallery after it;
+text visibility never controls artwork. Map artwork has its own checkbox.
+Buttons, the final separator, and updates remain below the six text positions.
+All six lines can move across the header/body boundary. These fixed non-text
+anchors are disclosed in the editor. Local map artwork priority and fallback,
+thumbnail inheritance, buttons, and signed interactions remain operational.
+
+Discord allows 40 total components and 4,000 text characters across Text Display
+components. The fixed layout stays below the component cap. Oversized expanded
+text (including update entries) is proportionally shortened with an ellipsis;
+shortening can cut Markdown syntax. Normal-size cards render unchanged.
 
 Telemetry (status, players, map, location, metrics, observation times) remains
 read-only. Update-thread contents remain managed by the existing thread workflow.

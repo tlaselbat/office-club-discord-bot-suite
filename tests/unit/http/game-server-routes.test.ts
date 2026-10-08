@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerGameServersRoutes } from '../../../src/http/routes/admin/game-servers.js';
 import type { SharedHelpers } from '../../../src/http/routes/admin/shared.js';
+import type { CardProfile } from '../../../src/modules/game-servers/card-profile.js';
 import { PublicError } from '../../../src/errors/public-error.js';
 
 const guildId = '12345678901234567';
@@ -97,9 +98,95 @@ describe('Game Server configuration routes', () => {
     expect(response.body).toContain('value="https://example.com/icon.png"');
     expect(response.body).toContain('value="22345678901234567"');
     expect(response.body).toContain('Saved description');
-    expect(response.body).toContain('aria-label="Description text styling"');
+    for (let line = 1; line <= 6; line++) {
+      expect(response.body).toContain(`aria-label="Card Line ${String(line)} text styling"`);
+    }
     expect(response.body).toContain('data-markdown-marker="**"');
     expect(response.body).toContain('data-markdown-marker="__"');
+  });
+
+  it('saves independent styles and visibility in stable line order and reloads them', async () => {
+    const { app, url, payload, updateServer, shared } = fixture();
+    const order = [
+      'serverAddress',
+      'description',
+      'currentMap',
+      'playerCount',
+      'subtitle',
+      'title',
+    ];
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        linesVersion: '1',
+        lineOrder: order.join(','),
+        titleTemplate: '{playercount}',
+        titleStyle: 'medium',
+        showTitle: '1',
+        subtitleTemplate: '**{servername}**',
+        subtitleStyle: 'normal',
+        playerCountTemplate: '{location}',
+        playerCountStyle: 'large',
+        showPlayerCount: '1',
+        descriptionTemplate: '<script>alert(1)</script> {currentmap}',
+        descriptionStyle: 'small',
+        showDescription: '1',
+        currentMapTemplate: '{serveraddress}',
+        currentMapStyle: 'subtext',
+        showCurrentMap: '1',
+        serverAddressTemplate: '{status} {severaddress}',
+        serverAddressStyle: 'normal',
+        showServerAddress: '1',
+        showMapArtwork: '1',
+      },
+    });
+    expect(response.statusCode).toBe(303);
+    const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
+    expect(command.cardProfile.textLines?.map((line: { id: string }) => line.id)).toEqual(order);
+    expect(command.cardProfile.textLines?.[4]).toMatchObject({
+      id: 'subtitle',
+      visible: false,
+      style: 'normal',
+    });
+    expect(command.cardProfile.textLines?.[5]).toMatchObject({
+      id: 'title',
+      template: '{playercount}',
+      style: 'medium',
+    });
+    expect(command.cardProfile.mapArtwork).toBe(true);
+    const saved = await shared.deps.prisma.gameServer.findFirst();
+    shared.deps.prisma.gameServer.findFirst.mockResolvedValue({
+      ...saved,
+      cardProfile: command.cardProfile,
+    });
+    const reload = await app.inject({ method: 'GET', url });
+    expect(reload.body).toContain(`value="${order.join(',')}"`);
+    expect(reload.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(reload.body).not.toContain('<script>alert(1)</script>');
+    expect(reload.body).toContain('<option value="medium" selected>');
+    expect(reload.body).not.toContain('name="showSubtitle" value="1" checked');
+  });
+
+  it('rejects duplicate line IDs and retains submitted line edits', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        linesVersion: '1',
+        lineOrder: 'title,title,playerCount,description,currentMap,serverAddress',
+        titleTemplate: '**{players}**',
+        titleStyle: 'small',
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('**{players}**');
+    expect(response.body).toContain('<option value="small" selected>');
+    expect(response.body).toContain('data-submitted-edits');
+    expect(updateServer).not.toHaveBeenCalled();
   });
 
   it('saves typed profile fields through the authoritative service', async () => {

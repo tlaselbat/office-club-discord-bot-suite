@@ -7,7 +7,12 @@ import { scheduleGameServerPoll } from '../poll-service.js';
 import { scheduleGameServerCardRefresh, type GameServerCardService } from '../card-service.js';
 import type { GameServerPanelService } from '../panel-service.js';
 import { scheduleGameServerUpdateReconcile } from '../update-thread-service.js';
-import { cardProfileSchema, isHttpsUrl, type CardProfileInput } from '../card-profile.js';
+import {
+  cardProfileSchema,
+  isHttpsUrl,
+  normalizeCardProfile,
+  type CardProfileInput,
+} from '../card-profile.js';
 
 const panelChannelPermissions = [
   PermissionFlagsBits.ViewChannel,
@@ -424,8 +429,17 @@ export class GameServerAdminService {
   public async updateServer(command: UpdateGameServerCommand): Promise<void> {
     assertHttpsUrl(command.joinUrl, 'Join URL');
     assertHttpsUrl(command.imageUrl, 'Image URL');
-    const cardProfile =
-      command.cardProfile === undefined ? undefined : cardProfileSchema.parse(command.cardProfile);
+    const parsedProfile =
+      command.cardProfile === undefined
+        ? undefined
+        : cardProfileSchema.safeParse(command.cardProfile);
+    if (parsedProfile !== undefined && !parsedProfile.success) {
+      throw new PublicError(
+        'INVALID_CARD_PROFILE',
+        parsedProfile.error.issues.map((issue) => issue.message).join('; '),
+      );
+    }
+    const cardProfile = parsedProfile?.data;
     const displayName = command.displayName?.trim();
     if (displayName !== undefined && (displayName.length === 0 || displayName.length > 64)) {
       throw new PublicError('INVALID_DISPLAY_NAME', 'Display name must be 1-64 characters.');
@@ -441,6 +455,16 @@ export class GameServerAdminService {
         throw new PublicError(
           'STALE_CONFIGURATION',
           'Configuration changed; reload and try again.',
+        );
+      }
+      if (
+        cardProfile !== undefined &&
+        cardProfile.textLines === undefined &&
+        normalizeCardProfile(current.cardProfile).textLines !== undefined
+      ) {
+        throw new PublicError(
+          'STALE_CONFIGURATION',
+          'This card uses configurable text lines; reload the editor before saving.',
         );
       }
       const updated = await tx.gameServer.updateMany({

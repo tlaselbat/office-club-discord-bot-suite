@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GameServerAdminService } from '../../../../src/modules/game-servers/services/game-server-admin-service.js';
+import { resolveCardLines } from '../../../../src/modules/game-servers/card-profile.js';
 
 describe('GameServerAdminService toggle CAS', () => {
   it('rejects a lost CAS without writing a success audit', async () => {
@@ -35,6 +36,38 @@ describe('GameServerAdminService toggle CAS', () => {
 });
 
 describe('GameServerAdminService card configuration', () => {
+  it('rejects an old editor submission that would erase saved generic lines', async () => {
+    const updateMany = vi.fn();
+    const tx = {
+      gameServer: {
+        findFirst: vi.fn().mockResolvedValue({
+          version: 1,
+          cardProfile: { textLines: resolveCardLines(undefined), mapArtwork: false },
+        }),
+        updateMany,
+      },
+    };
+    const service = new GameServerAdminService({
+      prisma: {
+        $transaction: vi.fn((callback: (value: unknown) => unknown) => callback(tx)),
+      } as never,
+      discord: {} as never,
+      dathost: {} as never,
+      panelService: {} as never,
+      cardService: {} as never,
+    });
+    await expect(
+      service.updateServer({
+        guildId: 'guild',
+        gameServerId: 'server',
+        expectedVersion: 1,
+        actorDiscordUserId: 'actor',
+        correlationId: 'corr',
+        cardProfile: { accentColor: '#123456' },
+      }),
+    ).rejects.toMatchObject({ code: 'STALE_CONFIGURATION' });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
   it('creates first module settings from legacy version zero and schedules enabled servers', async () => {
     const tx = {
       $executeRaw: vi.fn(),
@@ -322,6 +355,29 @@ describe('GameServerAdminService card configuration', () => {
       }),
     ).rejects.toThrow('Discord unavailable');
     expect(deleteRegistration).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('card profile validation before persistence', () => {
+  it('rejects unknown placeholders without entering a transaction', async () => {
+    const transaction = vi.fn();
+    const service = new GameServerAdminService({
+      prisma: { $transaction: transaction } as never,
+      discord: {} as never,
+      dathost: {} as never,
+      cardService: {} as never,
+    });
+    await expect(
+      service.updateServer({
+        guildId: 'guild',
+        gameServerId: 'server',
+        expectedVersion: 1,
+        actorDiscordUserId: 'actor',
+        correlationId: 'corr',
+        cardProfile: { templates: { title: '{bad}' } },
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_CARD_PROFILE' });
     expect(transaction).not.toHaveBeenCalled();
   });
 });

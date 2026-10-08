@@ -14,6 +14,8 @@ import {
   DEFAULT_CARD_TEMPLATES,
   isHttpsUrl,
   resolveCardProfile,
+  resolveCardLines,
+  type CardLineStyle,
 } from './card-profile.js';
 import { createGameServerCustomId } from './custom-id.js';
 
@@ -193,6 +195,8 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const mapImageUrl = resolveMapImageUrl(map, server.imageUrl);
   const profile = resolveCardProfile(server.cardProfile);
   const values = cardPlaceholderValues(server, profile, location);
+  if (profile.textLines !== undefined)
+    return renderGenericCard(server, secret, profile, values, mapImageUrl, displayMap);
   const headerLines = [
     profile.visibleFields.title ? `# ${resolveCardTemplate(profile.templates.title, values)}` : '',
     profile.visibleFields.subtitle
@@ -275,11 +279,98 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     ],
   };
 
+  enforceTextBudget(container);
   return {
     components: [container] as unknown[],
     flags: MessageFlags.IsComponentsV2 as number,
     allowedMentions: { parse: [] },
   };
+}
+
+/** Styles apply to the first line only; embedded Markdown remains user controlled. */
+export function styleCardLine(content: string, style: CardLineStyle): string {
+  if (!content.trim()) return '';
+  if (style === 'normal') return content;
+  const prefix = { large: '# ', medium: '## ', small: '### ', subtext: '-# ' }[style];
+  return prefix + content.replace(/^(?:#{1,3}|-#)\s+/, '');
+}
+
+function renderGenericCard(
+  server: ServerView,
+  secret: string,
+  profile: ReturnType<typeof resolveCardProfile>,
+  values: Record<string, string>,
+  mapImageUrl: string,
+  displayMap: string,
+) {
+  const lines = resolveCardLines(profile, server.description).map((line) =>
+    line.visible ? styleCardLine(resolveCardTemplate(line.template, values), line.style) : '',
+  );
+  const header = lines
+    .slice(0, 3)
+    .filter((content) => content.trim())
+    .join('\n');
+  const components: Record<string, unknown>[] = [
+    {
+      type: componentType.section,
+      components: [textDisplay(header || '\u200b')],
+      accessory: { type: componentType.thumbnail, media: { url: profile.thumbnailImageUrl } },
+    },
+  ];
+  const artwork = profile.mapArtwork ?? profile.visibleFields.currentMap;
+  for (let index = 3; index < 6; index++) {
+    if (index === 4 && artwork)
+      components.push({ type: componentType.separator, divider: true, spacing: 1 });
+    const content = lines[index];
+    if (content?.trim()) components.push(textDisplay(content));
+    if (index === 4 && artwork)
+      components.push({
+        type: componentType.mediaGallery,
+        items: [{ media: { url: mapImageUrl }, description: `${displayMap} map artwork` }],
+      });
+  }
+  const buttons = [
+    ...(profile.buttons.connect
+      ? [connectButton(server, secret, profile.buttons.connectLabel)]
+      : []),
+    ...(profile.buttons.mapRules
+      ? [mapRulesButton(server, secret, profile.buttons.mapRulesLabel)]
+      : []),
+  ];
+  if (buttons.length) components.push({ type: componentType.actionRow, components: buttons });
+  components.push({ type: componentType.separator, divider: true, spacing: 1 });
+  if (profile.visibleFields.updates) components.push(...renderUpdatesSection(server));
+  const container = {
+    type: componentType.container,
+    accentColor: cardAccentColor(profile.accentColor),
+    components,
+  };
+  enforceTextBudget(container);
+  return {
+    components: [container] as unknown[],
+    flags: MessageFlags.IsComponentsV2 as number,
+    allowedMentions: { parse: [] },
+  };
+}
+
+/** Discord permits 4000 text characters across the entire Components V2 message. */
+function enforceTextBudget(container: Record<string, unknown>): void {
+  const displays: Record<string, unknown>[] = [];
+  const visit = (component: Record<string, unknown>) => {
+    if (component.type === componentType.textDisplay) displays.push(component);
+    for (const child of (component.components ?? []) as Record<string, unknown>[]) visit(child);
+  };
+  visit(container);
+  for (const display of displays) if (!String(display.content).trim()) display.content = '\u200b';
+  const total = displays.reduce((sum, display) => sum + String(display.content).length, 0);
+  if (total <= 4000) return;
+  // Proportional allocation preserves space for updates even when expanded telemetry is huge.
+  const available = 4000 - displays.length;
+  for (const display of displays) {
+    const content = String(display.content);
+    const limit = 1 + Math.floor((available * content.length) / total);
+    display.content = content.slice(0, limit - 1) + '\u2026';
+  }
 }
 
 export function renderGameServerDetail(server: ServerView) {
@@ -421,10 +512,10 @@ function textDisplay(content: string): Record<string, unknown> {
   return { type: componentType.textDisplay, content };
 }
 
-function cardPlaceholderValues(
+export function cardPlaceholderValues(
   server: ServerView,
   profile: ReturnType<typeof resolveCardProfile>,
-  location: string | null,
+  location: string | null = displayLocation(server.snapshot?.datacenter ?? null),
 ): Record<string, string> {
   const snapshot = server.snapshot;
   const host = server.connectDomain ?? snapshot?.host ?? '';
@@ -458,7 +549,7 @@ function cardPlaceholderValues(
   };
 }
 
-function resolveCardTemplate(template: string, values: Record<string, string>): string {
+export function resolveCardTemplate(template: string, values: Record<string, string>): string {
   const withoutMissingLocationSeparator = values.location
     ? template
     : template.replace(/\s?[·|]\s*\{location\}/gi, '');
