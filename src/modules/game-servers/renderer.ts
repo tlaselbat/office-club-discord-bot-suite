@@ -23,7 +23,7 @@ const ASSET_BASE_URL =
 
 // Discord caches external media by URL. Give revised artwork a new content-versioned
 // filename; replacing bytes at the old URL does not refresh already cached cards.
-const FALLBACK_BANNER = 'clickcs-arena-banner-779a25c6.jpg';
+const FALLBACK_BANNER = 'clickcs-arena-banner-26bc6af7.jpg';
 
 const componentType = {
   actionRow: 1,
