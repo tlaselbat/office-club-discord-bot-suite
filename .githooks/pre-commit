@@ -1,0 +1,4 @@
+#!/bin/sh
+# Auto-format staged files with Prettier before commit.
+
+corepack pnpm exec lint-staged

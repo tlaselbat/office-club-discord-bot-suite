@@ -17,6 +17,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --enable-source-maps dist/main.js",
+    "prepare": "node scripts/setup-hooks.js",
     "discord:register": "tsx src/register-commands.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -33,6 +34,11 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs,cjs,json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.981.0",
@@ -56,6 +62,7 @@
     "@types/pg": "8.15.5",
     "dotenv": "17.4.2",
     "eslint": "9.35.0",
+    "lint-staged": "15.5.2",
     "prettier": "3.6.2",
     "prisma": "7.10.0",
     "tsx": "4.20.5",
