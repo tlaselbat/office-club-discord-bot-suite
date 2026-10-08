@@ -9,6 +9,15 @@ const previewRoot = document.getElementById('card-template-preview');
 const formControl = (name) => document.querySelector('[name="' + name + '"]');
 const inputValue = (name, fallback = '') => formControl(name)?.value ?? fallback;
 const lineNodes = () => Array.from(lineEditors?.querySelectorAll('[data-card-line]') ?? []);
+const refreshLineSummaries = () => lineNodes().forEach((node) => {
+  const summary = node.querySelector('[data-line-summary]');
+  const meta = node.querySelector('[data-line-meta]');
+  const text = node.querySelector('[data-card-template]')?.value ?? '';
+  const style = node.querySelector('[data-line-style]')?.selectedOptions[0]?.textContent ?? 'Normal';
+  const visible = node.querySelector('input[type="checkbox"]')?.checked;
+  if (summary) summary.textContent = text.trim() || 'Empty line';
+  if (meta) meta.textContent = (visible ? 'Visible' : 'Hidden') + ' · ' + style;
+});
 const syncLineOrder = () => {
   const order = document.getElementById('card-line-order');
   if (order instanceof HTMLInputElement) order.value = lineNodes().map((node) => node.dataset.cardLine).join(',');
@@ -19,8 +28,7 @@ const syncLineOrder = () => {
 };
 const markCardDirty = () => {
   if (!(cardForm instanceof HTMLFormElement)) return;
-  if (dirtyStatus) dirtyStatus.textContent = 'Unsaved changes. Save server to apply them.';
-  cardForm.dataset.dirty = 'true';
+  updateDirtyState();
 };
 const insertLineText = (control, token) => {
   if (!(control instanceof HTMLTextAreaElement)) return;
@@ -70,7 +78,28 @@ document.addEventListener('click', (event) => {
     markCardDirty();
     updateCardPreview();
   }
+  if (button.hasAttribute('data-discard-server-changes') && cardForm instanceof HTMLFormElement) {
+    if (submitted) {
+      cardForm.dataset.dirty = 'false';
+      window.location.reload();
+      return;
+    }
+    cardForm.reset();
+    for (const id of originalLineOrder) {
+      const node = lineNodes().find((item) => item.dataset.cardLine === id);
+      if (node) lineEditors.append(node);
+    }
+    syncLineOrder();
+    refreshLineSummaries();
+    updateDirtyState();
+  }
 });
+document.addEventListener('toggle', (event) => {
+  const opened = event.target;
+  if (!(opened instanceof HTMLDetailsElement) || !opened.open) return;
+  if (!opened.matches('[data-card-line]')) return;
+  lineNodes().forEach((node) => { if (node !== opened) node.open = false; });
+}, true);
 // Parse a conservative Markdown subset into text nodes. Never interpret HTML or create user URLs.
 const appendInlineMarkdown = (parent, content) => {
   const pattern = /(\x60[^\x60\n]+\x60|\*\*\*[^\n]+?\*\*\*|\*\*[^\n]+?\*\*|__[^\n]+?__|~~[^\n]+?~~|\*[^\n]+?\*)/g;
@@ -127,9 +156,44 @@ const updateCardPreview = () => {
     });
     output.append(block);
   });
+  const artwork = document.getElementById('card-preview-artwork');
+  const actions = document.getElementById('card-preview-actions');
+  if (!artwork || !actions) return;
+  artwork.replaceChildren();
+  actions.replaceChildren();
+  const showArtwork = formControl('showMapArtwork');
+  const actionLabels = [
+    ['showConnectButton', 'connectButtonLabel', 'Connect'],
+    ['showMapRulesButton', 'mapRulesButtonLabel', 'Map & Rules'],
+  ];
+  const visibleActions = actionLabels.filter(([toggle]) => formControl(toggle)?.checked);
+  if (showArtwork?.checked || visibleActions.length > 0) {
+    const separator = document.createElement('hr');
+    separator.setAttribute('aria-hidden', 'true');
+    output.append(separator);
+  }
+  if (showArtwork?.checked) {
+    const artworkSlot = document.createElement('div');
+    artworkSlot.className = 'preview-artwork';
+    artworkSlot.textContent = 'Map artwork · ' + (values.currentmap || 'image shown when available');
+    artwork.append(artworkSlot);
+  }
+  if (visibleActions.length > 0) {
+    const actionRow = document.createElement('div');
+    actionRow.className = 'preview-action-row';
+    actionRow.setAttribute('aria-label', 'Approximate Discord action row');
+    visibleActions.forEach(([, labelName, fallback]) => {
+      const button = document.createElement('span');
+      button.className = 'preview-action';
+      button.textContent = inputValue(labelName, fallback);
+      actionRow.append(button);
+    });
+    actions.append(actionRow);
+  }
 };
 const cardForm = document.querySelector('form[action$="/edit"]');
 const dirtyStatus = document.getElementById('card-config-dirty-status');
+const originalLineOrder = lineNodes().map((node) => node.dataset.cardLine).filter(Boolean);
 if (cardForm instanceof HTMLFormElement) {
   const initial = new URLSearchParams(new FormData(cardForm)).toString();
   const submitted = cardForm.querySelector('[data-submitted-edits]') !== null;
@@ -137,13 +201,24 @@ if (cardForm instanceof HTMLFormElement) {
     const dirty = submitted || new URLSearchParams(new FormData(cardForm)).toString() !== initial;
     if (dirtyStatus) dirtyStatus.textContent = dirty ? 'Unsaved changes. Save server to apply them.' : 'All changes saved.';
     cardForm.dataset.dirty = dirty ? 'true' : 'false';
+    const saveButton = cardForm.querySelector('button[type="submit"]');
+    if (saveButton instanceof HTMLButtonElement && saveButton.textContent !== 'Saving…') {
+      saveButton.disabled = !dirty;
+    }
+    refreshLineSummaries();
     updateCardPreview();
   };
   cardForm.addEventListener('input', updateDirtyState);
   cardForm.addEventListener('change', updateDirtyState);
   window.addEventListener('beforeunload', (event) => {
-    if (cardForm.dataset.dirty !== 'true') return;
+    if (cardForm.dataset.dirty !== 'true' || cardForm.dataset.saving === 'true') return;
     event.preventDefault(); event.returnValue = '';
+  });
+  cardForm.addEventListener('submit', () => {
+    cardForm.dataset.saving = 'true';
+    const submit = cardForm.querySelector('button[type="submit"]');
+    if (submit instanceof HTMLButtonElement) { submit.disabled = true; submit.textContent = 'Saving…'; }
+    if (dirtyStatus) dirtyStatus.textContent = 'Saving changes…';
   });
   updateDirtyState();
 }

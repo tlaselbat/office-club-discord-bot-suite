@@ -239,6 +239,13 @@ describe('admin page views', () => {
     expect(html).toContain('Gameplay state');
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
+    expect(html).toContain('aria-label="Configuration sections"');
+    expect(html).toContain('href="#card-designer">Card Designer</a>');
+    expect(html).toContain('class="game-server-savebar"');
+    expect(html).toContain('data-discard-server-changes');
+    expect(html).toContain('class="read-only game-server-preview"');
+    expect(html.match(/<details class="card-line-editor" data-card-line=/g)).toHaveLength(6);
+    expect(html).toContain('data-line-summary');
     expect(html).toContain('/displays/123e4567-e89b-12d3-a456-426614174001/move');
     expect(html).toContain(
       '<textarea id="descriptionTemplate" name="descriptionTemplate" rows="4"',
