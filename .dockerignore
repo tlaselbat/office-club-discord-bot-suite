@@ -4,3 +4,5 @@ coverage
 .git
 .env
 *.log
+.template-staging/
+.playwright-mcp/

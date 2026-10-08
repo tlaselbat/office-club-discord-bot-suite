@@ -478,7 +478,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
   ) => {
     const server = await shared.deps.prisma.gameServer.findFirst({
       where: { id: serverId, guildId },
-      include: { snapshot: true, cards: true },
+      include: { snapshot: true, cards: true, updateThreads: true },
     });
     if (server === null) return null;
     const channels = await fetchTextChannels(guildId);
@@ -527,6 +527,13 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
               stale: server.snapshot.stale,
               lastError: server.snapshot.lastError,
             },
+      updateThreads: server.updateThreads.map((thread) => ({
+        type: thread.type,
+        threadId: thread.threadId,
+        latestMessageText: thread.latestMessageText,
+        latestMessageAt: thread.latestMessageAt,
+        notificationExpiresAt: thread.notificationExpiresAt,
+      })),
       textChannels: channels,
       cards: server.cards.map((card) => ({
         id: card.id,
@@ -554,7 +561,18 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       const params = z.object({ guildId: idSchema, serverId: z.uuid() }).safeParse(request.params);
       if (!params.success || shared.guild(params.data.guildId) === undefined)
         return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-      const html = await loadServerModel(params.data.guildId, params.data.serverId, auth);
+      const saved = (request.query as Record<string, unknown> | undefined)?.saved === '1';
+      const html = await loadServerModel(
+        params.data.guildId,
+        params.data.serverId,
+        auth,
+        saved
+          ? {
+              notice:
+                'Configuration saved. Discord reconciliation is processed separately; check Deployments for display status.',
+            }
+          : undefined,
+      );
       if (html === null) return reply.code(404).type('text/html').send('<h1>Not found</h1>');
       return reply.type('text/html').send(html);
     },
@@ -746,7 +764,10 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           .type('text/html')
           .send(html);
       }
-      return reply.redirect(`/admin/guilds/${params.data.guildId}/game-servers`, 303);
+      return reply.redirect(
+        `/admin/guilds/${params.data.guildId}/game-servers/${params.data.serverId}/edit?saved=1#card-designer`,
+        303,
+      );
     },
   );
 

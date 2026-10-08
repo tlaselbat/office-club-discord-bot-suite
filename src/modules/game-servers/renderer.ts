@@ -214,7 +214,10 @@ function renderLayoutCard(
       const content = styleCardLine(resolveCardTemplate(element.template, values), element.style);
       if (content.trim()) components.push(textDisplay(content));
     } else if (element.type === 'section') {
-      const sectionText = resolveCardTemplate(element.template, values);
+      const sectionText = styleCardLine(
+        resolveCardTemplate(element.template, values),
+        element.style,
+      );
       components.push({
         type: componentType.section,
         components: [textDisplay(sectionText)],

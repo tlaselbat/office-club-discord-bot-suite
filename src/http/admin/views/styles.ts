@@ -6,6 +6,7 @@ export const panelCss = `:root{
   font-synthesis:none
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{min-width:320px;margin:0;min-height:100vh;background:radial-gradient(circle at top,#172941 0,#0c1624 38rem,#09101b 100%);line-height:1.5}
 main{width:min(1180px,100%);margin:auto;padding:2rem 1.5rem 3.5rem}
 a{color:#87c5ff;text-decoration-thickness:1px;text-underline-offset:3px}
@@ -71,4 +72,49 @@ form[action$="/edit"] :target{scroll-margin-top:9rem}
 @media(max-width:760px){.levels-table{overflow:visible;border:0;background:transparent}.levels-table table{display:block;min-width:0}.levels-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.levels-table tbody{display:grid;gap:.8rem}.levels-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem;padding:.85rem;border:1px solid rgb(156 189 224 / 18%);border-radius:10px;background:#0c1725}.levels-table td{display:block;min-width:0;padding:0;border:0}.levels-table td:nth-child(n+3){grid-column:1/-1}.levels-table td:last-child{white-space:normal}.levels-table td:last-child button{width:100%}.levels-table input,.levels-table select{min-width:0}.level-field-label{position:static;width:auto;height:auto;overflow:visible;clip-path:none;white-space:normal}}
 @media(min-width:380px) and (max-width:650px){.server-card-details{grid-template-columns:repeat(2,minmax(0,1fr))}.server-card-details .server-card-displays{grid-column:1/-1}}
 @media(max-width:399px){.table--records td,.audit-table .table--records td{grid-template-columns:1fr;gap:.2rem}.table--records td[data-label=""]{align-items:stretch}.table--records td[data-label=""] button,.table--records td[data-label=""] .button{width:100%}}
+.layout-add-menu>summary{cursor:pointer;width:max-content;padding:.55rem .8rem;border:1px solid #486079;border-radius:8px;background:#1b2b3e;font-weight:700}.layout-add-menu[open] .layout-add-actions{padding-top:.65rem}.game-server-preview[data-tall="true"]{position:static!important}@media(max-width:900px){.game-server-savebar{position:static}}
+.saved-layout-json{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;padding:1rem;font-size:.85rem;background:#0b1725}.card-settings-group h3{padding:0 1rem}
+.layout-row-menu{position:relative}.layout-row-menu>summary{cursor:pointer;color:#cbdced;min-width:2rem;min-height:2.2rem;padding:.3rem;text-align:center;border:1px solid #486079;border-radius:7px;list-style:none}.layout-row-menu[open]>div{position:absolute;right:0;top:2.5rem;z-index:5;display:grid;gap:.35rem;padding:.5rem;border:1px solid #486079;border-radius:8px;background:#0b1725;box-shadow:0 6px 20px #0008}.layout-row-menu[open]>div button{width:100%;min-width:6.5rem}.preview-thumbnail-frame{margin:0;flex:0 0 80px;max-width:80px!important}.preview-thumbnail-frame .preview-artwork{font-size:.7rem;min-height:80px;padding:.3rem}.preview-card-disclosure>summary{cursor:pointer;font-size:.85rem;color:#c8d7e7;margin-top:.7rem}.preview-section>div{min-width:0}.preview-updates .preview-action{flex:none;align-self:center}.card-layout-row .card-layout-content{display:none}
+/* Game server card workspace: structure, contextual properties, and Discord preview. */
+body:has(#card-layout-workspace) main{width:min(1880px,100%)}
+form:has(#card-layout-workspace){grid-template-columns:minmax(0,1fr) minmax(380px,540px)}
+#server-settings{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+#server-settings .hint{font-size:.85rem}#server-settings label{max-width:28rem}
+#card-designer{padding:1rem;gap:1rem}#card-text-settings{padding:.85rem;background:#101c2b}
+#card-layout-workspace{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(0,1.2fr);gap:1rem;align-items:start}
+#card-layout-list,#card-layout-properties{min-width:0}#card-layout-properties,.game-server-preview{scroll-margin-top:9rem}#card-layout-list h3{margin:.15rem 0 .25rem;font-size:1rem}
+#card-layout-editors{display:grid;gap:.45rem;margin-top:.75rem}
+.card-layout-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.35rem;padding:.45rem;border:1px solid #35495f;border-radius:9px;background:#142235;min-width:0}
+.card-layout-row.is-selected{border-color:#86c6fb;background:#1c3853;box-shadow:inset 3px 0 #86c6fb}
+.card-layout-row-main{display:flex;gap:.6rem;align-items:flex-start;text-align:left;min-width:0;width:100%;padding:.3rem;background:transparent;border-color:transparent;font-weight:500}
+.card-layout-row-main:hover{background:#223b53}.card-layout-row-icon{flex:none;width:1.2rem;color:#91caff;font-size:1.1rem}
+.card-layout-row-copy{display:grid;gap:.2rem;min-width:0}.card-layout-row-copy strong{font-size:.92rem;line-height:1.3;overflow-wrap:anywhere}
+.card-layout-row-summary{display:block;font-size:.8rem;line-height:1.4;font-weight:400;color:#b5c6d9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.card-layout-row-actions{display:flex;gap:.2rem;align-items:center}.card-layout-row-actions button{min-height:2.2rem;padding:.3rem .45rem;background:transparent;border-color:#486079}
+.card-layout-row .card-layout-content{display:none}#card-layout-properties{padding:1rem;border:1px solid #415872;border-radius:10px;background:#0b1725}
+#card-layout-properties .card-layout-content{display:grid;gap:.8rem}#card-layout-properties textarea{min-height:9rem}
+.card-layout-property-header{margin-bottom:.8rem}.card-layout-property-header h3{margin:0 0 .3rem;font-size:1.1rem}
+.card-layout-property-actions{display:flex;gap:.4rem;flex-wrap:wrap;padding-top:.8rem;border-top:1px solid #35495f}
+.card-layout-property-actions button{font-size:.85rem;min-height:2.4rem}#card-layout-properties .actions{gap:.4rem;margin:0}
+#card-layout-properties fieldset{padding:.8rem;background:#142235}.card-layout-properties-empty{color:#b5c6d9;margin:0}
+.layout-add-actions{display:flex;gap:.4rem;flex-wrap:wrap}.layout-add-actions button{font-size:.85rem;min-height:2.4rem;padding:.45rem .6rem}
+.card-layout-undo{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.75rem;color:#cbdced;font-size:.85rem}
+.card-settings-group{border:1px solid #35495f;border-radius:9px;background:#101c2b;min-width:0}.card-settings-group>summary{padding:.8rem 1rem;cursor:pointer;font-weight:700;color:#dceafa}.card-settings-group>summary:focus-visible,details>summary:focus-visible{outline:3px solid #8ec9ff;outline-offset:2px}
+.card-settings-content{padding:0 1rem 1rem;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;align-items:start}.card-settings-content .hint{grid-column:1/-1}
+.card-default-actions{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}.card-default-actions button{font-size:.85rem}
+.preview-heading{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:.6rem}.preview-heading h2{margin:0}.preview-heading button{font-size:.82rem;min-height:2.3rem}
+.game-server-preview{padding:1rem}.game-server-preview #card-preview-lines{background:#2b2d31;border:1px solid #43464d;border-left:4px solid #2b8aef;padding:1rem;border-radius:8px;color:#f2f3f5}
+.preview-section{display:flex;gap:1rem;align-items:flex-start}.preview-section>div{flex:1}.preview-thumbnail{width:80px;height:80px;object-fit:contain;border-radius:8px;flex:none}
+.preview-media-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.35rem}.preview-media-gallery:has(>.preview-media-item:only-child){grid-template-columns:minmax(0,1fr)}
+.preview-media-item{margin:0;min-width:0;overflow:hidden;border-radius:7px}.preview-media-item img{display:block;width:100%;height:auto;object-fit:contain}.preview-media-item figcaption{font-size:.78rem;color:#c8ced8;padding:.3rem}
+.preview-separator-space{height:.7rem}.preview-separator-large{margin-block:1.5rem!important}.preview-action.secondary{background:#4e5058;border-color:#6d7078}
+.game-server-preview.is-expanded{grid-column:1/-1!important;grid-row:auto!important;position:static!important;width:100%;max-width:900px;justify-self:center}
+.live-state-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin:.9rem 0 1.1rem}.live-state-summary>div{padding:.8rem;background:#142235;border:1px solid #35495f;border-radius:9px}.live-state-summary span{display:block;color:#aebed0;font-size:.8rem}.live-state-summary strong{display:block;margin-top:.2rem;overflow-wrap:anywhere;font-size:1rem}
+.read-only>.card-settings-group .dl,.card>.card-settings-group .dl{padding:0 1rem 1rem}
+@media(min-width:1550px){#card-layout-workspace{grid-template-columns:minmax(245px,.7fr) minmax(0,1.3fr)}}
+@media(max-width:1390px){#card-layout-workspace{grid-template-columns:minmax(0,1fr)}#card-layout-editors{grid-template-columns:repeat(2,minmax(0,1fr))}.card-layout-row{grid-template-columns:minmax(0,1fr)}.card-layout-row-actions{justify-content:flex-end}}
+@media(max-width:1120px){form:has(#card-layout-workspace){grid-template-columns:minmax(0,1fr)}form:has(#card-layout-workspace)>#card-designer,form:has(#card-layout-workspace)>.game-server-preview{grid-column:1;grid-row:auto;position:static}#card-layout-workspace{grid-template-columns:minmax(230px,.8fr) minmax(0,1.2fr)}#card-layout-editors{grid-template-columns:1fr}.card-layout-row{grid-template-columns:minmax(0,1fr) auto}.game-server-preview{width:100%;max-width:760px;justify-self:center}.game-server-section-nav{position:static}#server-settings{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){#card-layout-workspace{grid-template-columns:minmax(0,1fr)}#card-layout-editors{grid-template-columns:repeat(2,minmax(0,1fr))}.card-layout-row{grid-template-columns:minmax(0,1fr)}.card-settings-content{grid-template-columns:1fr}.game-server-savebar{position:static}#server-settings{grid-template-columns:1fr}}
+@media(max-width:520px){#card-layout-editors{grid-template-columns:1fr}.card-layout-row{grid-template-columns:minmax(0,1fr) auto}#card-designer,#card-text-settings,#card-layout-properties{padding:.7rem}.card-layout-property-actions{flex-direction:row}.card-layout-property-actions button{width:auto}.preview-heading{align-items:flex-start}.preview-heading h2{font-size:1rem}.preview-heading button{max-width:9rem}.preview-thumbnail{width:64px;height:64px}.layout-add-actions button{flex:1 1 9rem}.game-server-preview{padding:.75rem}.game-server-savebar button{font-size:.9rem}}
+
 `;

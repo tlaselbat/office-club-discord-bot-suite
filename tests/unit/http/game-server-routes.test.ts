@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerGameServersRoutes } from '../../../src/http/routes/admin/game-servers.js';
 import type { SharedHelpers } from '../../../src/http/routes/admin/shared.js';
+import { resolveCardLayout } from '../../../src/modules/game-servers/card-profile.js';
 import type { CardProfile } from '../../../src/modules/game-servers/card-profile.js';
 import { PublicError } from '../../../src/errors/public-error.js';
 
@@ -30,6 +31,7 @@ function fixture() {
     version: 4,
     snapshot: null,
     cards: [],
+    updateThreads: [],
     cardProfile: {
       accentColor: '#123456',
       thumbnailImageUrl: 'https://example.com/icon.png',
@@ -90,6 +92,58 @@ function fixture() {
 }
 
 describe('Game Server configuration routes', () => {
+  it('uses cached updates safely in the preview and reports persistence separately', async () => {
+    const { app, url, shared, payload, updateServer } = fixture();
+    const saved = await shared.deps.prisma.gameServer.findFirst();
+    shared.deps.prisma.gameServer.findFirst.mockResolvedValue({
+      ...saved,
+      updateThreads: [
+        {
+          type: 'ANNOUNCEMENTS',
+          threadId: '42345678901234567',
+          latestMessageText: '<script>alert(1)</script>',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
+      ],
+    });
+    const page = await app.inject({ method: 'GET', url });
+    expect(page.body).toContain('data-update-threads');
+    expect(page.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(page.body).not.toContain('<script>alert(1)</script>');
+    expect(shared.deps.prisma.gameServer.findFirst).toHaveBeenLastCalledWith({
+      where: { id: serverId, guildId },
+      include: { snapshot: true, cards: true, updateThreads: true },
+    });
+    const response = await app.inject({ method: 'POST', url, payload });
+    expect(response.statusCode).toBe(303);
+    expect(updateServer).toHaveBeenCalledOnce();
+    expect(response.headers.location).toBe(url + '?saved=1#card-designer');
+    const reloaded = await app.inject({ method: 'GET', url: url + '?saved=1' });
+    expect(reloaded.body).toContain(
+      'Configuration saved. Discord reconciliation is processed separately',
+    );
+  });
+  it('saves the exact layout envelope emitted by the editor and preserves element IDs', async () => {
+    const { app, url, payload, updateServer, shared } = fixture();
+    const saved = (await shared.deps.prisma.gameServer.findFirst()) as {
+      cardProfile: unknown;
+      description: string;
+    };
+    const elements = resolveCardLayout(saved.cardProfile, saved.description);
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        layoutVersion: '1',
+        layoutJson: JSON.stringify({ version: 1, elements }),
+      },
+    });
+    expect(response.statusCode).toBe(303);
+    const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
+    expect(command.cardProfile.layout?.elements).toEqual(elements);
+  });
   it('hydrates saved registration and Card Profile', async () => {
     const { app, url } = fixture();
     const response = await app.inject({ method: 'GET', url });

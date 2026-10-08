@@ -1,6 +1,10 @@
 import { cardLineScript } from './card-lines.js';
 
-export const panelScript = `document.addEventListener('change', (event) => {
+export const panelScript = `document.addEventListener('submit', (event) => {
+  if (!(event.target instanceof HTMLFormElement) || !event.target.querySelector('[data-confirm-deployment-remove]')) return;
+  if (!window.confirm('Remove this Discord display? The server registration and card configuration will remain saved.')) event.preventDefault();
+});
+document.addEventListener('change', (event) => {
   const control = event.target;
   if (!(control instanceof HTMLSelectElement)) return;
   const hintId = control.getAttribute('aria-describedby')?.split(/\\s+/).find((id) => id.endsWith('-selected-value'));

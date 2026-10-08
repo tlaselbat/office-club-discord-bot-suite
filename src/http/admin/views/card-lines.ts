@@ -1,186 +1,122 @@
 import { resolveCardTemplate, styleCardLine } from '../../../modules/game-servers/renderer.js';
+import { CARD_PLACEHOLDERS } from '../../../modules/game-servers/card-profile.js';
+import { cardPreviewScript } from './card-preview.js';
 
-/** Shared substitutions and heading rules; the browser approximation only adds safe DOM nodes. */
+/** One set of authoritative element controls; selecting a row moves its controls into the panel. */
 export const cardLineScript = String.raw`
 const resolveLineTemplate = ${resolveCardTemplate.toString()};
 const styleLineText = ${styleCardLine.toString()};
-const lineEditors = document.getElementById('card-line-editors');
+const placeholders = ${JSON.stringify(CARD_PLACEHOLDERS)};
 const layoutEditors = document.getElementById('card-layout-editors');
+const layoutProperties = document.getElementById('card-layout-properties');
 const layoutJson = document.getElementById('card-layout-json');
-let isHydratingLayout = false;
 const previewRoot = document.getElementById('card-template-preview');
-const formControl = (name) => document.querySelector('[name="' + name + '"]');
+const cardForm = layoutEditors?.closest('form');
+const dirtyStatus = document.getElementById('card-config-dirty-status');
+const formControl = (name) => cardForm?.querySelector('[name="' + name + '"]');
 const inputValue = (name, fallback = '') => formControl(name)?.value ?? fallback;
-let submitted = false;
-let updateDirtyState = () => {};
-const lineNodes = () => Array.from(lineEditors?.querySelectorAll('[data-card-line]') ?? []);
 const layoutNodes = () => Array.from(layoutEditors?.querySelectorAll('[data-layout-element]') ?? []);
-const saveLayout = () => {
-  if (!(layoutJson instanceof HTMLInputElement)) return;
-  layoutJson.value = JSON.stringify(layoutNodes().map((node) => {
-    const read = (name) => node.querySelector('[data-layout-field="' + name + '"]');
-    const base = { id: node.dataset.layoutId, type: node.dataset.layoutElement, label: read('label')?.value || node.dataset.layoutElement, visible: read('visible')?.checked ?? true };
-    if (base.type === 'text') return { ...base, template: read('template')?.value ?? '', style: read('style')?.value ?? 'normal' };
-    if (base.type === 'section') return { ...base, template: read('template')?.value ?? '', style: read('style')?.value ?? 'normal', thumbnailUrl: read('thumbnailUrl')?.value || null };
-    if (base.type === 'gallery') return { ...base, items: Array.from(node.querySelectorAll('[data-gallery-item]')).map((item) => ({ id: item.dataset.itemId, source: item.querySelector('[data-layout-field="source"]')?.value ?? 'map', url: item.querySelector('[data-layout-field="url"]')?.value || null, description: item.querySelector('[data-layout-field="description"]')?.value ?? '' })) };
-    if (base.type === 'separator') return { ...base, divider: read('divider')?.checked ?? true, spacing: Number(read('spacing')?.value ?? 1) };
-    return base;
-  }));
+const read = (node, field) => node._content.querySelector('[data-layout-field="' + field + '"]');
+const originalElements = new Map();
+let selectedLayoutId = null;
+let removed = null;
+let initial = '';
+let initialLayout = null;
+let invalidLayout = false;
+let submitted = Boolean(cardForm?.querySelector('[data-submitted-edits]'));
+const selectionKey = 'office-card-element:' + window.location.pathname;
+const escapeText = (value) => { const element = document.createElement('span');element.textContent=String(value);return element.innerHTML; };
+const serializeElement = (node) => {
+  const base = { id: node.dataset.layoutId, type: node.dataset.layoutElement, label: read(node,'label').value, visible: read(node,'visible').checked };
+  if (base.type === 'text' || base.type === 'section') {
+    Object.assign(base,{template:read(node,'template').value,style:read(node,'style').value});
+    if(base.type === 'section') base.thumbnailUrl=read(node,'thumbnailUrl').value || null;
+  } else if(base.type === 'gallery') base.items=Array.from(node._content.querySelectorAll('[data-gallery-item]')).map((item)=>({id:item.dataset.itemId,source:item.querySelector('[data-layout-field="source"]').value,url:item.querySelector('[data-layout-field="url"]').value||null,description:item.querySelector('[data-layout-field="description"]').value}));
+  else if(base.type === 'separator') Object.assign(base,{divider:read(node,'divider').checked,spacing:Number(read(node,'spacing').value)});
+  return base;
 };
-const addLayoutElement = (type, data = {}) => {
-  if (!layoutEditors) return;
-  const id = crypto.randomUUID();
-  const label = data.label ?? ({ text: 'Text line', gallery: 'Image gallery', separator: 'Separator', section: 'Text and thumbnail' }[type] ?? 'Layout element');
-  const control = (name, value, extra = '') => '<label>' + name + '<input data-layout-field="' + name + '" value="' + escapeAttr(value) + '" ' + extra + '></label>';
-  const common = '<label class="checkbox"><input data-layout-field="visible" type="checkbox" checked> Visible</label>' + control('label', label);
-  let settings = common;
-  if (type === 'text' || type === 'section') settings += control('template', data.template ?? '{servername}', 'maxlength="500"') + '<label>Text style<select data-layout-field="style">' + ['large','medium','small','normal','subtext'].map((s) => '<option>' + s + '</option>').join('') + '</select></label>';
-  if (type === 'section') settings += control('thumbnailUrl', '', 'type="url" placeholder="Use default thumbnail"');
-  if (type === 'gallery') settings += '<div data-gallery-items></div><button type="button" data-gallery-add>Add image</button>';
-  if (type === 'separator') settings += '<label class="checkbox"><input data-layout-field="divider" type="checkbox" checked> Visible divider</label><label>Spacing<select data-layout-field="spacing"><option value="1">Small</option><option value="2">Large</option></select></label>';
-  const node = document.createElement('details');
-  node.className = 'card-line-editor'; node.open = true; node.dataset.layoutElement = type; node.dataset.layoutId = id;
-  node.innerHTML = '<summary><span class="line-summary-title">' + escapeText(label) + '</span><span class="line-summary-text">' + type + '</span></summary><div class="card-line-content">' + settings + '<div class="actions"><button type="button" data-layout-move="up">Up</button><button type="button" data-layout-move="down">Down</button><button type="button" data-layout-duplicate>Duplicate</button><button type="button" data-layout-remove>Remove</button></div></div>';
-  layoutEditors.append(node);
-  if (type === 'gallery') addGalleryItem(node, data.items?.[0]);
-  if (!isHydratingLayout) { saveLayout(); markCardDirty(); updateCardPreview(); }
+const saveLayout = () => { if(layoutJson && !invalidLayout) layoutJson.value=JSON.stringify({version:1,elements:layoutNodes().map(serializeElement)}); };
+const announce = (text) => { const status=document.getElementById('card-layout-status');if(status) status.textContent=text; };
+const refreshRows = () => {
+  layoutNodes().forEach((node,index,nodes)=>{
+    const selected=node.dataset.layoutId===selectedLayoutId;
+    node.classList.toggle('is-selected',selected);
+    const select=node.querySelector('[data-select-layout]'); select.setAttribute('aria-pressed',String(selected));
+    const label=read(node,'label').value;node.querySelector('.card-layout-row-copy strong').textContent=({'Card description':'Description','Card currentMap':'Current map','Card serverAddress':'Connect command'}[label]||label||'Untitled element');
+    const type=node.dataset.layoutElement;
+    const summary=type==='text'||type==='section'?read(node,'template').value.replace(/\s+/g,' '):type==='gallery'?node._content.querySelectorAll('[data-gallery-item]').length+' image(s)':type==='separator'?(read(node,'divider').checked?'Divider':'Spacing only')+' · '+(read(node,'spacing').value==='2'?'Large':'Small'):'Connect and Map & Rules';
+    node.querySelector('.card-layout-row-summary').textContent=(read(node,'visible').checked?'Visible · ':'Hidden · ')+summary;
+    node.querySelector('[data-layout-move="up"]').disabled=index===0;
+    node.querySelector('[data-layout-move="down"]').disabled=index===nodes.length-1;
+    node.querySelector('[data-layout-remove]').disabled=nodes.length===1;node._content.querySelector('[data-layout-remove]').disabled=nodes.length===1;
+    node.querySelector('[data-layout-duplicate]').disabled=nodes.length>=35||type==='actions';
+    if(type==='gallery') {
+      const items=Array.from(node._content.querySelectorAll('[data-gallery-item]'));
+      items.forEach((item,i)=>{item.querySelector('legend').textContent='Image '+(i+1);item.querySelector('[data-gallery-move="up"]').disabled=i===0;item.querySelector('[data-gallery-move="down"]').disabled=i===items.length-1;item.querySelector('[data-gallery-remove]').disabled=items.length===1;});
+      node._content.querySelector('[data-gallery-add]').disabled=items.length>=10;
+    }
+  });
+  cardForm?.querySelectorAll('[data-add-layout]').forEach((button)=>{button.disabled=invalidLayout||layoutNodes().length>=35||(button.dataset.addLayout==='actions'&&layoutNodes().some((node)=>node.dataset.layoutElement==='actions'));});
 };
-const escapeText = (value) => { const el = document.createElement('span'); el.textContent = value; return el.innerHTML; };
-const escapeAttr = (value) => escapeText(String(value)).replace(/"/g, '&quot;');
-const addGalleryItem = (node, data = {}) => {
-  const holder = node.querySelector('[data-gallery-items]'); if (!holder || holder.children.length >= 10) return;
-  const id = data.id ?? crypto.randomUUID();
-  const item = document.createElement('fieldset'); item.dataset.galleryItem = 'true'; item.dataset.itemId = id;
-  item.innerHTML = '<legend>Image</legend><label>Image source<select data-layout-field="source"><option value="map">Automatic current map</option><option value="fallback">Default fallback</option><option value="custom">Custom HTTPS URL</option></select></label>' + '<label>Custom HTTPS URL<input data-layout-field="url" type="url" maxlength="500" placeholder="https://..."></label><label>Media description<input data-layout-field="description" maxlength="1024"></label><button type="button" data-gallery-remove>Remove image</button>';
-  holder.append(item);
-  item.querySelector('[data-layout-field="source"]').value = data.source ?? 'map';
-  item.querySelector('[data-layout-field="url"]').value = data.url ?? '';
-  item.querySelector('[data-layout-field="description"]').value = data.description ?? '{currentmap} map artwork';
+const updateDirtyState = () => {
+  if(!cardForm||!initial)return;
+  saveLayout();
+  const dirty=submitted||new URLSearchParams(new FormData(cardForm)).toString()!==initial;
+  cardForm.dataset.dirty=String(dirty);
+  if(dirtyStatus)dirtyStatus.textContent=dirty?'Unsaved changes. Save changes to apply them.':'All changes saved.';
+  const save=cardForm.querySelector('button[type="submit"]');if(save&&cardForm.dataset.saving!=='true')save.disabled=!dirty||invalidLayout;
+  const discard=cardForm.querySelector('[data-discard-server-changes]');if(discard)discard.disabled=!dirty;
+  refreshRows();updateCardPreview();
+};
+const selectElement = (id, focus=false) => {
+  const node=layoutNodes().find((node)=>node.dataset.layoutId===id);if(!node||!layoutProperties)return;
+  const old=layoutNodes().find((node)=>node.dataset.layoutId===selectedLayoutId);
+  if(old)old.append(old._content);
+  selectedLayoutId=id;try{sessionStorage.setItem(selectionKey,id);}catch{}
+  const heading=document.createElement('div');heading.className='card-layout-property-header';const title=document.createElement('h3');title.textContent='Element Properties';heading.append(title);
+  layoutProperties.replaceChildren(heading,node._content);node._content.hidden=false;
+  refreshRows();
+  if(focus)node._content.querySelector('[data-layout-field="label"]')?.focus();
+};
+const newElement = (type) => {
+  const base={id:crypto.randomUUID(),type,label:{text:'Text',section:'Text and thumbnail',gallery:'Image gallery',separator:'Separator',actions:'Action buttons'}[type],visible:true};
+  if(type==='text'||type==='section')Object.assign(base,{template:'{servername}',style:'normal'});
+  if(type==='section')base.thumbnailUrl=null;
+  if(type==='gallery')base.items=[{id:crypto.randomUUID(),source:'map',url:null,description:'{currentmap} map artwork'}];
+  if(type==='separator')Object.assign(base,{divider:true,spacing:1});
+  return base;
+};
+const addGalleryItem = (node,item) => {
+  const fieldset=document.createElement('fieldset');fieldset.dataset.galleryItem='true';fieldset.dataset.itemId=item.id;
+  fieldset.innerHTML='<legend>Image</legend><label>Image source<select data-layout-field="source"><option value="map">Automatic current map artwork</option><option value="fallback">Bundled fallback artwork</option><option value="custom">Custom HTTPS URL</option></select></label><label>Custom HTTPS URL<input data-layout-field="url" type="url" maxlength="500" placeholder="https://..."></label><label>Image description<input data-layout-field="description" maxlength="1024"></label><div class="card-layout-property-actions"><button type="button" class="secondary" data-gallery-move="up" aria-label="Move image up">Up</button><button type="button" class="secondary" data-gallery-move="down" aria-label="Move image down">Down</button><button type="button" class="danger" data-gallery-remove>Remove image</button></div>';
+  for(const key of ['source','url','description'])fieldset.querySelector('[data-layout-field="'+key+'"]').value=item[key]??'';
+  node._content.querySelector('[data-gallery-items]').append(fieldset);
 };
 const renderLayoutElement = (element) => {
-  addLayoutElement(element.type, element);
-  const node = layoutNodes().at(-1);
-  if (!node) return;
-  node.dataset.layoutId = element.id;
-  const set = (name, value) => { const control = node.querySelector('[data-layout-field="' + name + '"]'); if (!control) return; if (control.type === 'checkbox') control.checked = Boolean(value); else control.value = value ?? ''; };
-  set('label', element.label); set('visible', element.visible);
-  if (element.type === 'text' || element.type === 'section') { set('template', element.template); set('style', element.style); }
-  if (element.type === 'section') set('thumbnailUrl', element.thumbnailUrl);
-  if (element.type === 'gallery') { const holder = node.querySelector('[data-gallery-items]'); holder.replaceChildren(); (element.items ?? []).forEach((item) => addGalleryItem(node, item)); }
-  if (element.type === 'separator') { set('divider', element.divider); set('spacing', element.spacing); }
-  const title = node.querySelector('.line-summary-title'); if (title) title.textContent = element.label;
+  const node=document.createElement('div');node.className='card-layout-row';node.dataset.layoutElement=element.type;node.dataset.layoutId=element.id;
+  const icon={text:'T',section:'▣',gallery:'▧',separator:'─',actions:'▤'}[element.type]||'•';
+  node.innerHTML='<button type="button" class="card-layout-row-main" data-select-layout aria-pressed="false"><span class="card-layout-row-icon" aria-hidden="true">'+icon+'</span><span class="card-layout-row-copy"><strong></strong><span class="card-layout-row-summary"></span></span></button><div class="card-layout-row-actions"><button type="button" class="secondary" data-layout-move="up" aria-label="Move element up">↑</button><button type="button" class="secondary" data-layout-move="down" aria-label="Move element down">↓</button><details class="layout-row-menu"><summary aria-label="Element actions">⋯</summary><div><button type="button" class="secondary" data-layout-duplicate>Duplicate</button><button type="button" class="danger" data-layout-remove>Remove</button></div></details></div>';
+  const content=document.createElement('div');content.className='card-layout-content';content.hidden=true;node._content=content;
+  content.innerHTML='<label>Friendly label<input data-layout-field="label" maxlength="80" required></label><label class="checkbox"><input type="checkbox" data-layout-field="visible"> Visible in Discord</label>';
+  if(element.type==='text'||element.type==='section') {
+    content.innerHTML+='<div class="description-toolbar" role="group" aria-label="Text formatting">'+[['Bold','**'],['Italic','*'],['Underline','__'],['Strikethrough','~~'],['Inline code',String.fromCharCode(96)]].map(([label,marker])=>'<button type="button" class="secondary" data-layout-markdown="'+escapeText(marker)+'">'+label+'</button>').join('')+'</div><label>Text template<textarea data-layout-field="template" rows="6" maxlength="500"></textarea></label><label>Text style<select data-layout-field="style"><option value="large">Large heading</option><option value="medium">Medium heading</option><option value="small">Small heading</option><option value="normal">Normal text</option><option value="subtext">Subtext</option></select></label><label>Insert placeholder<select data-layout-placeholder>'+placeholders.map(([name,description])=>'<option value="{'+name+'}">{'+name+'} — '+escapeText(description)+'</option>').join('')+'</select></label><button type="button" class="secondary" data-layout-insert>Insert placeholder</button>';
+  }
+  if(element.type==='section')content.innerHTML+='<label>Thumbnail HTTPS URL<input data-layout-field="thumbnailUrl" type="url" maxlength="500" placeholder="Use default server thumbnail"></label><p class="hint">Blank uses the thumbnail in Appearance. Convert to a text block to remove the thumbnail.</p><button type="button" class="secondary" data-layout-convert-text>Remove thumbnail / use text block</button>';
+  if(element.type==='gallery')content.innerHTML+='<div data-gallery-items></div><button type="button" class="secondary" data-gallery-add>Add image</button><p class="hint">Automatic artwork follows the current map’s canonical asset, then your configured fallback in Appearance. Each gallery supports up to 10 images.</p>';
+  if(element.type==='separator')content.innerHTML+='<label class="checkbox"><input type="checkbox" data-layout-field="divider"> Visible divider (disable for spacing only)</label><label>Native Discord spacing<select data-layout-field="spacing"><option value="1">Small</option><option value="2">Large</option></select></label>';
+  if(element.type==='actions')content.innerHTML+='<p class="hint">Labels and enabled buttons are configured once in Action Buttons.</p><button type="button" class="secondary" data-open-button-settings>Edit button settings</button>';
+  content.innerHTML+='<div class="card-layout-property-actions"><button type="button" class="secondary" data-layout-restore>Restore element</button><button type="button" class="danger" data-layout-remove>Remove element</button></div>';
+  for(const key of ['label','template','style','thumbnailUrl','spacing']){const control=read(node,key);if(control)control.value=element[key]??'';}
+  for(const key of ['visible','divider']){const control=read(node,key);if(control)control.checked=element[key]===true;}
+  if(element.type==='gallery')(element.items??[]).forEach((item)=>addGalleryItem(node,item));
+  node.append(content);layoutEditors.append(node);return node;
 };
-const refreshLineSummaries = () => lineNodes().forEach((node) => {
-  const summary = node.querySelector('[data-line-summary]');
-  const meta = node.querySelector('[data-line-meta]');
-  const text = node.querySelector('[data-card-template]')?.value ?? '';
-  const style = node.querySelector('[data-line-style]')?.selectedOptions[0]?.textContent ?? 'Normal';
-  const visible = node.querySelector('input[type="checkbox"]')?.checked;
-  if (summary) summary.textContent = text.trim() || 'Empty line';
-  if (meta) meta.textContent = (visible ? 'Visible' : 'Hidden') + ' · ' + style;
-});
-const syncLineOrder = () => {
-  const order = document.getElementById('card-line-order');
-  if (order instanceof HTMLInputElement) order.value = lineNodes().map((node) => node.dataset.cardLine).join(',');
-  lineNodes().forEach((node, index, nodes) => {
-    node.querySelector('[data-move-line="up"]').disabled = index === 0;
-    node.querySelector('[data-move-line="down"]').disabled = index === nodes.length - 1;
-  });
+const rebuild = (layout, selected=selectedLayoutId) => {
+  layoutEditors.replaceChildren();layoutProperties.replaceChildren();selectedLayoutId=null;
+  layout.elements.forEach(renderLayoutElement);
+  selectElement(layoutNodes().some((node)=>node.dataset.layoutId===selected)?selected:layoutNodes()[0]?.dataset.layoutId);
+  refreshRows();saveLayout();
 };
-const markCardDirty = () => {
-  if (!(cardForm instanceof HTMLFormElement)) return;
-  updateDirtyState();
-};
-const insertLineText = (control, token) => {
-  if (!(control instanceof HTMLTextAreaElement)) return;
-  const start = control.selectionStart;
-  const end = control.selectionEnd;
-  if (control.value.length - (end - start) + token.length > control.maxLength) return;
-  control.setRangeText(token, start, end, 'end');
-  control.focus();
-  control.dispatchEvent(new Event('input', { bubbles: true }));
-};
-document.addEventListener('click', (event) => {
-  if (!(event.target instanceof Element)) return;
-  const button = event.target.closest('button');
-  if (!(button instanceof HTMLButtonElement)) return;
-  const node = button.closest('[data-card-line]');
-  const layoutNode = button.closest('[data-layout-element]');
-  if (button.dataset.addLayout) addLayoutElement(button.dataset.addLayout);
-  if (layoutNode && button.dataset.layoutMove) {
-    if (button.dataset.layoutMove === 'up' && layoutNode.previousElementSibling) layoutEditors.insertBefore(layoutNode, layoutNode.previousElementSibling);
-    if (button.dataset.layoutMove === 'down' && layoutNode.nextElementSibling) layoutEditors.insertBefore(layoutNode.nextElementSibling, layoutNode);
-    saveLayout(); markCardDirty(); updateCardPreview();
-  }
-  if (layoutNode && button.hasAttribute('data-layoutDuplicate')) {
-    const read = (name) => layoutNode.querySelector('[data-layout-field="' + name + '"]');
-    const type = layoutNode.dataset.layoutElement;
-    const data = { label: (read('label')?.value ?? 'Element') + ' copy', visible: true };
-    if (type === 'text' || type === 'section') Object.assign(data, { template: read('template')?.value ?? '', style: read('style')?.value ?? 'normal', thumbnailUrl: read('thumbnailUrl')?.value || null });
-    if (type === 'gallery') data.items = Array.from(layoutNode.querySelectorAll('[data-gallery-item]')).map((item) => ({ id: crypto.randomUUID(), source: item.querySelector('[data-layout-field="source"]').value, url: item.querySelector('[data-layout-field="url"]').value || null, description: item.querySelector('[data-layout-field="description"]').value }));
-    if (type === 'separator') Object.assign(data, { divider: read('divider')?.checked ?? true, spacing: Number(read('spacing')?.value ?? 1) });
-    addLayoutElement(type, data);
-  }
-  if (layoutNode && button.hasAttribute('data-galleryAdd')) { addGalleryItem(layoutNode); saveLayout(); markCardDirty(); updateCardPreview(); }
-  if (layoutNode && button.hasAttribute('data-galleryRemove')) { button.closest('[data-gallery-item]')?.remove(); saveLayout(); markCardDirty(); updateCardPreview(); }
-  if (layoutNode && button.hasAttribute('data-layoutRemove')) { layoutNode.remove(); saveLayout(); markCardDirty(); updateCardPreview(); }
-  if (button.dataset.insertLinePlaceholder && node) {
-    insertLineText(document.getElementById(button.dataset.insertLinePlaceholder), node.querySelector('[data-line-placeholder]').value);
-  }
-  if (button.dataset.resetLine && node) {
-    node.querySelector('[data-card-template]').value = button.dataset.resetValue ?? '';
-    node.querySelector('[data-line-style]').value = button.dataset.resetStyle ?? 'normal';
-    node.querySelector('input[type="checkbox"]').checked = true;
-    markCardDirty();
-    updateCardPreview();
-  }
-  if (button.dataset.moveLine && node && lineEditors) {
-    if (button.dataset.moveLine === 'up' && node.previousElementSibling) lineEditors.insertBefore(node, node.previousElementSibling);
-    if (button.dataset.moveLine === 'down' && node.nextElementSibling) lineEditors.insertBefore(node.nextElementSibling, node);
-    syncLineOrder();
-    markCardDirty();
-    updateCardPreview();
-    button.focus();
-  }
-  if (button.hasAttribute('data-reset-card-profile')) {
-    let defaults;
-    try { defaults = JSON.parse(button.dataset.defaults ?? '{}'); } catch { return; }
-    for (const [name, value] of Object.entries(defaults)) {
-      const control = formControl(name);
-      if (control instanceof HTMLInputElement && control.type === 'checkbox') control.checked = value === true;
-      else if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement) control.value = String(value);
-    }
-    for (const id of String(defaults.lineOrder ?? '').split(',')) {
-      const node = lineNodes().find((item) => item.dataset.cardLine === id);
-      if (node) lineEditors.append(node);
-    }
-    syncLineOrder();
-    markCardDirty();
-    updateCardPreview();
-  }
-  if (button.hasAttribute('data-discard-server-changes') && cardForm instanceof HTMLFormElement) {
-    if (submitted) {
-      cardForm.dataset.dirty = 'false';
-      window.location.reload();
-      return;
-    }
-    cardForm.reset();
-    for (const id of originalLineOrder) {
-      const node = lineNodes().find((item) => item.dataset.cardLine === id);
-      if (node) lineEditors.append(node);
-    }
-    syncLineOrder();
-    refreshLineSummaries();
-    updateDirtyState();
-  }
-});
-document.addEventListener('toggle', (event) => {
-  const opened = event.target;
-  if (!(opened instanceof HTMLDetailsElement) || !opened.open) return;
-  if (!opened.matches('[data-card-line]')) return;
-  lineNodes().forEach((node) => { if (node !== opened) node.open = false; });
-}, true);
-// Parse a conservative Markdown subset into text nodes. Never interpret HTML or create user URLs.
 const appendInlineMarkdown = (parent, content) => {
   const pattern = /(\x60[^\x60\n]+\x60|\*\*\*[^\n]+?\*\*\*|\*\*[^\n]+?\*\*|__[^\n]+?__|~~[^\n]+?~~|\*[^\n]+?\*)/g;
   let offset = 0;
@@ -198,144 +134,60 @@ const appendInlineMarkdown = (parent, content) => {
   }
   parent.append(document.createTextNode(content.slice(offset)));
 };
+
 const previewIcon = (state, mode) => {
   const kind = mode === 'current' && state !== 'pending' && state !== 'stale' && previewRoot?.dataset.gameplayState === 'DEGRADED' ? 'warning' : state === 'online' ? 'online' : state === 'offline' || state === 'unavailable' ? 'offline' : state === 'pending' ? 'pending' : 'warning';
   const id = inputValue(kind + 'EmojiId');
   const inherited = previewRoot?.dataset[kind + 'Emoji'] ?? '';
   return /^\d{17,20}$/.test(id) ? '<:' + kind + '_dot:' + id + '>' : inherited || '•';
 };
-const updateCardPreview = () => {
-  if (!(previewRoot instanceof HTMLElement)) return;
-  let current;
-  try { current = JSON.parse(previewRoot.dataset.currentValues ?? '{}'); } catch { current = {}; }
-  const mode = document.getElementById('card-preview-mode')?.value ?? 'current';
-  const state = mode !== 'current' ? (mode === 'missing' ? 'unavailable' : mode) : previewRoot.dataset.stale === 'true' ? 'stale' : previewRoot.dataset.hostingState === 'PENDING' ? 'pending' : previewRoot.dataset.hostingState === 'STOPPED' ? 'offline' : previewRoot.dataset.hostingState === 'STARTING' ? 'starting' : previewRoot.dataset.hostingState === 'RUNNING' && previewRoot.dataset.gameplayState === 'AVAILABLE' ? 'online' : 'unavailable';
-  const values = { ...current };
-  if (mode !== 'current') Object.assign(values, { playercount: '0/5', players: '0', maxplayers: '5', location: 'Dallas', currentmap: 'aim_redline_fp', lastupdated: 'Just now' });
-  if (mode === 'missing') Object.assign(values, { playercount: 'Unknown', players: '', maxplayers: '', location: '', currentmap: 'Unknown', lastupdated: '' });
-  const label = inputValue(state + 'StatusLabel', current.status ?? 'Unavailable');
-  Object.assign(values, { status: label, statusicon: previewIcon(state, mode), online: previewIcon(state, mode) + ' ' + label, servername: inputValue('displayName', current.servername) });
-  const host = inputValue('connectDomain') || previewRoot.dataset.rawHost || '';
-  values.serverip = host;
-  values.serveraddress = host ? host + (values.serverport ? ':' + values.serverport : '') : 'Unavailable';
-  values.severaddress = values.serveraddress;
-  const output = document.getElementById('card-preview-lines');
-  if (!output) return;
-  output.replaceChildren();
-  const activeNodes = layoutNodes();
-  (activeNodes.length ? activeNodes : lineNodes()).forEach((node) => {
-    if (activeNodes.length) {
-      const type = node.dataset.layoutElement;
-      const read = (name) => node.querySelector('[data-layout-field="' + name + '"]');
-      if (!read('visible')?.checked) return;
-      const text = type === 'text' || type === 'section' ? styleLineText(resolveLineTemplate(read('template')?.value ?? '', values), read('style')?.value ?? 'normal') : '';
-      if (text.trim()) { const block = document.createElement('div'); appendInlineMarkdown(block, text); output.append(block); }
-      if (type === 'gallery') Array.from(node.querySelectorAll('[data-gallery-item]')).forEach((item) => { const gallery = document.createElement('div'); gallery.className = 'preview-artwork'; const source = item.querySelector('[data-layout-field="source"]')?.value; gallery.textContent = source === 'custom' ? item.querySelector('[data-layout-field="url"]')?.value || 'Custom image URL required' : source === 'fallback' ? 'Default fallback artwork' : 'Map artwork · ' + values.currentmap; output.append(gallery); });
-      if (type === 'separator') { const separator = document.createElement(read('divider')?.checked ? 'hr' : 'div'); if (!read('divider')?.checked) separator.className = 'preview-separator-space'; output.append(separator); }
-      return;
-    }
-    if (!node.querySelector('input[type="checkbox"]').checked) return;
-    const text = styleLineText(resolveLineTemplate(node.querySelector('[data-card-template]').value, values), node.querySelector('[data-line-style]').value);
-    if (!text.trim()) return;
-    const block = document.createElement('div');
-    block.dataset.previewLine = node.dataset.cardLine;
-    text.split('\n').forEach((line) => {
-      const heading = line.match(/^(#{1,3}|-#)\s+(.*)$/);
-      const element = document.createElement(heading ? heading[1] === '-#' ? 'small' : 'h' + heading[1].length : 'p');
-      appendInlineMarkdown(element, heading ? heading[2] : line);
-      block.append(element);
-    });
-    output.append(block);
-  });
-  const artwork = document.getElementById('card-preview-artwork');
-  const actions = document.getElementById('card-preview-actions');
-  if (!artwork || !actions) return;
-  artwork.replaceChildren();
-  actions.replaceChildren();
-  const showArtwork = formControl('showMapArtwork');
-  const actionLabels = [
-    ['showConnectButton', 'connectButtonLabel', 'Connect'],
-    ['showMapRulesButton', 'mapRulesButtonLabel', 'Map & Rules'],
-  ];
-  const visibleActions = actionLabels.filter(([toggle]) => formControl(toggle)?.checked);
-  if (showArtwork?.checked || visibleActions.length > 0) {
-    const separator = document.createElement('hr');
-    separator.setAttribute('aria-hidden', 'true');
-    output.append(separator);
-  }
-  if (showArtwork?.checked) {
-    const artworkSlot = document.createElement('div');
-    artworkSlot.className = 'preview-artwork';
-    artworkSlot.textContent = 'Map artwork · ' + (values.currentmap || 'image shown when available');
-    artwork.append(artworkSlot);
-  }
-  if (visibleActions.length > 0) {
-    const actionRow = document.createElement('div');
-    actionRow.className = 'preview-action-row';
-    actionRow.setAttribute('aria-label', 'Approximate Discord action row');
-    visibleActions.forEach(([, labelName, fallback]) => {
-      const button = document.createElement('span');
-      button.className = 'preview-action';
-      button.textContent = inputValue(labelName, fallback);
-      actionRow.append(button);
-    });
-    actions.append(actionRow);
-  }
+
+${cardPreviewScript}
+const refreshUndo = () => {
+  const holder=document.getElementById('card-layout-undo');if(!holder)return;
+  holder.replaceChildren();if(!removed)return;
+  holder.className='card-layout-undo';holder.append(document.createTextNode('Element removed. '));const undo=document.createElement('button');undo.type='button';undo.className='secondary';undo.dataset.layoutUndo='true';undo.textContent='Undo removal';undo.disabled=layoutNodes().length>=35;holder.append(undo);
 };
-const cardForm = document.querySelector('form[action$="/edit"]');
-const dirtyStatus = document.getElementById('card-config-dirty-status');
-const originalLineOrder = lineNodes().map((node) => node.dataset.cardLine).filter(Boolean);
-const sectionLinks = Array.from(document.querySelectorAll('.game-server-section-nav a[href^="#"]'));
-const updateActiveSection = () => {
-  sectionLinks.forEach((link) => {
-    if (link.getAttribute('href') === window.location.hash) link.setAttribute('aria-current', 'location');
-    else link.removeAttribute('aria-current');
-  });
-};
-window.addEventListener('hashchange', updateActiveSection);
-updateActiveSection();
-if (cardForm instanceof HTMLFormElement) {
-  const initial = new URLSearchParams(new FormData(cardForm)).toString();
-  submitted = cardForm.querySelector('[data-submitted-edits]') !== null;
-  updateDirtyState = () => {
-    if (layoutNodes().length) saveLayout();
-    const dirty = submitted || new URLSearchParams(new FormData(cardForm)).toString() !== initial;
-    if (dirtyStatus) dirtyStatus.textContent = dirty ? 'Unsaved changes. Save server to apply them.' : 'All changes saved.';
-    cardForm.dataset.dirty = dirty ? 'true' : 'false';
-    const saveButton = cardForm.querySelector('button[type="submit"]');
-    if (saveButton instanceof HTMLButtonElement && saveButton.textContent !== 'Saving…') {
-      saveButton.disabled = !dirty;
-    }
-    refreshLineSummaries();
-    updateCardPreview();
-  };
-  cardForm.addEventListener('input', updateDirtyState);
-  cardForm.addEventListener('change', updateDirtyState);
-  window.addEventListener('beforeunload', (event) => {
-    if (cardForm.dataset.dirty !== 'true' || cardForm.dataset.saving === 'true') return;
-    event.preventDefault(); event.returnValue = '';
-  });
-  cardForm.addEventListener('submit', () => {
-    cardForm.dataset.saving = 'true';
-    const submit = cardForm.querySelector('button[type="submit"]');
-    if (submit instanceof HTMLButtonElement) { submit.disabled = true; submit.textContent = 'Saving…'; }
-    if (dirtyStatus) dirtyStatus.textContent = 'Saving changes…';
-  });
-  updateDirtyState();
+cardForm?.addEventListener('click',(event)=>{
+  if(!(event.target instanceof Element))return;
+  const button=event.target.closest('button');if(!button)return;
+  const node=button.closest('[data-layout-element]')||layoutNodes().find((node)=>node.dataset.layoutId===selectedLayoutId);
+  if(button.hasAttribute('data-select-layout')){selectElement(node.dataset.layoutId);if(window.innerWidth<=760)layoutProperties.scrollIntoView({block:'start'});return;}
+  if(button.dataset.addLayout){const type=button.dataset.addLayout;if(layoutNodes().length>=35||invalidLayout||(type==='actions'&&layoutNodes().some((n)=>n.dataset.layoutElement==='actions')))return;const menu=button.closest('.layout-add-menu');if(menu)menu.open=false;const added=renderLayoutElement(newElement(type));selectElement(added.dataset.layoutId,true);announce('Element added.');}
+  else if(button.dataset.layoutMove&&node){const next=button.dataset.layoutMove==='up'?node.previousElementSibling:node.nextElementSibling;if(next){if(button.dataset.layoutMove==='up')layoutEditors.insertBefore(node,next);else layoutEditors.insertBefore(next,node);announce('Element moved.');}node.querySelector('[data-layout-move="'+button.dataset.layoutMove+'"]').focus();}
+  else if(button.hasAttribute('data-layout-duplicate')&&node){if(layoutNodes().length>=35||node.dataset.layoutElement==='actions')return;const copy=serializeElement(node);copy.id=crypto.randomUUID();copy.label=(copy.label+' copy').slice(0,80);if(copy.items)copy.items=copy.items.map((item)=>({...item,id:crypto.randomUUID()}));const added=renderLayoutElement(copy);layoutEditors.insertBefore(added,node.nextElementSibling);selectElement(added.dataset.layoutId);announce('Element duplicated.');}
+  else if(button.hasAttribute('data-layout-remove')&&node){if(layoutNodes().length<=1)return;removed={element:serializeElement(node),index:layoutNodes().indexOf(node)};const next=node.nextElementSibling||node.previousElementSibling;node.remove();if(node.dataset.layoutId===selectedLayoutId){selectedLayoutId=null;selectElement(next.dataset.layoutId);}refreshUndo();announce('Element removed. Undo is available.');}
+  else if(button.hasAttribute('data-layout-undo')&&removed){if(layoutNodes().length>=35)return;const next=layoutNodes()[removed.index];const added=renderLayoutElement(removed.element);if(next)layoutEditors.insertBefore(added,next);removed=null;refreshUndo();selectElement(added.dataset.layoutId);announce('Removal undone.');}
+  else if(button.hasAttribute('data-gallery-add')&&node){if(node._content.querySelectorAll('[data-gallery-item]').length>=10)return;addGalleryItem(node,newElement('gallery').items[0]);}
+  else if((button.dataset.galleryMove||button.hasAttribute('data-gallery-remove'))&&node){const item=button.closest('[data-gallery-item]');if(!item)return;const holder=item.parentElement;if(button.hasAttribute('data-gallery-remove')){if(holder.children.length>1)item.remove();}else{const next=button.dataset.galleryMove==='up'?item.previousElementSibling:item.nextElementSibling;if(next){if(button.dataset.galleryMove==='up')holder.insertBefore(item,next);else holder.insertBefore(next,item);}}}
+  else if(button.hasAttribute('data-layout-insert')||button.dataset.layoutMarkdown){const control=read(node,'template');const start=control.selectionStart,end=control.selectionEnd;const marker=button.dataset.layoutMarkdown;const insertion=marker?marker+(control.value.slice(start,end)||'text')+marker:node._content.querySelector('[data-layout-placeholder]').value;if(control.value.length-(end-start)+insertion.length>500){announce('Formatting would exceed the 500-character template limit.');return;}control.setRangeText(insertion,start,end,'end');control.focus();}
+  else if(button.hasAttribute('data-layout-restore')&&node){const original=originalElements.get(node.dataset.layoutId)||{...newElement(node.dataset.layoutElement),id:node.dataset.layoutId};const index=layoutNodes().indexOf(node);const selected=node.dataset.layoutId;const added=renderLayoutElement(original);node.remove();layoutEditors.insertBefore(added,layoutNodes()[index]||null);selectElement(selected);announce('Element restored.');}
+  else if(button.hasAttribute('data-layout-convert-text')&&node){const element=serializeElement(node);element.type='text';delete element.thumbnailUrl;const index=layoutNodes().indexOf(node);const added=renderLayoutElement(element);node.remove();layoutEditors.insertBefore(added,layoutNodes()[index]||null);selectElement(element.id);}
+  else if(button.hasAttribute('data-open-button-settings')){const settings=document.getElementById('card-button-settings');settings.open=true;settings.scrollIntoView({block:'center'});settings.querySelector('input')?.focus();return;}
+  else if(button.hasAttribute('data-reset-card-profile')){let defaults,layout;try{defaults=JSON.parse(button.dataset.defaults);layout=JSON.parse(button.dataset.defaultLayout);}catch{return;}for(const[name,value]of Object.entries(defaults)){const control=formControl(name);if(control?.type==='checkbox')control.checked=value===true;else if(control)control.value=String(value);}invalidLayout=false;rebuild(layout);removed=null;refreshUndo();announce('Card defaults restored. Save to apply.');}
+  else if(button.hasAttribute('data-discard-server-changes')){if(submitted){cardForm.dataset.dirty='false';window.location.reload();return;}cardForm.reset();invalidLayout=initialLayout===null;if(initialLayout)rebuild(initialLayout);removed=null;refreshUndo();announce('Unsaved changes discarded.');}
+  else if(button.hasAttribute('data-expand-preview')){const expanded=previewRoot.classList.toggle('is-expanded');button.setAttribute('aria-expanded',String(expanded));button.textContent=expanded?'Close expanded preview':'Expand preview';previewRoot.scrollIntoView({block:'start'});return;}
+  else return;
+  refreshUndo();updateDirtyState();
+});
+cardForm?.addEventListener('invalid',(event)=>{
+  const control=event.target;if(!(control instanceof HTMLInputElement||control instanceof HTMLTextAreaElement||control instanceof HTMLSelectElement))return;
+  event.preventDefault();const node=layoutNodes().find((node)=>node._content.contains(control));if(node)selectElement(node.dataset.layoutId);
+  let parent=control.parentElement;while(parent&&parent!==cardForm){if(parent instanceof HTMLDetailsElement)parent.open=true;parent=parent.parentElement;}
+  control.focus();announce(control.validationMessage||'Review the selected field before saving.');
+},true);
+cardForm?.addEventListener('input',updateDirtyState);
+cardForm?.addEventListener('change',(event)=>{if(event.target?.id==='card-preview-mode'){updateCardPreview();return;}updateDirtyState();});
+window.addEventListener('beforeunload',(event)=>{if(cardForm?.dataset.dirty!=='true'||cardForm?.dataset.saving==='true')return;event.preventDefault();event.returnValue='';});
+cardForm?.addEventListener('submit',(event)=>{if(invalidLayout){event.preventDefault();announce('Invalid layout data. Discard the malformed draft before saving.');return;}saveLayout();cardForm.dataset.saving='true';const save=cardForm.querySelector('button[type="submit"]');save.disabled=true;save.textContent='Saving…';if(dirtyStatus)dirtyStatus.textContent='Saving changes…';});
+const sectionLinks=Array.from(document.querySelectorAll('.game-server-section-nav a'));
+const updateActiveSection=()=>sectionLinks.forEach((link)=>{if(link.hash===(window.location.hash||'#server-settings'))link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');});
+window.addEventListener('hashchange',updateActiveSection);updateActiveSection();
+const fitPreview=()=>{if(previewRoot)previewRoot.dataset.tall=String(previewRoot.getBoundingClientRect().height>window.innerHeight-220);};
+if(previewRoot){new ResizeObserver(fitPreview).observe(previewRoot);window.addEventListener('resize',fitPreview);fitPreview();}
+if(layoutEditors&&layoutJson){
+  try{const persisted=JSON.parse(layoutJson.value);const elements=Array.isArray(persisted)?persisted:persisted.elements;if(!Array.isArray(elements)||!elements.length||elements.length>35)throw new Error('Invalid layout');initialLayout={version:1,elements};elements.forEach((element)=>originalElements.set(element.id,structuredClone(element)));let selected;try{selected=sessionStorage.getItem(selectionKey);}catch{}rebuild(initialLayout,selected);}
+  catch{invalidLayout=true;layoutProperties.textContent='The draft layout could not be loaded. It is preserved for validation; discard it to reload the saved configuration.';announce('Invalid layout draft preserved.');}
+  initial=new URLSearchParams(new FormData(cardForm)).toString();updateDirtyState();
 }
-if (layoutEditors && layoutJson instanceof HTMLInputElement) {
-  try {
-    const elements = JSON.parse(layoutJson.value);
-    if (Array.isArray(elements)) {
-      isHydratingLayout = true;
-      elements.forEach(renderLayoutElement);
-      isHydratingLayout = false;
-      updateCardPreview();
-    }
-  } catch { /* Keep the server-rendered fallback if persisted layout JSON is malformed. */ }
-  finally { isHydratingLayout = false; }
-}
-document.getElementById('card-preview-mode')?.addEventListener('change', updateCardPreview);
-syncLineOrder();
-updateCardPreview();
 `;

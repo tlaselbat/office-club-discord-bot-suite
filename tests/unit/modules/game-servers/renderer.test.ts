@@ -122,6 +122,41 @@ function componentCount(component: Record<string, unknown>): number {
 }
 
 describe('Game Server rendering', () => {
+  it('applies the selected text style inside a valid thumbnail section', () => {
+    const result = renderGameServerCard(
+      {
+        ...server,
+        cardProfile: {
+          layout: {
+            version: 1,
+            elements: [
+              {
+                id: '123e4567-e89b-42d3-a456-426614174001',
+                type: 'section',
+                label: 'Header',
+                template: '{servername}',
+                style: 'medium',
+                visible: true,
+                thumbnailUrl: null,
+              },
+            ],
+          },
+          visibleFields: { updates: false },
+        },
+      },
+      secret,
+    );
+    const container = result.components[0] as {
+      components: Array<{
+        type: number;
+        components: Array<{ content: string }>;
+        accessory: { type: number };
+      }>;
+    };
+    expect(container.components[0]?.type).toBe(9);
+    expect(container.components[0]?.components[0]?.content).toBe('## 1v1 Arena');
+    expect(container.components[0]?.accessory.type).toBe(11);
+  });
   it.each([
     [true, true],
     [true, false],
