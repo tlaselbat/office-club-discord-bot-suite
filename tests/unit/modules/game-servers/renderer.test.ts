@@ -228,6 +228,124 @@ describe('Game Server rendering', () => {
     },
   );
 
+  it('renders reordered feeds with independent heading visibility and matching button association', () => {
+    const layout = resolveCardLayout({});
+    const updates = layout.find((element) => element.type === 'updates');
+    if (!updates) throw new Error('Expected Updates layout element');
+    const configured = {
+      ...updates,
+      showHeading: false,
+      feedOrder: ['CHANGELOG', 'ANNOUNCEMENTS'] as const,
+    };
+    const view = {
+      ...server,
+      cardProfile: {
+        layout: {
+          version: 2 as const,
+          elements: layout.map((element) => (element.type === 'updates' ? configured : element)),
+        },
+      },
+      updateThreads: [
+        {
+          type: 'ANNOUNCEMENTS' as const,
+          threadId: '100000000000000010',
+          latestMessageText: 'News',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
+        {
+          type: 'CHANGELOG' as const,
+          threadId: '100000000000000011',
+          latestMessageText: 'Patch',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
+      ],
+    };
+    const components = containerComponents(firstContainer(renderGameServerCard(view, secret)));
+    const updateParts = components.slice(-4);
+    expect(updateParts.map((part) => part.type)).toEqual([
+      ComponentType.Section,
+      ComponentType.TextDisplay,
+      ComponentType.Section,
+      ComponentType.TextDisplay,
+    ]);
+    expect(
+      updateParts
+        .filter((part) => part.type === ComponentType.Section)
+        .map((part) => (part.components as { content: string }[])[0]?.content),
+    ).toEqual(['🛠 **Changelog**', '📢 **Announcements**']);
+    expect(
+      updateParts
+        .filter((part) => part.type === ComponentType.Section)
+        .map((part) => (part.accessory as { url: string }).url),
+    ).toEqual([
+      `https://discord.com/channels/${server.guildId}/100000000000000011`,
+      `https://discord.com/channels/${server.guildId}/100000000000000010`,
+    ]);
+    expect(updateParts.some((part) => JSON.stringify(part).includes('Latest Updates'))).toBe(false);
+  });
+
+  it('renders an optional native separator only between two rendered feeds', () => {
+    const layout = resolveCardLayout({}).map((element) =>
+      element.type === 'updates'
+        ? {
+            ...element,
+            showHeading: false,
+            separator: { enabled: true, divider: false, spacing: 2 as const },
+            emptyBehavior: 'hide_empty_entries' as const,
+          }
+        : element,
+    );
+    const populated = {
+      ...server,
+      cardProfile: { layout: { version: 2 as const, elements: layout } },
+      updateThreads: [
+        {
+          type: 'ANNOUNCEMENTS' as const,
+          threadId: '100000000000000010',
+          latestMessageText: 'News',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
+        {
+          type: 'CHANGELOG' as const,
+          threadId: '100000000000000011',
+          latestMessageText: 'Patch',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
+      ],
+    };
+    const updateParts = containerComponents(
+      firstContainer(renderGameServerCard(populated, secret)),
+    ).slice(-5);
+    expect(updateParts.map((part) => part.type)).toEqual([
+      ComponentType.Section,
+      ComponentType.TextDisplay,
+      ComponentType.Separator,
+      ComponentType.Section,
+      ComponentType.TextDisplay,
+    ]);
+    expect(updateParts[2]).toEqual({ type: ComponentType.Separator, divider: false, spacing: 2 });
+    const oneFeed = { ...populated, updateThreads: populated.updateThreads.slice(0, 1) };
+    expect(
+      containerComponents(firstContainer(renderGameServerCard(oneFeed, secret)))
+        .slice(-2)
+        .map((component) => component.type),
+    ).toEqual([ComponentType.Section, ComponentType.TextDisplay]);
+    const noFeeds = { ...populated, updateThreads: [] };
+    const noFeedComponents = containerComponents(
+      firstContainer(renderGameServerCard(noFeeds, secret)),
+    );
+    expect(textContents(firstContainer(renderGameServerCard(noFeeds, secret)))).not.toContain(
+      'Latest Updates',
+    );
+    expect(
+      noFeedComponents.filter((component) => component.type === ComponentType.Separator),
+    ).toHaveLength(1);
+  });
+
   it('expires NEW independently at the exact boundary and fingerprints all cached update fields', () => {
     vi.useFakeTimers();
     try {

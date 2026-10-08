@@ -221,4 +221,72 @@ describe('generic card line contract', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('normalizes pre-control Updates layouts and validates hidden headings and feed order', () => {
+    const updates = resolveCardLayout({}).find((element) => element.type === 'updates');
+    if (!updates) throw new Error('Expected Updates element');
+    const previous: Record<string, unknown> = { ...updates };
+    delete previous.showHeading;
+    delete previous.feedOrder;
+    delete previous.separator;
+    const normalized = normalizeCardProfile({ layout: { version: 2, elements: [previous] } });
+    const migrated = normalized.layout?.elements[0];
+    expect(migrated).toMatchObject({
+      type: 'updates',
+      showHeading: true,
+      feedOrder: ['ANNOUNCEMENTS', 'CHANGELOG'],
+      separator: { enabled: false, divider: true, spacing: 1 },
+    });
+    if (migrated?.type !== 'updates') throw new Error('Expected normalized Updates element');
+    expect(
+      cardProfileSchema.safeParse({
+        layout: { version: 2, elements: [{ ...migrated, showHeading: false, title: '' }] },
+      }).success,
+    ).toBe(true);
+    expect(
+      cardProfileSchema.safeParse({
+        layout: { version: 2, elements: [{ ...migrated, feedOrder: ['CHANGELOG', 'CHANGELOG'] }] },
+      }).success,
+    ).toBe(false);
+    expect(
+      cardProfileSchema.safeParse({
+        layout: {
+          version: 2,
+          elements: [{ ...migrated, separator: { enabled: true, divider: false, spacing: 3 } }],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects layouts whose enabled Updates structure would exceed Discord component limits', () => {
+    const updates = resolveCardLayout({}).find((element) => element.type === 'updates');
+    if (!updates) throw new Error('Expected Updates element');
+    const textElements = Array.from({ length: 34 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      type: 'text' as const,
+      label: `Text ${String(index + 1)}`,
+      template: 'Content',
+      visible: true,
+      style: 'normal' as const,
+    }));
+    expect(
+      cardProfileSchema.safeParse({
+        layout: { version: 2, elements: [...textElements, updates] },
+      }).success,
+    ).toBe(false);
+    expect(
+      cardProfileSchema.safeParse({
+        layout: { version: 2, elements: [...textElements.slice(0, 29), updates] },
+      }).success,
+    ).toBe(true);
+    expect(
+      cardProfileSchema.safeParse({
+        layout: { version: 2, elements: [...textElements.slice(0, 31), updates] },
+      }).success,
+    ).toBe(false);
+    const compatible = normalizeCardProfile({
+      layout: { version: 2, elements: [...textElements.slice(0, 29), updates] },
+    });
+    expect(compatible.layout?.elements).toHaveLength(30);
+  });
 });

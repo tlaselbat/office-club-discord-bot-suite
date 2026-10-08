@@ -19,7 +19,8 @@ const updateCardPreview = () => {
   values.serveraddress = host ? host + (values.serverport ? ':' + values.serverport : '') : 'Unavailable';
   values.severaddress = values.serveraddress;
   const sourceStatus = document.getElementById('card-preview-source');
-  if (sourceStatus) sourceStatus.textContent = mode === 'current' ? 'Current cached telemetry · ' + (previewRoot.dataset.rawMap || 'No map observed') + '. Updates use cached Discord messages.' : 'Example telemetry and Updates · unsaved card configuration';
+  const configurationStatus = cardForm?.dataset.dirty === 'true' ? 'unsaved configuration edits' : 'saved configuration';
+  if (sourceStatus) sourceStatus.textContent = mode === 'current' ? 'Current cached telemetry · ' + (previewRoot.dataset.rawMap || 'No map observed') + ' · ' + configurationStatus + '. Updates use cached Discord messages.' : 'Example telemetry and example Updates · ' + configurationStatus;
   const https = (value) => { try { const url = new URL(value); return url.protocol === 'https:' ? url.href : null; } catch { return null; } };
   const fallback = previewRoot.dataset.fallbackImage ?? '';
   const knownMap = mode === 'current' ? previewRoot.dataset.mapKnown === 'true' : mode !== 'missing' && previewRoot.dataset.exampleMapKnown === 'true';
@@ -64,8 +65,10 @@ const updateCardPreview = () => {
   if (!Array.isArray(elements)) {
     const error = document.createElement('p'); error.className = 'warning'; error.textContent = 'Layout data cannot be previewed. Your draft is preserved; discard or correct it before saving.';output.append(error);return;
   }
+  let threads=[];try{threads=JSON.parse(previewRoot.dataset.updateThreads ?? '[]')}catch{}
+  const previewUpdateRows = (element) => (element.feedOrder||['ANNOUNCEMENTS','CHANGELOG']).map((type)=>{const config=type==='ANNOUNCEMENTS'?element.announcements:element.changelog;if(!config?.visible)return null;const thread=Array.isArray(threads)?threads.find((item)=>item.type===type):undefined;const source=(mode==='current'?(thread?.latestMessageText??''):'Example '+(type==='ANNOUNCEMENTS'?'announcement.':'changelog entry.')).trim();if(!source&&element.emptyBehavior==='hide_empty_entries')return null;return {type,config,thread,source:source.slice(0,config.latestMessageLength)};}).filter(Boolean);
   if (sourceStatus && elements.some((element) => element?.type === 'gallery' && element.items?.some((item) => item.source === 'map'))) sourceStatus.textContent += ' Automatic artwork: ' + (knownMap ? 'canonical map asset.' : https(inputValue('imageUrl')) ? 'configured fallback image.' : 'bundled fallback banner.');
-  elements.forEach((element) => {
+  elements.forEach((element, index) => {
     if (!element || element.visible === false) return;
     const text = resolveLineTemplate(element.template ?? '', values);
     if (element.type === 'text') {
@@ -84,63 +87,14 @@ const updateCardPreview = () => {
         gallery.append(media(url, description));
       });output.append(gallery);
     } else if (element.type === 'separator') {
+      const following=elements[index+1];if(element.label==='Updates separator'&&following?.type==='updates'&&(following.visible===false||previewUpdateRows(following).length===0))return;
       const divider = document.createElement(element.divider ? 'hr' : 'div');divider.dataset.previewElement = element.id;
       divider.className = (element.divider ? 'preview-separator' : 'preview-separator-space') + (element.spacing === 2 ? ' preview-separator-large' : ''); output.append(divider);
     } else if (element.type === 'actions') { const row = actions();row.dataset.previewElement = element.id;if(row.children.length) output.append(row); }
     else if (element.type === 'updates') {
-      const threads = (()=>{try{return JSON.parse(previewRoot.dataset.updateThreads ?? '[]')}catch{return []}})();
-      const entries = ['announcements', 'changelog'].map((feed, index) => {
-        const config = element[feed];
-        if (!config?.visible) return null;
-        const type = index ? 'CHANGELOG' : 'ANNOUNCEMENTS';
-        const thread = Array.isArray(threads) ? threads.find((item) => item.type === type) : undefined;
-        const source = (mode === 'current' ? thread?.latestMessageText || '' : 'Example ' + (index ? 'changelog entry.' : 'announcement.')).trim();
-        if (!source && element.emptyBehavior === 'hide_empty_entries') return null;
-        return { config, thread, index, source: source.slice(0, config.latestMessageLength), type };
-      }).filter(Boolean);
-      if (entries.length) {
-        const heading = document.createElement('div');
-        heading.className = 'preview-update-heading';
-        heading.dataset.discordComponent = 'TextDisplay';
-        appendText(heading, styleLineText(element.title, element.headingStyle === 'heading' ? 'large' : element.headingStyle || 'normal'));
-        heading.dataset.previewElement = element.id;
-        output.append(heading);
-        entries.forEach(({ config, thread, index, source }) => {
-          const label = config.displayLabel + (mode === 'current' && thread?.notificationExpiresAt && new Date(thread.notificationExpiresAt) > new Date() ? ' 🆕' : '');
-          const validThread = thread && /^\d{17,20}$/.test(thread.threadId) && /^\d{17,20}$/.test(previewRoot.dataset.guildId || '');
-          const hasButton = config.showOpenButton && (validThread || mode !== 'current');
-          const titleRow = document.createElement('div');
-          titleRow.className = (hasButton ? 'preview-section' : 'preview-text-display') + ' preview-updates preview-update-title';
-          titleRow.dataset.discordComponent = hasButton ? 'Section' : 'TextDisplay';
-          titleRow.dataset.previewElement = element.id;
-          if (hasButton) {
-            const title = document.createElement('div');
-            title.dataset.discordComponent = 'TextDisplay';
-            appendText(title, styleLineText(label, config.textStyle === 'heading' ? 'large' : config.textStyle || 'normal'));
-            titleRow.append(title);
-            const button = document.createElement('span');
-            button.className = 'preview-action secondary';
-            button.textContent = config.openButtonLabel;
-            button.dataset.discordAccessory = 'Button';
-            titleRow.append(button);
-          } else {
-            appendText(titleRow, styleLineText(label, config.textStyle === 'heading' ? 'large' : config.textStyle || 'normal'));
-          }
-          output.append(titleRow);
-          const summary = document.createElement('div');
-          summary.className = 'preview-text-display preview-updates preview-update-summary';
-          summary.dataset.discordComponent = 'TextDisplay';
-          summary.dataset.previewElement = element.id;
-          const detail = source || config.emptyPlaceholder;
-          appendText(summary, detail);
-          if (config.showTimestamp && mode === 'current' && source && thread?.latestMessageAt) {
-            const timestamp = document.createElement('small');
-            timestamp.textContent = new Date(thread.latestMessageAt).toLocaleString();
-            summary.append(timestamp);
-          }
-          output.append(summary);
-        });
-      }
+      const relativeTime=(value)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const seconds=(date.getTime()-Date.now())/1000;const units=[['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60],['second',1]];const [unit,size]=units.find(([,size])=>Math.abs(seconds)>=size)||units[units.length-1];return new Intl.RelativeTimeFormat(undefined,{numeric:'auto'}).format(Math.round(seconds/size),unit);};
+      const entries=previewUpdateRows(element);
+      if(entries.length){if(element.showHeading){const heading=document.createElement('div');heading.className='preview-update-heading';heading.dataset.discordComponent='TextDisplay';appendText(heading,styleLineText(element.title||'',element.headingStyle==='heading'?'large':element.headingStyle==='subtext'?'subtext':'normal'));heading.dataset.previewElement=element.id;output.append(heading);}entries.forEach(({type,config,thread,source},index)=>{if(index&&element.separator?.enabled){const divider=document.createElement(element.separator.divider?'hr':'div');divider.className=(element.separator.divider?'preview-separator':'preview-separator-space')+(element.separator.spacing===2?' preview-separator-large':'');divider.dataset.previewElement=element.id;divider.dataset.discordComponent='Separator';output.append(divider);}const validThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');const hasButton=config.showOpenButton&&(validThread||mode!=='current');const label=config.displayLabel+(mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');const title=document.createElement('div');title.className=(hasButton?'preview-section':'preview-text-display')+' preview-updates preview-update-title';title.dataset.previewElement=element.id;title.dataset.discordComponent=hasButton?'Section':'TextDisplay';if(hasButton){const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';appendText(titleText,label);title.append(titleText);const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);}else appendText(title,label);output.append(title);const content=source||config.emptyPlaceholder;const formatted=styleLineText(content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';appendText(summary,[formatted,time?'-# '+time:''].filter(Boolean).join('\n'));output.append(summary);});}
     }
   });
   document.getElementById('card-preview-artwork')?.replaceChildren();

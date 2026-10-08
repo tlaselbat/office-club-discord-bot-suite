@@ -495,18 +495,35 @@ function renderUpdatesSection(
         ]
       : [titleDisplay, summaryDisplay];
   };
-  const feeds = [
-    renderFeed('ANNOUNCEMENTS', element.announcements),
-    renderFeed('CHANGELOG', element.changelog),
-  ]
-    .filter((feed): feed is Record<string, unknown>[] => feed !== null)
-    .flat();
+  const feeds = element.feedOrder
+    .map((type) =>
+      renderFeed(type, type === 'ANNOUNCEMENTS' ? element.announcements : element.changelog),
+    )
+    .filter((feed): feed is Record<string, unknown>[] => feed !== null);
   if (!feeds.length) return [];
   return [
-    updateTextDisplay(
-      styleCardLine(element.title.replace(/@/g, '@\u200b'), updateLineStyle(element.headingStyle)),
-    ),
-    ...feeds,
+    ...(element.showHeading
+      ? [
+          updateTextDisplay(
+            styleCardLine(
+              element.title.replace(/@/g, '@\u200b'),
+              updateLineStyle(element.headingStyle),
+            ),
+          ),
+        ]
+      : []),
+    ...feeds.flatMap((feed, index) => [
+      ...(index > 0 && element.separator.enabled
+        ? [
+            {
+              type: componentType.separator,
+              divider: element.separator.divider,
+              spacing: element.separator.spacing,
+            },
+          ]
+        : []),
+      ...feed,
+    ]),
   ];
 }
 

@@ -148,17 +148,35 @@ const updatesFeedSchema = z.object({
   openButtonLabel: z.string().trim().min(1).max(80),
   latestMessageLength: z.number().int().min(40).max(1000),
 });
-const updatesElementSchema = z.object({
-  id: z.uuid(),
-  type: z.literal('updates'),
-  label: z.string().trim().min(1).max(80),
-  visible: z.boolean(),
-  title: z.string().trim().min(1).max(80),
-  headingStyle: z.enum(['normal', 'heading', 'subtext']),
-  emptyBehavior: z.enum(['show_placeholders', 'hide_empty_entries']),
-  announcements: updatesFeedSchema,
-  changelog: updatesFeedSchema,
-});
+const updatesElementSchema = z
+  .object({
+    id: z.uuid(),
+    type: z.literal('updates'),
+    label: z.string().trim().min(1).max(80),
+    visible: z.boolean(),
+    showHeading: z.boolean().default(true),
+    title: z.string().trim().max(80),
+    headingStyle: z.enum(['normal', 'heading', 'subtext']),
+    feedOrder: z
+      .array(z.enum(['ANNOUNCEMENTS', 'CHANGELOG']))
+      .length(2)
+      .refine((order) => new Set(order).size === 2)
+      .default(['ANNOUNCEMENTS', 'CHANGELOG']),
+    separator: z
+      .object({
+        enabled: z.boolean().default(false),
+        divider: z.boolean().default(true),
+        spacing: z.union([z.literal(1), z.literal(2)]).default(1),
+      })
+      .default({ enabled: false, divider: true, spacing: 1 }),
+    emptyBehavior: z.enum(['show_placeholders', 'hide_empty_entries']),
+    announcements: updatesFeedSchema,
+    changelog: updatesFeedSchema,
+  })
+  .superRefine((updates, context) => {
+    if (updates.showHeading && !updates.title)
+      context.addIssue({ code: 'custom', path: ['title'], message: 'Enter a heading or hide it.' });
+  });
 const cardLayoutElementSchema = z.discriminatedUnion('type', [
   z.object({
     id: z.uuid(),
@@ -227,6 +245,30 @@ export const cardLayoutSchema = z
         code: 'custom',
         message: 'Only one Community Updates element is supported.',
       });
+    const componentCount =
+      1 +
+      layout.elements.reduce((total, element) => {
+        if (!element.visible) return total;
+        if (element.type === 'section') return total + 3;
+        if (element.type === 'actions') return total + 3;
+        if (element.type !== 'updates') return total + 1;
+        const visibleFeeds = [element.announcements, element.changelog].filter(
+          (feed) => feed.visible,
+        );
+        if (!visibleFeeds.length) return total;
+        return (
+          total +
+          (element.showHeading ? 1 : 0) +
+          visibleFeeds.reduce((feeds, feed) => feeds + (feed.showOpenButton ? 4 : 2), 0) +
+          (visibleFeeds.length > 1 && element.separator.enabled ? 1 : 0)
+        );
+      }, 0);
+    if (componentCount > 40)
+      context.addIssue({
+        code: 'custom',
+        path: ['elements'],
+        message: 'Visible card layout exceeds Discord’s 40 component message limit.',
+      });
   });
 
 export function defaultUpdatesElement(id: string): CardLayoutElement {
@@ -236,7 +278,10 @@ export function defaultUpdatesElement(id: string): CardLayoutElement {
     label: 'Community Updates',
     visible: true,
     title: '**Latest Updates**',
+    showHeading: true,
     headingStyle: 'normal',
+    feedOrder: ['ANNOUNCEMENTS', 'CHANGELOG'],
+    separator: { enabled: false, divider: true, spacing: 1 },
     emptyBehavior: 'show_placeholders',
     announcements: {
       visible: true,
@@ -347,25 +392,72 @@ export function normalizeCardProfile(value: unknown): CardProfile {
       : (() => {
           const raw = source.layout as { version?: unknown; elements?: unknown };
           const migrated =
-            raw.version === 1 && Array.isArray(raw.elements)
+            (raw.version === 1 || raw.version === CARD_LAYOUT_VERSION) &&
+            Array.isArray(raw.elements)
               ? (() => {
-                  const elements = [...(raw.elements as unknown[])] as Array<
-                    Record<string, unknown>
-                  >;
-                  const updates = {
-                    ...defaultUpdatesElement(stableLayoutId('community-updates')),
-                    visible:
-                      (source.visibleFields as Record<string, unknown> | undefined)?.updates !==
-                      false,
-                  };
-                  const oldSeparator = elements.findIndex(
-                    (element) =>
-                      element.type === 'separator' && element.label === 'Updates separator',
-                  );
-                  if (oldSeparator >= 0 && elements.length < 35)
-                    elements.splice(oldSeparator + 1, 0, updates);
-                  else if (oldSeparator >= 0) elements.splice(oldSeparator, 1, updates);
-                  else if (elements.length < 35) elements.push(updates);
+                  const elements = raw.elements.map((value: unknown) => {
+                    if (value === null || typeof value !== 'object' || Array.isArray(value))
+                      return value;
+                    const element = value as Record<string, unknown>;
+                    if (element.type !== 'updates') return element;
+                    const defaults = defaultUpdatesElement(stableLayoutId('community-updates'));
+                    if (defaults.type !== 'updates') return element;
+                    return {
+                      ...defaults,
+                      ...element,
+                      showHeading:
+                        typeof element.showHeading === 'boolean' ? element.showHeading : true,
+                      feedOrder: Array.isArray(element.feedOrder)
+                        ? element.feedOrder
+                        : defaults.feedOrder,
+                      separator:
+                        typeof element.separator === 'object' && element.separator !== null
+                          ? { ...defaults.separator, ...element.separator }
+                          : defaults.separator,
+                      announcements: {
+                        ...defaults.announcements,
+                        ...(typeof element.announcements === 'object' &&
+                        element.announcements !== null
+                          ? element.announcements
+                          : {}),
+                      },
+                      changelog: {
+                        ...defaults.changelog,
+                        ...(typeof element.changelog === 'object' && element.changelog !== null
+                          ? element.changelog
+                          : {}),
+                      },
+                    };
+                  });
+                  if (
+                    raw.version === 1 &&
+                    !elements.some(
+                      (element) =>
+                        element !== null &&
+                        typeof element === 'object' &&
+                        !Array.isArray(element) &&
+                        (element as Record<string, unknown>).type === 'updates',
+                    )
+                  ) {
+                    const updates = {
+                      ...defaultUpdatesElement(stableLayoutId('community-updates')),
+                      visible:
+                        (source.visibleFields as Record<string, unknown> | undefined)?.updates !==
+                        false,
+                    };
+                    const oldSeparator = elements.findIndex(
+                      (element) =>
+                        element !== null &&
+                        typeof element === 'object' &&
+                        !Array.isArray(element) &&
+                        (element as Record<string, unknown>).type === 'separator' &&
+                        (element as Record<string, unknown>).label === 'Updates separator',
+                    );
+                    if (oldSeparator >= 0 && elements.length < 35)
+                      elements.splice(oldSeparator + 1, 0, updates);
+                    else if (oldSeparator >= 0) elements.splice(oldSeparator, 1, updates);
+                    else if (elements.length < 35) elements.push(updates);
+                  }
                   return { version: CARD_LAYOUT_VERSION, elements };
                 })()
               : source.layout;
