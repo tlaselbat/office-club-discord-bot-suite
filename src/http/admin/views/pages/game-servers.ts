@@ -187,7 +187,7 @@ function displaysCard(model: GameServersPageModel): string {
             model.servers.map((server) => ({ id: server.id, name: server.displayName })),
             '',
             'required',
-          )}${selectedValueSelect('Discord text channel', 'channelId', model.textChannels, '', 'required')}<button type="submit">Publish server card</button>`,
+          )}${selectedValueSelect('Discord text channel', 'channelId', model.textChannels, '', 'required', 'channelId', 'Choose a channel…')}<button type="submit">Publish server card</button>`,
         );
   const rows = (model.cards ?? []).map((card) => {
     const link =
@@ -425,6 +425,7 @@ ${input('Display name', 'displayName', value('displayName', model.server.display
 <p class="hint">Manage text and layout elements below. Reorder with Up/Down. Hidden or empty elements do not appear.</p><details class="inline-help"><summary>Text and Discord layout help</summary><p>Text styles use Discord Markdown, and Small text uses <code>-#</code>. Sections keep thumbnails attached as Discord requires. Discord controls final spacing and limits total card text to 4,000 characters.</p></details>
 <div class="actions" aria-label="Add card layout element"><button type="button" class="secondary" data-add-layout="text">Add Text Line</button><button type="button" class="secondary" data-add-layout="gallery">Add Image Gallery</button><button type="button" class="secondary" data-add-layout="separator">Add Separator</button><button type="button" class="secondary" data-add-layout="section">Add Text + Thumbnail Section</button></div><div id="card-layout-editors"></div>
 <div id="card-line-editors" hidden>${editorLines.map(lineEditor).join('')}</div>
+</fieldset>
 <label class="checkbox"><input type="checkbox" name="showMapArtwork" value="1"${(model.submitted === undefined ? (profile.mapArtwork ?? profile.visibleFields.currentMap) : model.submitted.showMapArtwork === '1') ? ' checked' : ''}> Show map artwork</label>
 <label class="checkbox"><input type="checkbox" name="showUpdates" value="1"${cardChecked('updates') ? ' checked' : ''}> Show Latest Updates sections</label>
 <label class="checkbox"><input type="checkbox" name="showConnectButton" value="1"${buttonChecked('connect') ? ' checked' : ''}> Show Connect button</label>${input('Connect button label', 'connectButtonLabel', typeof model.submitted?.connectButtonLabel === 'string' ? model.submitted.connectButtonLabel : profile.buttons.connectLabel, 'text', 'maxlength="80" required')}
@@ -490,21 +491,27 @@ function selectedValueSelect(
   selected: string | string[],
   attributes: string,
   id = name,
+  placeholder?: string,
 ): string {
   const hintId = `${id}-selected-value`;
-  return `${select(label, name, items, selected, `${attributes} aria-describedby="${hintId}"`, undefined, undefined, id)}${selectedValueHint(hintId, items, selected)}`;
+  return `${select(label, name, items, selected, `${attributes} aria-describedby="${hintId}"`, placeholder, undefined, id)}${selectedValueHint(hintId, items, selected, placeholder)}`;
 }
 
 function selectedValueHint(
   hintId: string,
   items: Array<{ id: string; name: string }>,
   selected: string | string[],
+  placeholder?: string,
 ): string {
   const values = (Array.isArray(selected) ? selected : [selected]).filter((id) => id !== '');
-  const names = (values.length === 0 ? items.slice(0, 1).map((item) => item.id) : values)
+  const names = (
+    values.length === 0 && placeholder === undefined
+      ? items.slice(0, 1).map((item) => item.id)
+      : values
+  )
     .map((id) => items.find((item) => item.id === id)?.name ?? id)
     .map((name) => escapeHtml(name));
-  return `<p class="hint selected-value" id="${escapeHtml(hintId)}" aria-live="polite">${names.length === 0 ? 'No options available.' : `Selected: ${names.join(', ')}`}</p>`;
+  return `<p class="hint selected-value" id="${escapeHtml(hintId)}" aria-live="polite">${names.length === 0 ? (placeholder ?? 'No options available.') : `Selected: ${names.join(', ')}`}</p>`;
 }
 
 function textarea(

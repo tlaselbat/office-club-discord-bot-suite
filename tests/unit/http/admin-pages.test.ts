@@ -164,6 +164,10 @@ describe('admin page views', () => {
     expect(html).toContain('Production ready');
     expect(html).toContain('Discord displays');
     expect(html).toContain('Publish server card');
+    expect(html).toContain('<option value="">Choose a channel…</option>');
+    expect(html).toContain(
+      'id="channelId-selected-value" aria-live="polite">Choose a channel…</p>',
+    );
     expect(html).not.toContain('Panel destination');
     expect(html).toContain('name="csrf" value="csrf-token"');
     expect(html).toContain(
@@ -240,8 +244,9 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-3');
-    expect(html).toContain('panel.js?v=game-server-editor-3');
+    expect(html).toContain('panel.css?v=game-server-editor-4');
+    expect(html).toContain('panel.js?v=game-server-editor-4');
+    expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
     expect(html).toContain('href="#card-designer">Card Designer</a>');
     expect(html).toContain('class="game-server-savebar"');
     expect(html).toContain('data-discard-server-changes');
