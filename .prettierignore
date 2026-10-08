@@ -3,3 +3,9 @@ node_modules/
 src/generated/
 0be8d974-d35e-4e48-b879-88e45aa22f33.png
 AGENTS.md
+pnpm-lock.yaml
+package-lock.json
+.agents/
+.claude/
+.windsurf/
+.deploy-staging/
