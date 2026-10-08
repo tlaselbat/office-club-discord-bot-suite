@@ -196,7 +196,7 @@ describe('Game Server rendering', () => {
           cardFingerprint({ ...view, updateThreads: [{ ...first, ...changes }, second] }),
         ).not.toEqual(cardFingerprint(view));
       }
-      expect(cardFingerprint(view).layoutVersion).toBe(17);
+      expect(cardFingerprint(view).layoutVersion).toBe(18);
     } finally {
       vi.useRealTimers();
     }
@@ -270,9 +270,7 @@ describe('Game Server rendering', () => {
     const container = firstContainer(result);
     expect(container.type).toBe(17);
     const text = textContents(container);
-    expect(text).toContain(
-      '# 1v1 Arena\n### • Online · Los Angeles\n-# \u2003\u20020 / 16 players',
-    );
+    expect(text).toContain('# 1v1 Arena\n### • Online · Los Angeles\n-# 0/16 players');
     expect(text).toContain(
       'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.',
     );
@@ -295,9 +293,7 @@ describe('Game Server rendering', () => {
     const components = containerComponents(container);
     const section = components[0] as Record<string, unknown>;
     const header = (section.components as Record<string, unknown>[])[0];
-    expect(header?.content).toBe(
-      '# 1v1 Arena\n### • Online · Los Angeles\n-# \u2003\u20020 / 16 players',
-    );
+    expect(header?.content).toBe('# 1v1 Arena\n### • Online · Los Angeles\n-# 0/16 players');
     expect(components.map((component) => component.type)).toEqual([
       9, 10, 14, 10, 12, 10, 1, 14, 10, 10,
     ]);
@@ -413,7 +409,7 @@ describe('Game Server rendering', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, datacenter: null } };
     const container = firstContainer(renderGameServerCard(view, secret));
     const text = textContents(container);
-    expect(text).toContain('# 1v1 Arena\n### • Online\n-# \u2003\u20020 / 16 players');
+    expect(text).toContain('# 1v1 Arena\n### • Online\n-# 0/16 players');
     expect(text).not.toContain('📍');
     const section = containerComponents(container)[0] as Record<string, unknown>;
     expect(section.components as Record<string, unknown>[]).toHaveLength(1);
@@ -490,7 +486,7 @@ describe('Game Server rendering', () => {
       },
     };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
-    expect(text).toContain('### • Online\n-# \u2003\u20023 / 5 players');
+    expect(text).toContain('### • Online\n-# 3/5 players');
     expect(text).toContain('`Unavailable`');
     expect(text).toContain('**Current map**\n`Unknown`');
   });
@@ -535,14 +531,14 @@ describe('Game Server rendering', () => {
     expect(text).toContain(map);
     expect(text).toContain(`# ${displayName}\n`);
     expect(text).toContain(connectDomain);
-    expect(text).toContain('-# \u2003\u200216 / 16 players');
+    expect(text).toContain('-# 16/16 players');
     expect(text).not.toContain('\u00a0');
   });
 
   it('keeps the fingerprint stable when only observation times change', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
     expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
-    expect(cardFingerprint(view).layoutVersion).toBe(17);
+    expect(cardFingerprint(view).layoutVersion).toBe(18);
   });
 
   it('resolves card-profile overrides and safely falls back from malformed persisted media', () => {
@@ -612,6 +608,73 @@ describe('Game Server rendering', () => {
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
     expect(text).toContain('Custom server details\n-# Members only');
     expect(text).not.toContain('Open to all Office Club members.');
+  });
+
+  it('resolves multiple mixed placeholders, suppresses mentions, honors visibility/order and button labels', () => {
+    const view = {
+      ...server,
+      cardProfile: {
+        templates: {
+          title: '{servername}',
+          subtitle: '{online}',
+          description: '{playercount} players at {location}; {unknown}',
+          playerCount: '{playercount}',
+          currentMap: 'Map: {currentmap}',
+          serverAddress: 'Join {serveraddress}',
+        },
+        visibleFields: {
+          title: true,
+          subtitle: true,
+          description: true,
+          playerCount: false,
+          currentMap: false,
+          serverAddress: true,
+          updates: false,
+        },
+        fieldOrder: ['serverAddress', 'description', 'currentMap'],
+        buttons: { connect: false, mapRules: false, connectLabel: 'Join', mapRulesLabel: 'Rules' },
+      },
+    };
+    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
+    expect(text).toContain('0/16 players at Los Angeles;');
+    expect(text).toContain('Join arena.example.com:27015');
+    expect(text).not.toContain('{unknown}');
+    expect(text).not.toContain('**Current map**');
+    expect(text).not.toContain('Latest Updates');
+    expect(
+      containerComponents(firstContainer(renderGameServerCard(view, secret))).some(
+        (item) => item.type === 1,
+      ),
+    ).toBe(false);
+    expect(cardFingerprint(view)).not.toEqual(cardFingerprint(server));
+  });
+
+  it('updates configured player templates as cached telemetry changes', () => {
+    const view = {
+      ...server,
+      cardProfile: { templates: { playerCount: '{playercount} players' } },
+    };
+    const before = cardFingerprint(view);
+    const after = cardFingerprint({
+      ...view,
+      snapshot: { ...baseSnapshot, players: 1, maxPlayers: 5 },
+    });
+    expect(before).not.toEqual(after);
+    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).toContain(
+      '0/16 players',
+    );
+  });
+
+  it('uses the configured per-state status label for status and online placeholders', () => {
+    const view = {
+      ...server,
+      cardProfile: {
+        templates: { subtitle: '{status} · {online}' },
+        statusLabels: { online: 'Ready' },
+      },
+    };
+    const text = textContents(firstContainer(renderGameServerCard(view, secret)));
+    expect(text).toContain('Ready · • Ready');
   });
 
   it('refreshes the fingerprint when rendered description or map artwork changes', () => {

@@ -6,6 +6,91 @@ export const DEFAULT_CARD_DESCRIPTION =
 export const DEFAULT_THUMBNAIL_IMAGE_URL =
   'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-thumbnail.png';
 
+export const CARD_TEMPLATE_FIELDS = [
+  'title',
+  'subtitle',
+  'description',
+  'playerCount',
+  'currentMap',
+  'serverAddress',
+] as const;
+export type CardTemplateField = (typeof CARD_TEMPLATE_FIELDS)[number];
+export const CARD_BODY_FIELDS = ['description', 'currentMap', 'serverAddress'] as const;
+export const DEFAULT_CARD_TEMPLATES: Record<CardTemplateField, string> = {
+  title: '{servername}',
+  subtitle: '{statusicon} {status}{location}',
+  description: DEFAULT_CARD_DESCRIPTION,
+  playerCount: '{playercount} players',
+  currentMap: '**Current map**\n`{currentmap}`',
+  serverAddress: '`{serveraddress}`',
+};
+export const DEFAULT_STATUS_LABELS = {
+  online: 'Online',
+  offline: 'Offline',
+  starting: 'Server starting…',
+  stale: 'Status stale',
+  pending: 'Status pending',
+  unavailable: 'Server unavailable',
+};
+export const CARD_PLACEHOLDERS = [
+  ['playercount', 'Connected and maximum players, such as 0/5'],
+  ['players', 'Connected player count'],
+  ['maxplayers', 'Maximum player count'],
+  ['online', 'Configured status icon and label'],
+  ['status', 'Current human-readable server state'],
+  ['statusicon', 'Configured icon for the current server state'],
+  ['location', 'Configured DatHost data center'],
+  ['serveraddress', 'Configured host and port'],
+  ['serverip', 'Configured hostname or IP'],
+  ['serverport', 'Configured connection port'],
+  ['currentmap', 'Current map from the cached server snapshot'],
+  ['servername', 'Configured display name'],
+  ['lastupdated', 'Time since the latest successful snapshot'],
+] as const;
+
+const templateFieldSchema = z.object({
+  title: z.string().max(100).default(DEFAULT_CARD_TEMPLATES.title),
+  subtitle: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.subtitle),
+  description: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.description),
+  playerCount: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.playerCount),
+  currentMap: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.currentMap),
+  serverAddress: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.serverAddress),
+});
+const placeholderNames = new Set<string>(CARD_PLACEHOLDERS.map(([name]) => name));
+export function validateCardTemplate(template: string): string[] {
+  const errors: string[] = [];
+  for (const match of template.matchAll(/\{([^{}]+)\}/g)) {
+    const name = (match[1] ?? '').toLowerCase();
+    if (!placeholderNames.has(name) && name !== 'severaddress') {
+      errors.push(`Unknown placeholder {${match[1] ?? ''}}.`);
+    }
+  }
+  return [...new Set(errors)];
+}
+const visibleFieldSchema = z.object({
+  title: z.boolean().default(true),
+  subtitle: z.boolean().default(true),
+  description: z.boolean().default(true),
+  playerCount: z.boolean().default(true),
+  currentMap: z.boolean().default(true),
+  serverAddress: z.boolean().default(true),
+  updates: z.boolean().default(true),
+});
+const statusLabelsSchema = z.object({
+  online: z.string().trim().min(1).max(80).default(DEFAULT_STATUS_LABELS.online),
+  offline: z.string().trim().min(1).max(80).default(DEFAULT_STATUS_LABELS.offline),
+  starting: z.string().trim().min(1).max(80).default(DEFAULT_STATUS_LABELS.starting),
+  stale: z.string().trim().min(1).max(80).default(DEFAULT_STATUS_LABELS.stale),
+  pending: z.string().trim().min(1).max(80).default(DEFAULT_STATUS_LABELS.pending),
+  unavailable: z.string().trim().min(1).max(80).default(DEFAULT_STATUS_LABELS.unavailable),
+});
+const buttonSchema = z.object({
+  connect: z.boolean().default(true),
+  mapRules: z.boolean().default(true),
+  connectLabel: z.string().trim().min(1).max(80).default('Connect'),
+  mapRulesLabel: z.string().trim().min(1).max(80).default('Map & Rules'),
+});
+
 const httpsUrl = z.url().refine((value) => new URL(value).protocol === 'https:', 'Must use HTTPS');
 const emojiId = z.string().regex(/^\d{17,20}$/, 'Must be a Discord emoji ID');
 
@@ -20,9 +105,32 @@ export const cardProfileSchema = z.object({
   offlineEmojiId: emojiId.nullable().default(null),
   warningEmojiId: emojiId.nullable().default(null),
   pendingEmojiId: emojiId.nullable().default(null),
+  templates: templateFieldSchema.default(DEFAULT_CARD_TEMPLATES),
+  visibleFields: visibleFieldSchema.default({
+    title: true,
+    subtitle: true,
+    description: true,
+    playerCount: true,
+    currentMap: true,
+    serverAddress: true,
+    updates: true,
+  }),
+  statusLabels: statusLabelsSchema.default(DEFAULT_STATUS_LABELS),
+  fieldOrder: z
+    .array(z.enum(CARD_BODY_FIELDS))
+    .length(CARD_BODY_FIELDS.length)
+    .refine((fields) => new Set(fields).size === CARD_BODY_FIELDS.length)
+    .default([...CARD_BODY_FIELDS]),
+  buttons: buttonSchema.default({
+    connect: true,
+    mapRules: true,
+    connectLabel: 'Connect',
+    mapRulesLabel: 'Map & Rules',
+  }),
 });
 
 export type CardProfile = z.infer<typeof cardProfileSchema>;
+export type CardProfileInput = z.input<typeof cardProfileSchema>;
 
 export interface ResolvedCardProfile extends CardProfile {
   thumbnailImageUrl: string;
@@ -49,6 +157,11 @@ export function normalizeCardProfile(value: unknown): CardProfile {
     offlineEmojiId: field(cardProfileSchema.shape.offlineEmojiId, source.offlineEmojiId),
     warningEmojiId: field(cardProfileSchema.shape.warningEmojiId, source.warningEmojiId),
     pendingEmojiId: field(cardProfileSchema.shape.pendingEmojiId, source.pendingEmojiId),
+    templates: field(cardProfileSchema.shape.templates, source.templates),
+    visibleFields: field(cardProfileSchema.shape.visibleFields, source.visibleFields),
+    statusLabels: field(cardProfileSchema.shape.statusLabels, source.statusLabels),
+    fieldOrder: field(cardProfileSchema.shape.fieldOrder, source.fieldOrder),
+    buttons: field(cardProfileSchema.shape.buttons, source.buttons),
   };
 }
 

@@ -7,7 +7,7 @@ import { scheduleGameServerPoll } from '../poll-service.js';
 import { scheduleGameServerCardRefresh, type GameServerCardService } from '../card-service.js';
 import type { GameServerPanelService } from '../panel-service.js';
 import { scheduleGameServerUpdateReconcile } from '../update-thread-service.js';
-import { cardProfileSchema, isHttpsUrl, type CardProfile } from '../card-profile.js';
+import { cardProfileSchema, isHttpsUrl, type CardProfileInput } from '../card-profile.js';
 
 const panelChannelPermissions = [
   PermissionFlagsBits.ViewChannel,
@@ -64,7 +64,7 @@ export interface UpdateGameServerCommand {
   connectDomain?: string | null | undefined;
   joinUrl?: string | null | undefined;
   imageUrl?: string | null | undefined;
-  cardProfile?: CardProfile | undefined;
+  cardProfile?: CardProfileInput | undefined;
   sortOrder?: number | undefined;
 }
 

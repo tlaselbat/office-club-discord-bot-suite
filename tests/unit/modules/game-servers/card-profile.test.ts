@@ -3,6 +3,7 @@ import {
   DEFAULT_CARD_ACCENT_COLOR,
   normalizeCardProfile,
   resolveCardProfile,
+  validateCardTemplate,
 } from '../../../../src/modules/game-servers/card-profile.js';
 
 afterEach(() => vi.unstubAllEnvs());
@@ -29,5 +30,11 @@ describe('game-server card profile', () => {
     const profile = resolveCardProfile({ onlineEmojiId: null, offlineEmojiId: null });
     expect(profile.onlineEmojiId).toBeNull();
     expect(profile.offlineEmojiId).toBe('12345678901234567');
+  });
+
+  it('validates known placeholders, supports the legacy typo, and rejects unknown names', () => {
+    expect(validateCardTemplate('{playercount} of {maxplayers}')).toEqual([]);
+    expect(validateCardTemplate('{severaddress}')).toEqual([]);
+    expect(validateCardTemplate('{tickrate}')).toEqual(['Unknown placeholder {tickrate}.']);
   });
 });

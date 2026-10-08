@@ -56,6 +56,11 @@ function fixture() {
     guild: vi.fn().mockReturnValue({
       name: 'Office Club',
       channels: { fetch: vi.fn().mockResolvedValue(new Map()) },
+      emojis: {
+        fetch: vi
+          .fn()
+          .mockResolvedValue(new Map([['32345678901234567', { id: '32345678901234567' }]])),
+      },
     }),
     requestId: () => 'request-1',
   };
@@ -109,6 +114,7 @@ describe('Game Server configuration routes', () => {
         cardProfile: expect.objectContaining({
           accentColor: '#abcdef',
           onlineEmojiId: '32345678901234567',
+          statusLabels: expect.objectContaining({ online: 'Online' }),
         }),
       }),
     );
@@ -127,6 +133,30 @@ describe('Game Server configuration routes', () => {
     expect(response.body).toContain('aria-invalid="true"');
     expect(response.body).toContain('Saved arena');
     expect(response.body).not.toContain('name="enabled" value="1" checked');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown template placeholders before persisting configuration', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, descriptionTemplate: 'Live: {unknownfield}' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('Unknown placeholder {unknownfield}.');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it('rejects status emoji IDs that are not available in the Discord server', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, onlineEmojiId: '42345678901234567' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('must be available in this Discord server');
     expect(updateServer).not.toHaveBeenCalled();
   });
 

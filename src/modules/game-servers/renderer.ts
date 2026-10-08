@@ -11,6 +11,7 @@ import path from 'node:path';
 import {
   cardAccentColor,
   DEFAULT_CARD_DESCRIPTION,
+  DEFAULT_CARD_TEMPLATES,
   isHttpsUrl,
   resolveCardProfile,
 } from './card-profile.js';
@@ -104,6 +105,8 @@ export interface CardFingerprint {
   thumbnailImageUrl: string;
   joinUrl: string | null;
   statusEmoji: string;
+  cardProfile: unknown;
+  lastSuccessfulAt: string | null;
   updateThreads: Array<{
     type: UpdateThreadView['type'];
     threadId: string;
@@ -187,15 +190,19 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const location = displayLocation(snapshot?.datacenter ?? null);
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
-  const description = cardDescription(server);
   const mapImageUrl = resolveMapImageUrl(map, server.imageUrl);
   const profile = resolveCardProfile(server.cardProfile);
-
-  const headerComponents: Record<string, unknown>[] = [
-    textDisplay(
-      `# ${server.displayName}\n### ${statusEmoji(snapshot, profile)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n-# \u2003\u2002${playerCount(snapshot).toLowerCase()}`,
-    ),
-  ];
+  const values = cardPlaceholderValues(server, profile, location);
+  const headerLines = [
+    profile.visibleFields.title ? `# ${resolveCardTemplate(profile.templates.title, values)}` : '',
+    profile.visibleFields.subtitle
+      ? `### ${resolveSubtitle(profile.templates.subtitle, values, location)}`
+      : '',
+  ].filter(Boolean);
+  if (profile.visibleFields.playerCount) {
+    headerLines.push(`-# ${resolveCardTemplate(profile.templates.playerCount, values)}`);
+  }
+  const headerComponents: Record<string, unknown>[] = [textDisplay(headerLines.join('\n'))];
 
   const headerSection = {
     type: componentType.section,
@@ -216,24 +223,55 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     ],
   };
 
-  const actionRow = {
-    type: componentType.actionRow,
-    components: [connectButton(server, secret), mapRulesButton(server, secret)],
-  };
+  const buttons = [
+    ...(profile.buttons.connect
+      ? [connectButton(server, secret, profile.buttons.connectLabel)]
+      : []),
+    ...(profile.buttons.mapRules
+      ? [mapRulesButton(server, secret, profile.buttons.mapRulesLabel)]
+      : []),
+  ];
+
+  const bodyComponents: Record<string, unknown>[] = [];
+  for (const field of profile.fieldOrder) {
+    if (!profile.visibleFields[field]) continue;
+    if (field === 'description') {
+      const legacyDescription = server.description?.trim();
+      const configuredTemplates =
+        server.cardProfile !== null &&
+        typeof server.cardProfile === 'object' &&
+        Object.hasOwn(server.cardProfile, 'templates');
+      const template =
+        !configuredTemplates &&
+        profile.templates.description === DEFAULT_CARD_DESCRIPTION &&
+        legacyDescription
+          ? legacyDescription
+          : profile.templates.description;
+      bodyComponents.push(textDisplay(resolveCardTemplate(template, values)));
+    }
+    if (field === 'currentMap') {
+      bodyComponents.push(
+        { type: componentType.separator, divider: true, spacing: 1 },
+        textDisplay(resolveCardTemplate(profile.templates.currentMap, values)),
+        mapGallery,
+      );
+    }
+    if (field === 'serverAddress')
+      bodyComponents.push(
+        textDisplay(resolveCardTemplate(profile.templates.serverAddress, values)),
+      );
+  }
+  if (buttons.length > 0)
+    bodyComponents.push({ type: componentType.actionRow, components: buttons });
 
   const container: Record<string, unknown> = {
     type: componentType.container,
     accentColor: cardAccentColor(profile.accentColor),
     components: [
       headerSection,
-      textDisplay(description),
+      ...bodyComponents,
       { type: componentType.separator, divider: true, spacing: 1 },
-      textDisplay(`**Current map**\n\`${displayMap}\``),
-      mapGallery,
-      textDisplay(`\`${connectAddress(server) ?? 'Unavailable'}\``),
-      actionRow,
-      { type: componentType.separator, divider: true, spacing: 1 },
-      ...renderUpdatesSection(server),
+      ...(profile.visibleFields.updates ? renderUpdatesSection(server) : []),
     ],
   };
 
@@ -298,10 +336,10 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const displayMap = displayMapName(map);
   const profile = resolveCardProfile(server.cardProfile);
   return {
-    layoutVersion: 17,
+    layoutVersion: 18,
     accentColor: cardAccentColor(profile.accentColor),
     displayName: server.displayName,
-    status: statusLabel(snapshot),
+    status: configuredStatusLabel(snapshot, profile),
     players: playerCount(snapshot),
     map: displayMap,
     location: displayLocation(snapshot?.datacenter ?? null),
@@ -311,6 +349,8 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
     thumbnailImageUrl: profile.thumbnailImageUrl,
     joinUrl: isHttpsUrl(server.joinUrl) ? server.joinUrl : null,
     statusEmoji: statusEmoji(snapshot, profile),
+    cardProfile: profile,
+    lastSuccessfulAt: snapshot?.lastSuccessfulAt?.toISOString() ?? null,
     updateThreads: (server.updateThreads ?? [])
       .map((thread) => ({
         type: thread.type,
@@ -353,21 +393,25 @@ function renderUpdatesSection(server: ServerView): Record<string, unknown>[] {
   });
 }
 
-function connectButton(server: ServerView, secret: string): Record<string, unknown> {
+function connectButton(server: ServerView, secret: string, label: string): Record<string, unknown> {
   return {
     type: componentType.button,
     style: buttonStyle.primary,
-    label: 'Connect',
+    label,
     emoji: { name: '▶' },
     customId: createGameServerCustomId({ action: 'connect', value: server.id }, secret),
   };
 }
 
-function mapRulesButton(server: ServerView, secret: string): Record<string, unknown> {
+function mapRulesButton(
+  server: ServerView,
+  secret: string,
+  label: string,
+): Record<string, unknown> {
   return {
     type: componentType.button,
     style: buttonStyle.secondary,
-    label: 'Map & Rules',
+    label,
     emoji: { name: '🗺' },
     customId: createGameServerCustomId({ action: 'map-rules', value: server.id }, secret),
   };
@@ -375,6 +419,78 @@ function mapRulesButton(server: ServerView, secret: string): Record<string, unkn
 
 function textDisplay(content: string): Record<string, unknown> {
   return { type: componentType.textDisplay, content };
+}
+
+function cardPlaceholderValues(
+  server: ServerView,
+  profile: ReturnType<typeof resolveCardProfile>,
+  location: string | null,
+): Record<string, string> {
+  const snapshot = server.snapshot;
+  const host = server.connectDomain ?? snapshot?.host ?? '';
+  const port = snapshot?.port === null || snapshot?.port === undefined ? '' : String(snapshot.port);
+  const address = host ? (port ? `${host}:${port}` : host) : '';
+  const players = snapshot?.players;
+  const maxPlayers = snapshot?.maxPlayers;
+  const count = players === null || players === undefined ? '' : String(players);
+  const max = maxPlayers === null || maxPlayers === undefined ? '' : String(maxPlayers);
+  const icon = statusEmoji(snapshot, profile);
+  const status = configuredStatusLabel(snapshot, profile);
+  const elapsed = snapshot?.lastSuccessfulAt
+    ? Math.max(0, Math.floor((Date.now() - snapshot.lastSuccessfulAt.getTime()) / 60_000))
+    : null;
+  const lastUpdated = elapsed === null ? '' : elapsed < 1 ? 'Just now' : `${String(elapsed)}m ago`;
+  return {
+    playercount: count ? (max ? `${count}/${max}` : count) : 'Unknown',
+    players: count,
+    maxplayers: max,
+    online: `${icon} ${status}`,
+    status,
+    statusicon: icon,
+    location: location ?? '',
+    serveraddress: address || 'Unavailable',
+    severaddress: address || 'Unavailable',
+    serverip: host,
+    serverport: port,
+    currentmap: displayMapName(snapshot?.map ?? null),
+    servername: server.displayName,
+    lastupdated: lastUpdated,
+  };
+}
+
+function resolveCardTemplate(template: string, values: Record<string, string>): string {
+  const withoutMissingLocationSeparator = values.location
+    ? template
+    : template.replace(/\s?[·|]\s*\{location\}/gi, '');
+  return withoutMissingLocationSeparator.replace(/\{([^{}]+)\}/g, (_match, rawName: string) => {
+    const value = values[rawName.toLowerCase()] ?? '';
+    // Telemetry and configured text must never trigger Discord mentions.
+    return value.replace(/@/g, '@\u200b').replace(/`/g, '\\`');
+  });
+}
+
+function resolveSubtitle(
+  template: string,
+  values: Record<string, string>,
+  location: string | null,
+): string {
+  if (template !== DEFAULT_CARD_TEMPLATES.subtitle) return resolveCardTemplate(template, values);
+  const withoutLocation = { ...values, location: '' };
+  const status = resolveCardTemplate(template, withoutLocation);
+  return location === null ? status : `${status} · ${location}`;
+}
+
+function configuredStatusLabel(
+  snapshot: SnapshotView | null,
+  profile: ReturnType<typeof resolveCardProfile>,
+): string {
+  if (snapshot === null) return profile.statusLabels.pending;
+  if (snapshot.stale) return profile.statusLabels.stale;
+  if (snapshot.hostingState === 'STOPPED') return profile.statusLabels.offline;
+  if (snapshot.hostingState === 'STARTING') return profile.statusLabels.starting;
+  if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE')
+    return profile.statusLabels.online;
+  return profile.statusLabels.unavailable;
 }
 
 function displayLocation(location: string | null): string | null {

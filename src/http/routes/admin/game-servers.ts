@@ -10,7 +10,15 @@ import {
 } from '../../admin/views.js';
 import { idSchema } from './shared.js';
 import type { SharedHelpers } from './shared.js';
-import { cardProfileSchema, isHttpsUrl } from '../../../modules/game-servers/card-profile.js';
+import {
+  CARD_TEMPLATE_FIELDS,
+  CARD_BODY_FIELDS,
+  DEFAULT_CARD_TEMPLATES,
+  DEFAULT_STATUS_LABELS,
+  cardProfileSchema,
+  isHttpsUrl,
+  validateCardTemplate,
+} from '../../../modules/game-servers/card-profile.js';
 
 const optionalHttpsUrl = z
   .string()
@@ -65,6 +73,30 @@ const serverEditSchema = z
     offlineEmojiId: z.string().max(20).optional(),
     warningEmojiId: z.string().max(20).optional(),
     pendingEmojiId: z.string().max(20).optional(),
+    titleTemplate: z.string().max(100).default(DEFAULT_CARD_TEMPLATES.title),
+    subtitleTemplate: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.subtitle),
+    descriptionTemplate: z.string().max(500).optional(),
+    playerCountTemplate: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.playerCount),
+    currentMapTemplate: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.currentMap),
+    serverAddressTemplate: z.string().max(250).default(DEFAULT_CARD_TEMPLATES.serverAddress),
+    showTitle: z.literal('1').optional(),
+    showSubtitle: z.literal('1').optional(),
+    showDescription: z.literal('1').optional(),
+    showPlayerCount: z.literal('1').optional(),
+    showCurrentMap: z.literal('1').optional(),
+    showServerAddress: z.literal('1').optional(),
+    showUpdates: z.literal('1').optional(),
+    fieldOrder: z.string().max(100).default(CARD_BODY_FIELDS.join(',')),
+    showConnectButton: z.literal('1').optional(),
+    showMapRulesButton: z.literal('1').optional(),
+    connectButtonLabel: z.string().trim().min(1).max(80).default('Connect'),
+    mapRulesButtonLabel: z.string().trim().min(1).max(80).default('Map & Rules'),
+    onlineStatusLabel: z.string().trim().min(1).max(80).optional(),
+    offlineStatusLabel: z.string().trim().min(1).max(80).optional(),
+    startingStatusLabel: z.string().trim().min(1).max(80).optional(),
+    staleStatusLabel: z.string().trim().min(1).max(80).optional(),
+    pendingStatusLabel: z.string().trim().min(1).max(80).optional(),
+    unavailableStatusLabel: z.string().trim().min(1).max(80).optional(),
   })
   .strict();
 
@@ -543,7 +575,52 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         offlineEmojiId: body.data.offlineEmojiId || null,
         warningEmojiId: body.data.warningEmojiId || null,
         pendingEmojiId: body.data.pendingEmojiId || null,
+        templates: {
+          title: body.data.titleTemplate,
+          subtitle: body.data.subtitleTemplate,
+          description:
+            body.data.descriptionTemplate ??
+            body.data.description ??
+            DEFAULT_CARD_TEMPLATES.description,
+          playerCount: body.data.playerCountTemplate,
+          currentMap: body.data.currentMapTemplate,
+          serverAddress: body.data.serverAddressTemplate,
+        },
+        visibleFields: {
+          title: body.data.showTitle === '1',
+          subtitle: body.data.showSubtitle === '1',
+          description: body.data.showDescription === '1',
+          playerCount: body.data.showPlayerCount === '1',
+          currentMap: body.data.showCurrentMap === '1',
+          serverAddress: body.data.showServerAddress === '1',
+          updates: body.data.showUpdates === '1',
+        },
+        fieldOrder: body.data.fieldOrder.split(',').map((field) => field.trim()),
+        buttons: {
+          connect: body.data.showConnectButton === '1',
+          mapRules: body.data.showMapRulesButton === '1',
+          connectLabel: body.data.connectButtonLabel,
+          mapRulesLabel: body.data.mapRulesButtonLabel,
+        },
+        statusLabels: {
+          online: body.data.onlineStatusLabel ?? DEFAULT_STATUS_LABELS.online,
+          offline: body.data.offlineStatusLabel ?? DEFAULT_STATUS_LABELS.offline,
+          starting: body.data.startingStatusLabel ?? DEFAULT_STATUS_LABELS.starting,
+          stale: body.data.staleStatusLabel ?? DEFAULT_STATUS_LABELS.stale,
+          pending: body.data.pendingStatusLabel ?? DEFAULT_STATUS_LABELS.pending,
+          unavailable: body.data.unavailableStatusLabel ?? DEFAULT_STATUS_LABELS.unavailable,
+        },
       });
+      const templateErrors = CARD_TEMPLATE_FIELDS.flatMap((field) =>
+        validateCardTemplate(profile.success ? profile.data.templates[field] : ''),
+      );
+      if (templateErrors.length > 0) {
+        const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
+          errors: templateErrors,
+          submitted,
+        });
+        return reply.code(400).type('text/html').send(html);
+      }
       if (!profile.success) {
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
           errors: ['Review the Card Profile fields and try again.'],
@@ -551,6 +628,35 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           submitted,
         });
         return reply.code(400).type('text/html').send(html);
+      }
+      const emojiIds = [
+        profile.data.onlineEmojiId,
+        profile.data.offlineEmojiId,
+        profile.data.warningEmojiId,
+        profile.data.pendingEmojiId,
+      ].filter((id): id is string => id !== null);
+      if (emojiIds.length > 0) {
+        const guild = shared.guild(params.data.guildId);
+        if (guild === undefined)
+          return reply.code(404).type('text/html').send('<h1>Not found</h1>');
+        try {
+          const available = await guild.emojis.fetch();
+          if (emojiIds.some((id) => !available.has(id))) {
+            const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
+              errors: [
+                'Each configured status emoji must be available in this Discord server and usable by the bot.',
+              ],
+              submitted,
+            });
+            return await reply.code(400).type('text/html').send(html);
+          }
+        } catch {
+          const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
+            errors: ['Could not verify configured status emojis with Discord. Try again.'],
+            submitted,
+          });
+          return await reply.code(400).type('text/html').send(html);
+        }
       }
       try {
         await shared.deps.gameServerAdmin.updateServer({
@@ -560,7 +666,10 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           correlationId: shared.requestId(),
           expectedVersion: body.data.version,
           displayName: body.data.displayName,
-          description: body.data.description,
+          description:
+            body.data.descriptionTemplate ??
+            body.data.description ??
+            DEFAULT_CARD_TEMPLATES.description,
           enabled: body.data.enabled === '1',
           public: body.data.public === '1',
           connectDomain: body.data.connectDomain,

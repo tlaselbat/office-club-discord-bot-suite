@@ -240,7 +240,9 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('/displays/123e4567-e89b-12d3-a456-426614174001/move');
-    expect(html).toContain('<textarea id="description" name="description" rows="4"');
+    expect(html).toContain(
+      '<textarea id="descriptionTemplate" name="descriptionTemplate" rows="4"',
+    );
     expect(html).toContain(
       'A longer server description that needs more than a single line to inspect and edit.',
     );

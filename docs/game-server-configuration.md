@@ -17,9 +17,42 @@ summary and Discord renderer resolve presentation defaults through
 | Connect domain and HTTPS join URL           | Existing server columns    | Address override and server-detail link; card Connect interaction remains signed                      |
 | Polling, public visibility, sort order      | Existing server columns    | Monitoring, publication eligibility, and listing order                                                |
 
+## Card templates and placeholders
+
+The edit page saves per-server card templates, visibility flags, field order,
+and button labels in the existing `GameServer.cardProfile` JSON column. This is
+an additive JSON extension and does not require a database migration. Older
+profiles keep their description and presentation defaults until a template is
+saved. Optimistic server versions protect profile updates, and the existing
+card refresh queue edits each published Discord message in place.
+
+Supported placeholders are `{playercount}`, `{players}`, `{maxplayers}`,
+`{online}`, `{status}`, `{statusicon}`, `{location}`, `{serveraddress}`,
+`{serverip}`, `{serverport}`, `{currentmap}`, `{servername}`, and
+`{lastupdated}`. `{severaddress}` remains accepted as a compatibility alias.
+Tickrate and uptime are not offered because the current DatHost snapshot does
+not provide them. Unavailable values render as an empty string or a clear
+fallback, and any unknown token is rejected before saving. Resolved values
+cannot trigger Discord mentions.
+
+The preview loads cached server values when present and supports online,
+offline, and unavailable example states. When no cached snapshot exists, the
+current-state preview is explicitly labeled as using examples. The preview is
+a text approximation; Discord remains responsible for final Component V2
+Markdown and media rendering.
+
+Editable fields include title, status/location subtitle, description, player
+count, current map, and address. Description, map, and address can be reordered
+through the comma-separated field order. Title, status, and player count stay
+together in the native header section. Existing map artwork, thumbnail, accent, and status emoji
+controls remain available. The Latest Updates sections can be hidden. Each
+existing action can be hidden and relabeled;
+its signed interaction behavior is unchanged.
+
 Telemetry (status, players, map, location, metrics, observation times) remains
 read-only. Update-thread contents remain managed by the existing thread workflow.
-Component structure, button semantics and labels retain the existing card design.
+Component structure and button semantics retain the existing card design; labels
+are configurable from the profile.
 Publishing, moving, refreshing/repairing and removing individual displays remain
 independent of server registration.
 
@@ -49,12 +82,12 @@ server cleanup uses durable refresh jobs to retry failed removals.
 
 ## Before release
 
-Apply the additive `20261007000000_game_server_card_profile` migration before
-starting the updated application. Review the scoped diff because this checkout
-also contains earlier, uncommitted webpanel changes.
+This extension uses the existing JSON profile column and adds no migration.
+Review the scoped diff before release and verify saved templates against the
+live Discord message after deployment.
 
 Automated fixtures and mocks verify contracts and failure paths. Live acceptance
-still requires an isolated Discord server: verify migration/restart persistence,
+still requires an isolated Discord server: verify restart persistence,
 existing-message identity after profile saves, permissions and guild ownership,
 concurrent publication, move failure recovery, private cleanup, actual custom
 emoji availability, remote image rendering, and DatHost outage recovery.
