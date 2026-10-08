@@ -109,6 +109,7 @@ describe('Game Server configuration routes', () => {
     });
     const page = await app.inject({ method: 'GET', url });
     expect(page.body).toContain('data-update-threads');
+    expect(page.body).toContain('Add Community Updates');
     expect(page.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(page.body).not.toContain('<script>alert(1)</script>');
     expect(shared.deps.prisma.gameServer.findFirst).toHaveBeenLastCalledWith({
@@ -130,14 +131,26 @@ describe('Game Server configuration routes', () => {
       cardProfile: unknown;
       description: string;
     };
-    const elements = resolveCardLayout(saved.cardProfile, saved.description);
+    const elements = resolveCardLayout(saved.cardProfile, saved.description).map((element) =>
+      element.type === 'updates'
+        ? {
+            ...element,
+            title: 'Release Notes',
+            changelog: {
+              ...element.changelog,
+              openButtonLabel: 'View notes',
+              latestMessageLength: 500,
+            },
+          }
+        : element,
+    );
     const response = await app.inject({
       method: 'POST',
       url,
       payload: {
         ...payload,
-        layoutVersion: '1',
-        layoutJson: JSON.stringify({ version: 1, elements }),
+        layoutVersion: '2',
+        layoutJson: JSON.stringify({ version: 2, elements }),
       },
     });
     expect(response.statusCode).toBe(303);

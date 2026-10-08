@@ -33,9 +33,10 @@ const serializeElement = (node) => {
     if(base.type === 'section') base.thumbnailUrl=read(node,'thumbnailUrl').value || null;
   } else if(base.type === 'gallery') base.items=Array.from(node._content.querySelectorAll('[data-gallery-item]')).map((item)=>({id:item.dataset.itemId,source:item.querySelector('[data-layout-field="source"]').value,url:item.querySelector('[data-layout-field="url"]').value||null,description:item.querySelector('[data-layout-field="description"]').value}));
   else if(base.type === 'separator') Object.assign(base,{divider:read(node,'divider').checked,spacing:Number(read(node,'spacing').value)});
+  else if(base.type === 'updates') { const field=(name)=>read(node,name); Object.assign(base,{title:field('updatesTitle').value,headingStyle:field('headingStyle').value,emptyBehavior:field('emptyBehavior').value,announcements:{visible:field('announcementsVisible').checked,displayLabel:field('announcementsLabel').value,textStyle:field('announcementsStyle').value,emptyPlaceholder:field('announcementsEmpty').value,showTimestamp:field('announcementsTimestamp').checked,showOpenButton:field('announcementsOpen').checked,openButtonLabel:field('announcementsButton').value,latestMessageLength:Number(field('announcementsLength').value)},changelog:{visible:field('changelogVisible').checked,displayLabel:field('changelogLabel').value,textStyle:field('changelogStyle').value,emptyPlaceholder:field('changelogEmpty').value,showTimestamp:field('changelogTimestamp').checked,showOpenButton:field('changelogOpen').checked,openButtonLabel:field('changelogButton').value,latestMessageLength:Number(field('changelogLength').value)}}); }
   return base;
 };
-const saveLayout = () => { if(layoutJson && !invalidLayout) layoutJson.value=JSON.stringify({version:1,elements:layoutNodes().map(serializeElement)}); };
+const saveLayout = () => { if(layoutJson && !invalidLayout) layoutJson.value=JSON.stringify({version:2,elements:layoutNodes().map(serializeElement)}); };
 const announce = (text) => { const status=document.getElementById('card-layout-status');if(status) status.textContent=text; };
 const refreshRows = () => {
   layoutNodes().forEach((node,index,nodes)=>{
@@ -49,14 +50,14 @@ const refreshRows = () => {
     node.querySelector('[data-layout-move="up"]').disabled=index===0;
     node.querySelector('[data-layout-move="down"]').disabled=index===nodes.length-1;
     node.querySelector('[data-layout-remove]').disabled=nodes.length===1;node._content.querySelector('[data-layout-remove]').disabled=nodes.length===1;
-    node.querySelector('[data-layout-duplicate]').disabled=nodes.length>=35||type==='actions';
+    node.querySelector('[data-layout-duplicate]').disabled=nodes.length>=35||type==='actions'||type==='updates';
     if(type==='gallery') {
       const items=Array.from(node._content.querySelectorAll('[data-gallery-item]'));
       items.forEach((item,i)=>{item.querySelector('legend').textContent='Image '+(i+1);item.querySelector('[data-gallery-move="up"]').disabled=i===0;item.querySelector('[data-gallery-move="down"]').disabled=i===items.length-1;item.querySelector('[data-gallery-remove]').disabled=items.length===1;});
       node._content.querySelector('[data-gallery-add]').disabled=items.length>=10;
     }
   });
-  cardForm?.querySelectorAll('[data-add-layout]').forEach((button)=>{button.disabled=invalidLayout||layoutNodes().length>=35||(button.dataset.addLayout==='actions'&&layoutNodes().some((node)=>node.dataset.layoutElement==='actions'));});
+  cardForm?.querySelectorAll('[data-add-layout]').forEach((button)=>{button.disabled=invalidLayout||layoutNodes().length>=35||((button.dataset.addLayout==='actions'||button.dataset.addLayout==='updates')&&layoutNodes().some((node)=>node.dataset.layoutElement===button.dataset.addLayout));});
 };
 const updateDirtyState = () => {
   if(!cardForm||!initial)return;
@@ -79,11 +80,12 @@ const selectElement = (id, focus=false) => {
   if(focus)node._content.querySelector('[data-layout-field="label"]')?.focus();
 };
 const newElement = (type) => {
-  const base={id:crypto.randomUUID(),type,label:{text:'Text',section:'Text and thumbnail',gallery:'Image gallery',separator:'Separator',actions:'Action buttons'}[type],visible:true};
+  const base={id:crypto.randomUUID(),type,label:{text:'Text',section:'Text and thumbnail',gallery:'Image gallery',separator:'Separator',actions:'Action buttons',updates:'Community Updates'}[type],visible:true};
   if(type==='text'||type==='section')Object.assign(base,{template:'{servername}',style:'normal'});
   if(type==='section')base.thumbnailUrl=null;
   if(type==='gallery')base.items=[{id:crypto.randomUUID(),source:'map',url:null,description:'{currentmap} map artwork'}];
   if(type==='separator')Object.assign(base,{divider:true,spacing:1});
+  if(type==='updates')Object.assign(base,{title:'**Latest Updates**',headingStyle:'normal',emptyBehavior:'show_placeholders',announcements:{visible:true,displayLabel:'📢 **Announcements**',textStyle:'normal',emptyPlaceholder:'No announcements yet.',showTimestamp:true,showOpenButton:true,openButtonLabel:'Open',latestMessageLength:240},changelog:{visible:true,displayLabel:'🛠 **Changelog**',textStyle:'normal',emptyPlaceholder:'No changelog entries yet.',showTimestamp:true,showOpenButton:true,openButtonLabel:'Open',latestMessageLength:240}});
   return base;
 };
 const addGalleryItem = (node,item) => {
@@ -94,7 +96,7 @@ const addGalleryItem = (node,item) => {
 };
 const renderLayoutElement = (element) => {
   const node=document.createElement('div');node.className='card-layout-row';node.dataset.layoutElement=element.type;node.dataset.layoutId=element.id;
-  const icon={text:'T',section:'▣',gallery:'▧',separator:'─',actions:'▤'}[element.type]||'•';
+  const icon={text:'T',section:'▣',gallery:'▧',separator:'─',actions:'▤',updates:'↻'}[element.type]||'•';
   node.innerHTML='<button type="button" class="card-layout-row-main" data-select-layout aria-pressed="false"><span class="card-layout-row-icon" aria-hidden="true">'+icon+'</span><span class="card-layout-row-copy"><strong></strong><span class="card-layout-row-summary"></span></span></button><div class="card-layout-row-actions"><button type="button" class="secondary" data-layout-move="up" aria-label="Move element up">↑</button><button type="button" class="secondary" data-layout-move="down" aria-label="Move element down">↓</button><details class="layout-row-menu"><summary aria-label="Element actions">⋯</summary><div><button type="button" class="secondary" data-layout-duplicate>Duplicate</button><button type="button" class="danger" data-layout-remove>Remove</button></div></details></div>';
   const content=document.createElement('div');content.className='card-layout-content';content.hidden=true;node._content=content;
   content.innerHTML='<label>Friendly label<input data-layout-field="label" maxlength="80" required></label><label class="checkbox"><input type="checkbox" data-layout-field="visible"> Visible in Discord</label>';
@@ -105,10 +107,12 @@ const renderLayoutElement = (element) => {
   if(element.type==='gallery')content.innerHTML+='<div data-gallery-items></div><button type="button" class="secondary" data-gallery-add>Add image</button><p class="hint">Automatic artwork follows the current map’s canonical asset, then your configured fallback in Appearance. Each gallery supports up to 10 images.</p>';
   if(element.type==='separator')content.innerHTML+='<label class="checkbox"><input type="checkbox" data-layout-field="divider"> Visible divider (disable for spacing only)</label><label>Native Discord spacing<select data-layout-field="spacing"><option value="1">Small</option><option value="2">Large</option></select></label>';
   if(element.type==='actions')content.innerHTML+='<p class="hint">Labels and enabled buttons are configured once in Action Buttons.</p><button type="button" class="secondary" data-open-button-settings>Edit button settings</button>';
+  if(element.type==='updates')content.innerHTML+='<label>Section title<input data-layout-field="updatesTitle" maxlength="80" required></label><label>Heading style<select data-layout-field="headingStyle"><option value="normal">Normal</option><option value="heading">Heading</option><option value="subtext">Subtext</option></select></label><label>Empty behavior<select data-layout-field="emptyBehavior"><option value="show_placeholders">Show placeholders</option><option value="hide_empty_entries">Hide empty entries</option></select></label>'+['announcements','changelog'].map((feed)=>'<details open><summary>'+ (feed==='announcements'?'Announcements':'Changelog') +' settings</summary><div class="card-layout-content"><label class="checkbox"><input type="checkbox" data-layout-field="'+feed+'Visible"> Show feed</label><label>Display label<input data-layout-field="'+feed+'Label" maxlength="80" required></label><label>Entry text style<select data-layout-field="'+feed+'Style"><option value="normal">Normal</option><option value="heading">Heading</option><option value="subtext">Subtext</option></select></label><label>Empty placeholder<input data-layout-field="'+feed+'Empty" maxlength="240"></label><label class="checkbox"><input type="checkbox" data-layout-field="'+feed+'Timestamp"> Show relative timestamp</label><label class="checkbox"><input type="checkbox" data-layout-field="'+feed+'Open"> Show Open button</label><label>Open button label<input data-layout-field="'+feed+'Button" maxlength="80" required></label><label>Latest message excerpt length<input data-layout-field="'+feed+'Length" type="number" min="40" max="1000" step="1"></label></div></details>').join('');
   content.innerHTML+='<div class="card-layout-property-actions"><button type="button" class="secondary" data-layout-restore>Restore element</button><button type="button" class="danger" data-layout-remove>Remove element</button></div>';
   for(const key of ['label','template','style','thumbnailUrl','spacing']){const control=read(node,key);if(control)control.value=element[key]??'';}
   for(const key of ['visible','divider']){const control=read(node,key);if(control)control.checked=element[key]===true;}
   if(element.type==='gallery')(element.items??[]).forEach((item)=>addGalleryItem(node,item));
+  if(element.type==='updates'){const set=(key,value)=>{const control=read(node,key);if(control){if(control.type==='checkbox')control.checked=value===true;else control.value=String(value??'');}};set('updatesTitle',element.title);set('headingStyle',element.headingStyle);set('emptyBehavior',element.emptyBehavior);for(const [feed,key] of [['announcements','announcements'],['changelog','changelog']]){const config=element[key];for(const [suffix,property] of [['Visible','visible'],['Label','displayLabel'],['Style','textStyle'],['Empty','emptyPlaceholder'],['Timestamp','showTimestamp'],['Open','showOpenButton'],['Button','openButtonLabel'],['Length','latestMessageLength']])set(feed+suffix,config[property]);}}
   node.append(content);layoutEditors.append(node);return node;
 };
 const rebuild = (layout, selected=selectedLayoutId) => {
@@ -155,7 +159,7 @@ cardForm?.addEventListener('click',(event)=>{
   if(button.hasAttribute('data-select-layout')){selectElement(node.dataset.layoutId);if(window.innerWidth<=760)layoutProperties.scrollIntoView({block:'start'});return;}
   if(button.dataset.addLayout){const type=button.dataset.addLayout;if(layoutNodes().length>=35||invalidLayout||(type==='actions'&&layoutNodes().some((n)=>n.dataset.layoutElement==='actions')))return;const menu=button.closest('.layout-add-menu');if(menu)menu.open=false;const added=renderLayoutElement(newElement(type));selectElement(added.dataset.layoutId,true);announce('Element added.');}
   else if(button.dataset.layoutMove&&node){const next=button.dataset.layoutMove==='up'?node.previousElementSibling:node.nextElementSibling;if(next){if(button.dataset.layoutMove==='up')layoutEditors.insertBefore(node,next);else layoutEditors.insertBefore(next,node);announce('Element moved.');}node.querySelector('[data-layout-move="'+button.dataset.layoutMove+'"]').focus();}
-  else if(button.hasAttribute('data-layout-duplicate')&&node){if(layoutNodes().length>=35||node.dataset.layoutElement==='actions')return;const copy=serializeElement(node);copy.id=crypto.randomUUID();copy.label=(copy.label+' copy').slice(0,80);if(copy.items)copy.items=copy.items.map((item)=>({...item,id:crypto.randomUUID()}));const added=renderLayoutElement(copy);layoutEditors.insertBefore(added,node.nextElementSibling);selectElement(added.dataset.layoutId);announce('Element duplicated.');}
+  else if(button.hasAttribute('data-layout-duplicate')&&node){if(layoutNodes().length>=35||node.dataset.layoutElement==='actions'||node.dataset.layoutElement==='updates')return;const copy=serializeElement(node);copy.id=crypto.randomUUID();copy.label=(copy.label+' copy').slice(0,80);if(copy.items)copy.items=copy.items.map((item)=>({...item,id:crypto.randomUUID()}));const added=renderLayoutElement(copy);layoutEditors.insertBefore(added,node.nextElementSibling);selectElement(added.dataset.layoutId);announce('Element duplicated.');}
   else if(button.hasAttribute('data-layout-remove')&&node){if(layoutNodes().length<=1)return;removed={element:serializeElement(node),index:layoutNodes().indexOf(node)};const next=node.nextElementSibling||node.previousElementSibling;node.remove();if(node.dataset.layoutId===selectedLayoutId){selectedLayoutId=null;selectElement(next.dataset.layoutId);}refreshUndo();announce('Element removed. Undo is available.');}
   else if(button.hasAttribute('data-layout-undo')&&removed){if(layoutNodes().length>=35)return;const next=layoutNodes()[removed.index];const added=renderLayoutElement(removed.element);if(next)layoutEditors.insertBefore(added,next);removed=null;refreshUndo();selectElement(added.dataset.layoutId);announce('Removal undone.');}
   else if(button.hasAttribute('data-gallery-add')&&node){if(node._content.querySelectorAll('[data-gallery-item]').length>=10)return;addGalleryItem(node,newElement('gallery').items[0]);}
@@ -186,7 +190,7 @@ window.addEventListener('hashchange',updateActiveSection);updateActiveSection();
 const fitPreview=()=>{if(previewRoot)previewRoot.dataset.tall=String(previewRoot.getBoundingClientRect().height>window.innerHeight-220);};
 if(previewRoot){new ResizeObserver(fitPreview).observe(previewRoot);window.addEventListener('resize',fitPreview);fitPreview();}
 if(layoutEditors&&layoutJson){
-  try{const persisted=JSON.parse(layoutJson.value);const elements=Array.isArray(persisted)?persisted:persisted.elements;if(!Array.isArray(elements)||!elements.length||elements.length>35)throw new Error('Invalid layout');initialLayout={version:1,elements};elements.forEach((element)=>originalElements.set(element.id,structuredClone(element)));let selected;try{selected=sessionStorage.getItem(selectionKey);}catch{}rebuild(initialLayout,selected);}
+  try{const persisted=JSON.parse(layoutJson.value);const elements=Array.isArray(persisted)?persisted:persisted.elements;if(!Array.isArray(elements)||!elements.length||elements.length>35)throw new Error('Invalid layout');initialLayout={version:2,elements};elements.forEach((element)=>originalElements.set(element.id,structuredClone(element)));let selected;try{selected=sessionStorage.getItem(selectionKey);}catch{}rebuild(initialLayout,selected);}
   catch{invalidLayout=true;layoutProperties.textContent='The draft layout could not be loaded. It is preserved for validation; discard it to reload the saved configuration.';announce('Invalid layout draft preserved.');}
   initial=new URLSearchParams(new FormData(cardForm)).toString();updateDirtyState();
 }

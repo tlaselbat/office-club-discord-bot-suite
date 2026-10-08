@@ -20,6 +20,7 @@ import {
   CARD_PLACEHOLDERS,
   CARD_LINE_IDS,
   resolveCardLines,
+  resolveCardLayout,
   resolveCardProfile,
 } from '../../../../src/modules/game-servers/card-profile.js';
 
@@ -245,6 +246,70 @@ describe('Game Server rendering', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('renders customized Updates in layout order with independent feed visibility and safe links', () => {
+    const layout = resolveCardLayout({});
+    const updates = layout.find((element) => element.type === 'updates');
+    if (!updates) throw new Error('Expected Updates layout element');
+    const customized = {
+      ...updates,
+      title: 'Community Brief',
+      emptyBehavior: 'hide_empty_entries' as const,
+      announcements: {
+        ...updates.announcements,
+        visible: false,
+        latestMessageLength: 40,
+      },
+      changelog: {
+        ...updates.changelog,
+        displayLabel: 'Patch notes',
+        openButtonLabel: 'Read notes',
+        latestMessageLength: 40,
+      },
+    };
+    const ordered = layout.map((element) => (element.type === 'updates' ? customized : element));
+    const result = renderGameServerCard(
+      {
+        ...server,
+        cardProfile: { layout: { version: 2, elements: ordered } },
+        updateThreads: [
+          {
+            type: 'CHANGELOG',
+            threadId: '100000000000000011',
+            latestMessageText: 'A'.repeat(100),
+            latestMessageAt: new Date('2026-10-04T12:00:00Z'),
+            notificationExpiresAt: null,
+          },
+        ],
+      },
+      secret,
+    );
+    const container = firstContainer(result);
+    const contents = containerComponents(container).flatMap((component) =>
+      component.type === ComponentType.Section
+        ? (component.components as Record<string, unknown>[]).map((child) => String(child.content))
+        : component.type === ComponentType.TextDisplay
+          ? [String(component.content)]
+          : [],
+    );
+    expect(contents.join('\n')).toContain('Community Brief');
+    expect(contents.join('\n')).toContain('Patch notes');
+    expect(contents.join('\n')).not.toContain('Announcements');
+    expect(contents.join('\n')).not.toContain('A'.repeat(41));
+    const changelog = containerComponents(container).find(
+      (component) =>
+        component.type === ComponentType.Section &&
+        (component.components as Record<string, unknown>[]).some((child) =>
+          String(child.content).includes('Patch notes'),
+        ),
+    );
+    expect(changelog?.accessory).toMatchObject({
+      style: 5,
+      label: 'Read notes',
+      url: 'https://discord.com/channels/123456789012345678/100000000000000011',
+    });
+    expect(result.allowedMentions).toEqual({ parse: [] });
   });
 
   it('versions the fallback URL with the actual banner content to prevent stale Discord media', () => {

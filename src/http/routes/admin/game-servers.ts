@@ -83,7 +83,7 @@ const serverEditSchema = z
     currentMapTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.currentMap),
     serverAddressTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.serverAddress),
     linesVersion: z.literal('1').optional(),
-    layoutVersion: z.literal('1').optional(),
+    layoutVersion: z.literal('2').optional(),
     layoutJson: z.string().max(30000).optional(),
     lineOrder: z.string().max(100).optional(),
     titleStyle: z.enum(CARD_LINE_STYLES).default('large'),
@@ -601,7 +601,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         return reply.code(400).type('text/html').send(html);
       }
       const profile = cardProfileSchema.safeParse({
-        ...(body.data.layoutVersion === '1'
+        ...(body.data.layoutVersion === '2'
           ? (() => {
               let layout: unknown;
               try {
@@ -680,7 +680,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       }
       if (!profile.success) {
         let submittedLayout: unknown = null;
-        if (body.data.layoutVersion === '1') {
+        if (body.data.layoutVersion === '2') {
           try {
             submittedLayout = JSON.parse(body.data.layoutJson ?? '') as unknown;
           } catch {
@@ -688,7 +688,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           }
         }
         const layoutInvalid =
-          body.data.layoutVersion === '1' && !cardLayoutSchema.safeParse(submittedLayout).success;
+          body.data.layoutVersion === '2' && !cardLayoutSchema.safeParse(submittedLayout).success;
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
           errors: [
             ...(layoutInvalid

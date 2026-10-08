@@ -133,6 +133,7 @@ describe('generic card line contract', () => {
       'text',
       'actions',
       'separator',
+      'updates',
     ]);
     expect(first.find((element) => element.label === 'Card description')).toMatchObject({
       type: 'text',
@@ -167,6 +168,57 @@ describe('generic card line contract', () => {
     );
     expect(
       cardProfileSchema.safeParse({ layout: { version: 1, elements: galleries } }).success,
+    ).toBe(false);
+  });
+
+  it('migrates legacy Updates visibility once and preserves intentional removal in version 2', () => {
+    const legacy = resolveCardLayout({});
+    const legacyLayout = { version: 1, elements: legacy.slice(0, -1) };
+    const migrated = normalizeCardProfile({
+      layout: legacyLayout,
+      visibleFields: { updates: false },
+    });
+    expect(migrated.layout?.version).toBe(2);
+    expect(migrated.layout?.elements.filter((element) => element.type === 'updates')).toHaveLength(
+      1,
+    );
+    expect(migrated.layout?.elements.find((element) => element.type === 'updates')?.visible).toBe(
+      false,
+    );
+
+    const removed = cardProfileSchema.parse({
+      layout: {
+        version: 2,
+        elements: migrated.layout?.elements.filter((element) => element.type !== 'updates'),
+      },
+    });
+    expect(removed.layout?.elements.some((element) => element.type === 'updates')).toBe(false);
+  });
+
+  it('validates customized Updates settings and rejects duplicate or invalid elements', () => {
+    const updates = resolveCardLayout({}).find((element) => element.type === 'updates');
+    if (!updates) throw new Error('Expected Updates element');
+    const customized = {
+      ...updates,
+      title: 'Community News',
+      announcements: { ...updates.announcements, displayLabel: 'News', latestMessageLength: 500 },
+    };
+    expect(
+      cardProfileSchema.safeParse({ layout: { version: 2, elements: [customized] } }).success,
+    ).toBe(true);
+    expect(
+      cardProfileSchema.safeParse({ layout: { version: 2, elements: [customized, customized] } })
+        .success,
+    ).toBe(false);
+    expect(
+      cardProfileSchema.safeParse({
+        layout: {
+          version: 2,
+          elements: [
+            { ...customized, changelog: { ...customized.changelog, latestMessageLength: 5000 } },
+          ],
+        },
+      }).success,
     ).toBe(false);
   });
 });

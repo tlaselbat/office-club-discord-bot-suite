@@ -137,7 +137,28 @@ const buttonSchema = z.object({
 const httpsUrl = z.url().refine((value) => new URL(value).protocol === 'https:', 'Must use HTTPS');
 const emojiId = z.string().regex(/^\d{17,20}$/, 'Must be a Discord emoji ID');
 
-export const CARD_LAYOUT_VERSION = 1;
+export const CARD_LAYOUT_VERSION = 2;
+const updatesFeedSchema = z.object({
+  visible: z.boolean().default(true),
+  displayLabel: z.string().trim().min(1).max(80),
+  textStyle: z.enum(['normal', 'heading', 'subtext']),
+  emptyPlaceholder: z.string().max(240),
+  showTimestamp: z.boolean(),
+  showOpenButton: z.boolean(),
+  openButtonLabel: z.string().trim().min(1).max(80),
+  latestMessageLength: z.number().int().min(40).max(1000),
+});
+const updatesElementSchema = z.object({
+  id: z.uuid(),
+  type: z.literal('updates'),
+  label: z.string().trim().min(1).max(80),
+  visible: z.boolean(),
+  title: z.string().trim().min(1).max(80),
+  headingStyle: z.enum(['normal', 'heading', 'subtext']),
+  emptyBehavior: z.enum(['show_placeholders', 'hide_empty_entries']),
+  announcements: updatesFeedSchema,
+  changelog: updatesFeedSchema,
+});
 const cardLayoutElementSchema = z.discriminatedUnion('type', [
   z.object({
     id: z.uuid(),
@@ -187,11 +208,12 @@ const cardLayoutElementSchema = z.discriminatedUnion('type', [
     label: z.string().trim().min(1).max(80),
     visible: z.boolean(),
   }),
+  updatesElementSchema,
 ]);
 export type CardLayoutElement = z.infer<typeof cardLayoutElementSchema>;
 export const cardLayoutSchema = z
   .object({
-    version: z.literal(CARD_LAYOUT_VERSION),
+    version: z.union([z.literal(1), z.literal(CARD_LAYOUT_VERSION)]),
     elements: z.array(cardLayoutElementSchema).min(1).max(35),
   })
   .superRefine((layout, context) => {
@@ -200,7 +222,44 @@ export const cardLayoutSchema = z
       context.addIssue({ code: 'custom', message: 'Layout element IDs must be unique.' });
     if (layout.elements.filter((element) => element.type === 'actions').length > 1)
       context.addIssue({ code: 'custom', message: 'Only one action row is supported.' });
+    if (layout.elements.filter((element) => element.type === 'updates').length > 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Only one Community Updates element is supported.',
+      });
   });
+
+export function defaultUpdatesElement(id: string): CardLayoutElement {
+  return {
+    id,
+    type: 'updates',
+    label: 'Community Updates',
+    visible: true,
+    title: '**Latest Updates**',
+    headingStyle: 'normal',
+    emptyBehavior: 'show_placeholders',
+    announcements: {
+      visible: true,
+      displayLabel: '📢 **Announcements**',
+      textStyle: 'normal',
+      emptyPlaceholder: 'No announcements yet.',
+      showTimestamp: true,
+      showOpenButton: true,
+      openButtonLabel: 'Open',
+      latestMessageLength: 240,
+    },
+    changelog: {
+      visible: true,
+      displayLabel: '🛠 **Changelog**',
+      textStyle: 'normal',
+      emptyPlaceholder: 'No changelog entries yet.',
+      showTimestamp: true,
+      showOpenButton: true,
+      openButtonLabel: 'Open',
+      latestMessageLength: 240,
+    },
+  };
+}
 
 /** Persisted card presentation overrides. Null image and emoji values inherit their legacy defaults. */
 export const cardProfileSchema = z.object({
@@ -286,7 +345,31 @@ export function normalizeCardProfile(value: unknown): CardProfile {
     ...(source.layout === undefined
       ? {}
       : (() => {
-          const parsed = cardLayoutSchema.safeParse(source.layout);
+          const raw = source.layout as { version?: unknown; elements?: unknown };
+          const migrated =
+            raw.version === 1 && Array.isArray(raw.elements)
+              ? (() => {
+                  const elements = [...(raw.elements as unknown[])] as Array<
+                    Record<string, unknown>
+                  >;
+                  const updates = {
+                    ...defaultUpdatesElement(stableLayoutId('community-updates')),
+                    visible:
+                      (source.visibleFields as Record<string, unknown> | undefined)?.updates !==
+                      false,
+                  };
+                  const oldSeparator = elements.findIndex(
+                    (element) =>
+                      element.type === 'separator' && element.label === 'Updates separator',
+                  );
+                  if (oldSeparator >= 0 && elements.length < 35)
+                    elements.splice(oldSeparator + 1, 0, updates);
+                  else if (oldSeparator >= 0) elements.splice(oldSeparator, 1, updates);
+                  else if (elements.length < 35) elements.push(updates);
+                  return { version: CARD_LAYOUT_VERSION, elements };
+                })()
+              : source.layout;
+          const parsed = cardLayoutSchema.safeParse(migrated);
           return parsed.success ? { layout: parsed.data } : {};
         })()),
   };
@@ -390,7 +473,18 @@ export function resolveCardLayout(
       spacing: 1,
     }),
   );
+  if (profile.visibleFields.updates)
+    layout.push(
+      element('community-updates', defaultUpdatesElement(stableLayoutId('community-updates'))),
+    );
   return layout;
+}
+
+function stableLayoutId(key: string): string {
+  let hash = 2166136261;
+  for (const char of key) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  const hex = (hash >>> 0).toString(16).padStart(8, '0');
+  return `${hex}-0000-4000-8000-${hex.padStart(12, '0').slice(-12)}`;
 }
 
 function sanitizePersistedTemplate(value: unknown): unknown {
