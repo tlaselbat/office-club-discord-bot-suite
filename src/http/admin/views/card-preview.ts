@@ -89,8 +89,58 @@ const updateCardPreview = () => {
     } else if (element.type === 'actions') { const row = actions();row.dataset.previewElement = element.id;if(row.children.length) output.append(row); }
     else if (element.type === 'updates') {
       const threads = (()=>{try{return JSON.parse(previewRoot.dataset.updateThreads ?? '[]')}catch{return []}})();
-      const entries = ['announcements','changelog'].map((feed,index)=>{const config=element[feed];if(!config?.visible)return null;const type=index?'CHANGELOG':'ANNOUNCEMENTS';const thread=Array.isArray(threads)?threads.find((item)=>item.type===type):undefined;const source=mode==='current'?(thread?.latestMessageText||''):'Example '+(index?'changelog entry.':'announcement.');if(!source&&element.emptyBehavior==='hide_empty_entries')return null;return {config,thread,index,source:source.slice(0,config.latestMessageLength),type};}).filter(Boolean);
-      if(entries.length){const heading=document.createElement('div');heading.className='preview-update-heading';appendText(heading,styleLineText(element.title||'Latest Updates',element.headingStyle==='heading'?'large':element.headingStyle||'normal'));heading.dataset.previewElement=element.id;output.append(heading);entries.forEach(({config,thread,index,source})=>{const section=document.createElement('div');section.className='preview-section preview-updates';section.dataset.previewElement=element.id;const body=document.createElement('div');const label=config.displayLabel+(mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');appendText(body,styleLineText(label,config.textStyle==='heading'?'large':config.textStyle||'normal'));appendText(body,source||config.emptyPlaceholder);if(config.showTimestamp&&mode==='current'&&thread?.latestMessageAt){const time=document.createElement('small');time.textContent=new Date(thread.latestMessageAt).toLocaleString();body.append(time);}section.append(body);if(config.showOpenButton&&(thread||mode!=='current')){const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;section.append(button);}output.append(section);});}
+      const entries = ['announcements', 'changelog'].map((feed, index) => {
+        const config = element[feed];
+        if (!config?.visible) return null;
+        const type = index ? 'CHANGELOG' : 'ANNOUNCEMENTS';
+        const thread = Array.isArray(threads) ? threads.find((item) => item.type === type) : undefined;
+        const source = (mode === 'current' ? thread?.latestMessageText || '' : 'Example ' + (index ? 'changelog entry.' : 'announcement.')).trim();
+        if (!source && element.emptyBehavior === 'hide_empty_entries') return null;
+        return { config, thread, index, source: source.slice(0, config.latestMessageLength), type };
+      }).filter(Boolean);
+      if (entries.length) {
+        const heading = document.createElement('div');
+        heading.className = 'preview-update-heading';
+        heading.dataset.discordComponent = 'TextDisplay';
+        appendText(heading, styleLineText(element.title, element.headingStyle === 'heading' ? 'large' : element.headingStyle || 'normal'));
+        heading.dataset.previewElement = element.id;
+        output.append(heading);
+        entries.forEach(({ config, thread, index, source }) => {
+          const label = config.displayLabel + (mode === 'current' && thread?.notificationExpiresAt && new Date(thread.notificationExpiresAt) > new Date() ? ' 🆕' : '');
+          const validThread = thread && /^\d{17,20}$/.test(thread.threadId) && /^\d{17,20}$/.test(previewRoot.dataset.guildId || '');
+          const hasButton = config.showOpenButton && (validThread || mode !== 'current');
+          const titleRow = document.createElement('div');
+          titleRow.className = (hasButton ? 'preview-section' : 'preview-text-display') + ' preview-updates preview-update-title';
+          titleRow.dataset.discordComponent = hasButton ? 'Section' : 'TextDisplay';
+          titleRow.dataset.previewElement = element.id;
+          if (hasButton) {
+            const title = document.createElement('div');
+            title.dataset.discordComponent = 'TextDisplay';
+            appendText(title, styleLineText(label, config.textStyle === 'heading' ? 'large' : config.textStyle || 'normal'));
+            titleRow.append(title);
+            const button = document.createElement('span');
+            button.className = 'preview-action secondary';
+            button.textContent = config.openButtonLabel;
+            button.dataset.discordAccessory = 'Button';
+            titleRow.append(button);
+          } else {
+            appendText(titleRow, styleLineText(label, config.textStyle === 'heading' ? 'large' : config.textStyle || 'normal'));
+          }
+          output.append(titleRow);
+          const summary = document.createElement('div');
+          summary.className = 'preview-text-display preview-updates preview-update-summary';
+          summary.dataset.discordComponent = 'TextDisplay';
+          summary.dataset.previewElement = element.id;
+          const detail = source || config.emptyPlaceholder;
+          appendText(summary, detail);
+          if (config.showTimestamp && mode === 'current' && source && thread?.latestMessageAt) {
+            const timestamp = document.createElement('small');
+            timestamp.textContent = new Date(thread.latestMessageAt).toLocaleString();
+            summary.append(timestamp);
+          }
+          output.append(summary);
+        });
+      }
     }
   });
   document.getElementById('card-preview-artwork')?.replaceChildren();

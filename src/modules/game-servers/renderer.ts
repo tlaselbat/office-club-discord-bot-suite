@@ -300,8 +300,6 @@ function validateRenderedLayout(container: Record<string, unknown>): void {
     (node.accessory === undefined ? 0 : count(node.accessory as Record<string, unknown>));
   if (count(container) > 40)
     throw new Error('Card layout exceeds Discord’s 40 component message limit.');
-  if (children.length > 10)
-    throw new Error('Card layout exceeds Discord’s 10 top-level container components.');
   for (const child of children) {
     if (child.type === componentType.section) {
       const content = child.components as Record<string, unknown>[];
@@ -421,7 +419,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const displayMap = displayMapName(map);
   const profile = resolveCardProfile(server.cardProfile);
   return {
-    layoutVersion: 18,
+    layoutVersion: 19,
     accentColor: cardAccentColor(profile.accentColor),
     displayName: server.displayName,
     status: configuredStatusLabel(snapshot, profile),
@@ -462,7 +460,7 @@ function renderUpdatesSection(
   const renderFeed = (
     type: UpdateThreadView['type'],
     settings: Extract<CardLayoutElement, { type: 'updates' }>['announcements'],
-  ) => {
+  ): Record<string, unknown>[] | null => {
     if (!settings.visible) return null;
     const thread = threads.get(type);
     const source = thread?.latestMessageText?.trim() ?? '';
@@ -473,40 +471,43 @@ function renderUpdatesSection(
     const detail = latest
       ? `${latest}${settings.showTimestamp && thread?.latestMessageAt ? `\n-# <t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>` : ''}`
       : safe(settings.emptyPlaceholder);
-    const content = [styleCardLine(title, updateLineStyle(settings.textStyle)), detail];
+    const titleDisplay = updateTextDisplay(
+      styleCardLine(title, updateLineStyle(settings.textStyle)),
+    );
+    const summaryDisplay = updateTextDisplay(detail);
     const safeThread =
       thread !== undefined &&
       /^\d{17,20}$/.test(thread.threadId) &&
       /^\d{17,20}$/.test(server.guildId);
-    const display = updateTextDisplay(content.join('\n'));
     return safeThread && settings.showOpenButton
-      ? {
-          type: componentType.section,
-          components: [display],
-          accessory: {
-            type: componentType.button,
-            style: buttonStyle.link,
-            label: settings.openButtonLabel.replace(/@/g, '@\u200b').slice(0, 80),
-            url: `https://discord.com/channels/${server.guildId}/${thread.threadId}`,
+      ? [
+          {
+            type: componentType.section,
+            components: [titleDisplay],
+            accessory: {
+              type: componentType.button,
+              style: buttonStyle.link,
+              label: settings.openButtonLabel.replace(/@/g, '@\u200b').slice(0, 80),
+              url: `https://discord.com/channels/${server.guildId}/${thread.threadId}`,
+            },
           },
-        }
-      : display;
+          summaryDisplay,
+        ]
+      : [titleDisplay, summaryDisplay];
   };
   const feeds = [
     renderFeed('ANNOUNCEMENTS', element.announcements),
     renderFeed('CHANGELOG', element.changelog),
-  ].filter((feed): feed is Record<string, unknown> => feed !== null);
+  ]
+    .filter((feed): feed is Record<string, unknown>[] => feed !== null)
+    .flat();
   if (!feeds.length) return [];
-  const first = feeds[0];
-  if (first) {
-    const content =
-      first.type === componentType.section
-        ? (first.components as Record<string, unknown>[])[0]
-        : first;
-    if (content)
-      content.content = `${styleCardLine(element.title.replace(/@/g, '@\u200b'), updateLineStyle(element.headingStyle))}\n${String(content.content)}`;
-  }
-  return feeds;
+  return [
+    updateTextDisplay(
+      styleCardLine(element.title.replace(/@/g, '@\u200b'), updateLineStyle(element.headingStyle)),
+    ),
+    ...feeds,
+  ];
 }
 
 function updateTextDisplay(content: string): Record<string, unknown> {

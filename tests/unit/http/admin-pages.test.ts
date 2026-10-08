@@ -244,8 +244,8 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-5');
-    expect(html).toContain('panel.js?v=game-server-editor-5');
+    expect(html).toContain('panel.css?v=game-server-editor-6');
+    expect(html).toContain('panel.js?v=game-server-editor-6');
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
     expect(html).toContain('href="#card-designer">Card Designer</a>');
     expect(html).toContain('class="game-server-savebar"');
@@ -258,6 +258,7 @@ describe('admin page views', () => {
     expect(html).toContain('Technical observation details');
     expect(html).toContain('data-confirm-deployment-remove');
     expect(html).toContain('class="read-only game-server-preview"');
+    expect(html).toContain('data-guild-id="12345678901234567"');
     expect(html.match(/<details class="card-line-editor" data-card-line=/g)).toHaveLength(6);
     expect(html).toContain('data-line-summary');
     expect(html).toContain('/displays/123e4567-e89b-12d3-a456-426614174001/move');
