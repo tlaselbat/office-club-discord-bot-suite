@@ -4,9 +4,10 @@ import type { PrismaClient } from '../../../generated/prisma/client.js';
 import { PublicError } from '../../../errors/public-error.js';
 import type { DatHostServerReader } from '../../../integrations/dathost/client.js';
 import { scheduleGameServerPoll } from '../poll-service.js';
-import type { GameServerCardService } from '../card-service.js';
+import { scheduleGameServerCardRefresh, type GameServerCardService } from '../card-service.js';
 import type { GameServerPanelService } from '../panel-service.js';
 import { scheduleGameServerUpdateReconcile } from '../update-thread-service.js';
+import { cardProfileSchema, isHttpsUrl, type CardProfile } from '../card-profile.js';
 
 const panelChannelPermissions = [
   PermissionFlagsBits.ViewChannel,
@@ -17,7 +18,9 @@ const panelChannelPermissions = [
 
 function assertHttpsUrl(value: string | null | undefined, label: string): void {
   if (value === undefined || value === null || value === '') return;
-  if (!/^https:\/\//i.test(value)) throw new PublicError('INVALID_URL', `${label} must use HTTPS`);
+  if (!isHttpsUrl(value)) {
+    throw new PublicError('INVALID_URL', `${label} must be a valid HTTPS URL`);
+  }
 }
 
 function isSupportedCs2(game: string | null | undefined): boolean {
@@ -61,6 +64,7 @@ export interface UpdateGameServerCommand {
   connectDomain?: string | null | undefined;
   joinUrl?: string | null | undefined;
   imageUrl?: string | null | undefined;
+  cardProfile?: CardProfile | undefined;
   sortOrder?: number | undefined;
 }
 
@@ -157,21 +161,39 @@ export class GameServerAdminService {
       const current = await tx.gameServerSettings.findUnique({
         where: { guildId: command.guildId },
       });
-      if (current === null || current.version !== command.expectedVersion) {
+      if (current === null && command.expectedVersion !== 0) {
         throw new PublicError(
           'STALE_CONFIGURATION',
           'Configuration changed; reload and try again.',
         );
       }
-      const toggled = await tx.gameServerSettings.updateMany({
-        where: { guildId: command.guildId, version: current.version },
-        data: { enabled: command.enabled, version: { increment: 1 } },
-      });
-      if (toggled.count !== 1) {
+      if (current !== null && current.version !== command.expectedVersion) {
         throw new PublicError(
           'STALE_CONFIGURATION',
           'Configuration changed; reload and try again.',
         );
+      }
+      const previousVersion = current?.version ?? 0;
+      if (current === null) {
+        await tx.guildSettings.upsert({
+          where: { guildId: command.guildId },
+          create: { guildId: command.guildId },
+          update: {},
+        });
+        await tx.gameServerSettings.create({
+          data: { guildId: command.guildId, enabled: command.enabled, version: 1 },
+        });
+      } else {
+        const toggled = await tx.gameServerSettings.updateMany({
+          where: { guildId: command.guildId, version: current.version },
+          data: { enabled: command.enabled, version: { increment: 1 } },
+        });
+        if (toggled.count !== 1) {
+          throw new PublicError(
+            'STALE_CONFIGURATION',
+            'Configuration changed; reload and try again.',
+          );
+        }
       }
       if (command.enabled) {
         const servers = await tx.gameServer.findMany({
@@ -181,6 +203,17 @@ export class GameServerAdminService {
         for (const server of servers) {
           await scheduleGameServerPoll(tx, server.id);
           if (server.public) await scheduleGameServerUpdateReconcile(tx, server.id);
+          const cards = await tx.gameServerCard.findMany({
+            where: { gameServerId: server.id },
+            select: { id: true },
+          });
+          for (const card of cards)
+            await scheduleGameServerCardRefresh(
+              tx,
+              card.id,
+              new Date(),
+              `module:${String(previousVersion + 1)}`,
+            );
         }
       }
       await tx.auditEvent.create({
@@ -190,7 +223,7 @@ export class GameServerAdminService {
           eventType: command.enabled ? 'game_server_module_enabled' : 'game_server_module_disabled',
           result: 'success',
           correlationId: command.correlationId,
-          metadata: { previousVersion: current.version },
+          metadata: { previousVersion },
         },
       });
     });
@@ -233,8 +266,14 @@ export class GameServerAdminService {
   public async publishServerCard(
     command: PublishGameServerCardCommand,
   ): Promise<{ cardId: string }> {
+    const server = await this.prisma.gameServer.findFirst({
+      where: { id: command.gameServerId, guildId: command.guildId },
+      select: { id: true },
+    });
+    if (server === null)
+      throw new PublicError('GAME_SERVER_NOT_FOUND', 'Game server registration not found.');
     const channel = await this.getDisplayChannel(command.guildId, command.channelId);
-    const deployment = await this.cardService.publishDeployment(command.gameServerId, channel);
+    const deployment = await this.cardService.publishDeployment(server.id, channel);
     await this.prisma.auditEvent.create({
       data: {
         guildId: command.guildId,
@@ -347,6 +386,11 @@ export class GameServerAdminService {
         create: { guildId: command.guildId },
         update: {},
       });
+      await tx.gameServerSettings.upsert({
+        where: { guildId: command.guildId },
+        create: { guildId: command.guildId, enabled: true },
+        update: {},
+      });
       const created = await tx.gameServer.create({
         data: {
           guildId: command.guildId,
@@ -380,6 +424,8 @@ export class GameServerAdminService {
   public async updateServer(command: UpdateGameServerCommand): Promise<void> {
     assertHttpsUrl(command.joinUrl, 'Join URL');
     assertHttpsUrl(command.imageUrl, 'Image URL');
+    const cardProfile =
+      command.cardProfile === undefined ? undefined : cardProfileSchema.parse(command.cardProfile);
     const displayName = command.displayName?.trim();
     if (displayName !== undefined && (displayName.length === 0 || displayName.length > 64)) {
       throw new PublicError('INVALID_DISPLAY_NAME', 'Display name must be 1-64 characters.');
@@ -426,6 +472,7 @@ export class GameServerAdminService {
                 imageUrl:
                   command.imageUrl === '' || command.imageUrl === null ? null : command.imageUrl,
               }),
+          ...(cardProfile === undefined ? {} : { cardProfile }),
           ...(command.sortOrder === undefined ? {} : { sortOrder: command.sortOrder }),
           version: { increment: 1 },
         },
@@ -441,6 +488,29 @@ export class GameServerAdminService {
       }
       if (command.enabled === true) {
         await scheduleGameServerPoll(tx, command.gameServerId);
+      }
+      const affectsCardOutput =
+        displayName !== undefined ||
+        command.description !== undefined ||
+        command.connectDomain !== undefined ||
+        command.joinUrl !== undefined ||
+        command.imageUrl !== undefined ||
+        command.sortOrder !== undefined ||
+        cardProfile !== undefined;
+      const nextEnabled = command.enabled ?? current.enabled;
+      const nextPublic = command.public ?? current.public;
+      const reenabled =
+        (command.enabled === true && !current.enabled) ||
+        (command.public === true && !current.public);
+      const privateCleanup = command.public === false;
+      if (((affectsCardOutput || reenabled) && nextEnabled && nextPublic) || privateCleanup) {
+        const cards = await tx.gameServerCard.findMany({
+          where: { gameServerId: command.gameServerId },
+          select: { id: true },
+        });
+        const revision = `${privateCleanup ? 'privacy' : reenabled ? 'eligible' : 'config'}:${String(current.version + 1)}`;
+        for (const card of cards)
+          await scheduleGameServerCardRefresh(tx, card.id, new Date(), revision);
       }
       await tx.auditEvent.create({
         data: {
@@ -459,15 +529,6 @@ export class GameServerAdminService {
     });
     if (command.public === false) {
       await this.cardService.removeDeploymentsForGameServer(command.gameServerId);
-    } else if (
-      displayName !== undefined ||
-      command.description !== undefined ||
-      command.connectDomain !== undefined ||
-      command.joinUrl !== undefined ||
-      command.imageUrl !== undefined ||
-      command.sortOrder !== undefined
-    ) {
-      await this.cardService.refreshCardsForGameServer(command.gameServerId);
     }
   }
 
@@ -529,6 +590,15 @@ export class GameServerAdminService {
       }
       if (field === 'enabled' && value) await scheduleGameServerPoll(tx, gameServerId);
       if (field === 'public' && value) await scheduleGameServerUpdateReconcile(tx, gameServerId);
+      if (value || field === 'public') {
+        const cards = await tx.gameServerCard.findMany({
+          where: { gameServerId },
+          select: { id: true },
+        });
+        const revision = `${value ? 'eligible' : 'privacy'}:${String(current.version + 1)}`;
+        for (const card of cards)
+          await scheduleGameServerCardRefresh(tx, card.id, new Date(), revision);
+      }
       await tx.auditEvent.create({
         data: {
           guildId,
@@ -558,28 +628,29 @@ export class GameServerAdminService {
     });
     if (current === null)
       throw new PublicError('GAME_SERVER_NOT_FOUND', 'Game server registration not found.');
-    await this.cardService.removeDeploymentsForGameServer(current.id);
-    await this.prisma.$transaction(async (tx) => {
-      const registration = await tx.gameServer.findFirst({
-        where: { id: command.gameServerId, guildId: command.guildId },
-      });
-      if (registration === null) {
-        throw new PublicError('GAME_SERVER_NOT_FOUND', 'Game server registration not found.');
-      }
-      await tx.gameServer.delete({ where: { id: command.gameServerId } });
-      await tx.auditEvent.create({
-        data: {
-          guildId: command.guildId,
-          actorDiscordUserId: command.actorDiscordUserId,
-          eventType: 'game_server_removed',
-          result: 'success',
-          correlationId: command.correlationId,
-          metadata: {
-            gameServerId: command.gameServerId,
-            displayName: registration.displayName,
-            providerServerId: registration.providerServerId,
+    await this.cardService.removeDeploymentsForGameServer(current.id, async () => {
+      await this.prisma.$transaction(async (tx) => {
+        const registration = await tx.gameServer.findFirst({
+          where: { id: command.gameServerId, guildId: command.guildId },
+        });
+        if (registration === null) {
+          throw new PublicError('GAME_SERVER_NOT_FOUND', 'Game server registration not found.');
+        }
+        await tx.gameServer.delete({ where: { id: command.gameServerId } });
+        await tx.auditEvent.create({
+          data: {
+            guildId: command.guildId,
+            actorDiscordUserId: command.actorDiscordUserId,
+            eventType: 'game_server_removed',
+            result: 'success',
+            correlationId: command.correlationId,
+            metadata: {
+              gameServerId: command.gameServerId,
+              displayName: registration.displayName,
+              providerServerId: registration.providerServerId,
+            },
           },
-        },
+        });
       });
     });
   }

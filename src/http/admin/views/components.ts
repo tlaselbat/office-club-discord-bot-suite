@@ -22,7 +22,7 @@ export interface ShellOptions {
 }
 
 export function page(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Office Club</title><link rel="stylesheet" href="/admin/assets/panel.css"></head><body><main>${body}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Office Club</title><link rel="stylesheet" href="/admin/assets/panel.css?v=fit-20261006"><script src="/admin/assets/panel.js?v=fit-20261006" defer></script></head><body><main>${body}</main></body></html>`;
 }
 
 export function adminShell(options: ShellOptions, body: string): string {
@@ -170,7 +170,11 @@ export function input(
 ): string {
   const errorHtml = fieldErrors(name, errors);
   const safeValue = escapeHtml(String(value));
-  return `<label for="${name}">${escapeHtml(label)}${errorHtml}<input id="${name}" type="${type}" name="${name}" value="${safeValue}" ${attributes}></label>`;
+  const errorAttributes =
+    errors === undefined || errors.length === 0
+      ? ''
+      : ` aria-describedby="${escapeHtml(name)}-error" aria-invalid="true"`;
+  return `<label for="${name}">${escapeHtml(label)}${errorHtml}<input id="${name}" type="${type}" name="${name}" value="${safeValue}"${errorAttributes} ${attributes}></label>`;
 }
 
 export function fieldErrors(name: string, errors?: string[]): string {
@@ -198,9 +202,12 @@ export function actionForm(action: string, csrf: string, body: string, method = 
 
 export function table(headers: string[], rows: string[][]): string {
   if (rows.length === 0) return '';
-  const head = `<thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>`;
+  const head = `<thead><tr>${headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join('')}</tr></thead>`;
   const body = `<tbody>${rows
-    .map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`)
+    .map(
+      (row) =>
+        `<tr>${row.map((cell, index) => `<td data-label="${escapeHtml(headers[index] ?? '')}">${cell}</td>`).join('')}</tr>`,
+    )
     .join('')}</tbody>`;
-  return `<div class="table-wrap"><table>${head}${body}</table></div>`;
+  return `<div class="table-wrap"><table class="table--records">${head}${body}</table></div>`;
 }

@@ -21,6 +21,13 @@ export class GameServerPollService {
       include: { snapshot: true },
     });
     if (registration === null || !registration.enabled) return undefined;
+    const settings = await this.prisma.gameServerSettings.findUnique({
+      where: { guildId: registration.guildId },
+      select: { enabled: true },
+    });
+    // Existing registrations predate persisted module settings. Absence retains
+    // their legacy enabled behavior; an explicit disabled row gates all I/O.
+    if (settings?.enabled === false) return undefined;
     const previous = registration.snapshot;
     try {
       const current = await this.provider.observe(

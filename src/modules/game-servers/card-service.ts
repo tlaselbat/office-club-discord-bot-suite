@@ -8,21 +8,38 @@ import {
   type TextChannel,
 } from 'discord.js';
 import type { Prisma, PrismaClient } from '../../generated/prisma/client.js';
+import { withDatabaseAdvisoryLock } from '../../database/prisma.js';
 import { scheduleJob } from '../../database/schedule-job.js';
 import { PublicError } from '../../errors/public-error.js';
 import { cardFingerprint, renderGameServerCard } from './renderer.js';
 
 type Deployment = { id: string; channelId: string; messageId: string | null };
+type GameServerLock = <T>(key: string, operation: () => Promise<T>) => Promise<T>;
 
 export class GameServerCardService {
   public constructor(
     private readonly prisma: PrismaClient,
     private readonly discord: Client,
     private readonly secret: string,
-  ) {}
+    lock?: GameServerLock,
+  ) {
+    this.gameServerLock =
+      lock ?? ((key, operation) => withDatabaseAdvisoryLock(this.prisma, key, operation));
+  }
+
+  private readonly gameServerLock: GameServerLock;
 
   /** Publish or reconcile one desired server-card deployment in a channel. */
   public async publishDeployment(
+    gameServerId: string,
+    channel: TextBasedChannel,
+  ): Promise<Deployment> {
+    return this.withGameServerLock(gameServerId, () =>
+      this.publishDeploymentUnlocked(gameServerId, channel),
+    );
+  }
+
+  private async publishDeploymentUnlocked(
     gameServerId: string,
     channel: TextBasedChannel,
   ): Promise<Deployment> {
@@ -35,15 +52,18 @@ export class GameServerCardService {
         'GAME_SERVER_CARD_NOT_FOUND',
         'Selected game server is no longer available or is not public.',
       );
+    if (!(await this.isModuleEnabled(server.guildId)))
+      throw new PublicError(
+        'GAME_SERVER_MODULE_DISABLED',
+        'Game Server cards are disabled for this server.',
+      );
     const existing = await this.prisma.gameServerCard.findFirst({
       where: { gameServerId, channelId: channel.id },
       select: { id: true, channelId: true, messageId: true },
     });
     if (existing !== null) {
-      // Publishing an already-managed destination is idempotent. Refresh handles
-      // a missing or unhealthy desired deployment without duplicating its message.
-      await this.refreshCard(existing.id);
-      return existing;
+      await this.reconcileDeploymentUnlocked(existing.id, channel);
+      return this.persistedDeployment(existing);
     }
     // Persist intent before Discord I/O: a transient failure must not discard the target.
     const created = await this.prisma.gameServerCard.create({
@@ -57,8 +77,8 @@ export class GameServerCardService {
       },
       select: { id: true, channelId: true, messageId: true },
     });
-    await this.reconcileDeployment(created.id, channel);
-    return created;
+    await this.reconcileDeploymentUnlocked(created.id, channel);
+    return this.persistedDeployment(created);
   }
 
   /** @deprecated Use publishDeployment. Retained for existing callers. */
@@ -69,14 +89,41 @@ export class GameServerCardService {
   public async reconcileDeployment(cardId: string, target?: TextBasedChannel): Promise<void> {
     const card = await this.prisma.gameServerCard.findUnique({
       where: { id: cardId },
+      select: { gameServerId: true },
+    });
+    if (card === null) return;
+    await this.withGameServerLock(card.gameServerId, () =>
+      this.reconcileDeploymentUnlocked(cardId, target),
+    );
+  }
+
+  private async reconcileDeploymentUnlocked(
+    cardId: string,
+    target?: TextBasedChannel,
+  ): Promise<void> {
+    const card = await this.prisma.gameServerCard.findUnique({
+      where: { id: cardId },
       include: { gameServer: { include: { snapshot: true, updateThreads: true } } },
     });
     if (card === null) return;
-    if (!card.gameServer.enabled || !card.gameServer.public) {
-      await this.markDeployment(card.id, 'ERROR', 'Server is not eligible for public display.');
+    if (!card.gameServer.public) {
+      await this.removeDeploymentUnlocked(card);
       return;
     }
-    const channel = target ?? (await this.discord.channels.fetch(card.channelId).catch(() => null));
+    if (!(await this.isModuleEnabled(card.guildId))) return;
+    if (!card.gameServer.enabled) return;
+    let channel: TextBasedChannel | null;
+    try {
+      channel =
+        target ?? ((await this.discord.channels.fetch(card.channelId)) as TextBasedChannel | null);
+    } catch (error: unknown) {
+      await this.markDeployment(
+        card.id,
+        'ERROR',
+        `Could not fetch display channel: ${errorMessage(error)}`,
+      );
+      throw error;
+    }
     if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
       await this.markDeployment(card.id, 'MISSING', 'Display channel is unavailable.');
       return;
@@ -143,31 +190,68 @@ export class GameServerCardService {
   }
 
   public async refreshCard(cardId: string): Promise<{ rescheduleAt: Date } | undefined> {
+    const identifying = await this.prisma.gameServerCard.findUnique({
+      where: { id: cardId },
+      select: { gameServerId: true },
+    });
+    if (identifying === null) return undefined;
+    return this.withGameServerLock(identifying.gameServerId, () =>
+      this.refreshCardUnlocked(cardId),
+    );
+  }
+
+  private async refreshCardUnlocked(cardId: string): Promise<{ rescheduleAt: Date } | undefined> {
     const card = await this.prisma.gameServerCard.findUnique({
       where: { id: cardId },
       include: { gameServer: { include: { snapshot: true, updateThreads: true } } },
     });
-    if (card === null || !card.gameServer.enabled || !card.gameServer.public) return undefined;
+    if (card === null) return undefined;
+    if (!card.gameServer.public) {
+      await this.removeDeploymentUnlocked(card);
+      return undefined;
+    }
+    if (!(await this.isModuleEnabled(card.guildId))) return undefined;
+    if (!card.gameServer.enabled) return undefined;
     const fingerprint = cardFingerprint(card.gameServer);
     if (card.messageId === null || card.state !== 'HEALTHY') {
-      await this.reconcileDeployment(card.id);
+      await this.reconcileDeploymentUnlocked(card.id);
       return undefined;
     }
     if (card.lastKnownState !== null && fingerprintsEqual(card.lastKnownState, fingerprint))
       return undefined;
-    const channel = await this.discord.channels.fetch(card.channelId).catch(() => null);
+    let channel: TextBasedChannel | null;
+    try {
+      channel = (await this.discord.channels.fetch(card.channelId)) as TextBasedChannel | null;
+    } catch (error: unknown) {
+      const rescheduleAt = retryAt(error);
+      if (rescheduleAt !== null) return { rescheduleAt };
+      await this.markDeployment(
+        card.id,
+        'ERROR',
+        `Could not fetch display channel: ${errorMessage(error)}`,
+      );
+      throw error;
+    }
     if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
       await this.markDeployment(card.id, 'MISSING', 'Display channel is unavailable.');
       return undefined;
     }
-    const message = await (channel as TextChannel).messages
-      .fetch(card.messageId)
-      .catch((error: unknown) => {
-        if (isUnknownMessageError(error)) return null;
-        throw error instanceof Error
-          ? error
-          : new Error('Could not fetch managed Discord message.');
-      });
+    let message;
+    try {
+      message = await (channel as TextChannel).messages.fetch(card.messageId);
+    } catch (error: unknown) {
+      if (isUnknownMessageError(error)) message = null;
+      else {
+        const rescheduleAt = retryAt(error);
+        if (rescheduleAt !== null) return { rescheduleAt };
+        await this.markDeployment(
+          card.id,
+          'ERROR',
+          `Could not fetch managed Discord message: ${errorMessage(error)}`,
+        );
+        throw error;
+      }
+    }
     if (message === null) {
       await this.prisma.gameServerCard.update({
         where: { id: card.id },
@@ -177,7 +261,7 @@ export class GameServerCardService {
           lastError: 'Managed Discord message is missing.',
         },
       });
-      await this.reconcileDeployment(card.id, channel);
+      await this.reconcileDeploymentUnlocked(card.id, channel);
       return undefined;
     }
     try {
@@ -206,14 +290,77 @@ export class GameServerCardService {
   public async removeDeployment(cardId: string): Promise<void> {
     const card = await this.prisma.gameServerCard.findUnique({ where: { id: cardId } });
     if (card === null) return;
+    await this.withGameServerLock(card.gameServerId, async () => {
+      const current = await this.prisma.gameServerCard.findUnique({ where: { id: cardId } });
+      if (current !== null) await this.removeDeploymentUnlocked(current);
+    });
+  }
+
+  private async removeDeploymentUnlocked(card: {
+    id: string;
+    gameServerId: string;
+    channelId: string;
+    messageId: string | null;
+  }): Promise<void> {
     if (card.messageId !== null) {
-      const channel = await this.discord.channels.fetch(card.channelId).catch(() => null);
-      if (channel !== null && channel.isTextBased() && !channel.isDMBased()) {
-        const message = await (channel as TextChannel).messages
-          .fetch(card.messageId)
-          .catch((error: unknown) => (isUnknownMessageError(error) ? null : null));
-        // Snowflakes are never reused; bot authorship still gates destructive deletion.
-        if (message !== null && message.author.id === this.discord.user?.id) await message.delete();
+      let channel: TextBasedChannel | null;
+      try {
+        channel = (await this.discord.channels.fetch(card.channelId)) as TextBasedChannel | null;
+      } catch (error: unknown) {
+        if (isUnknownChannelError(error)) {
+          await this.prisma.gameServerCard.delete({ where: { id: card.id } });
+          return;
+        }
+        await this.markDeployment(
+          card.id,
+          'ERROR',
+          `Could not fetch display channel for removal: ${errorMessage(error)}`,
+        );
+        throw error;
+      }
+      if (channel === null || !channel.isTextBased() || channel.isDMBased()) {
+        await this.markDeployment(
+          card.id,
+          'ERROR',
+          'Display channel is unavailable; deployment was retained.',
+        );
+        throw new Error('Display channel is unavailable; deployment was retained.');
+      }
+      let message;
+      try {
+        message = await (channel as TextChannel).messages.fetch(card.messageId);
+      } catch (error: unknown) {
+        if (!isUnknownMessageError(error)) {
+          await this.markDeployment(
+            card.id,
+            'ERROR',
+            `Could not fetch managed Discord message for removal: ${errorMessage(error)}`,
+          );
+          throw error;
+        }
+        message = null;
+      }
+      // Snowflakes are never reused; bot authorship still gates destructive deletion.
+      if (message !== null && message.author.id !== this.discord.user?.id) {
+        const error = new Error(
+          'Managed Discord message is no longer authored by this bot; deployment was retained.',
+        );
+        await this.markDeployment(card.id, 'ERROR', error.message);
+        throw error;
+      }
+      if (message !== null) {
+        try {
+          await message.delete();
+        } catch (error: unknown) {
+          if (!isUnknownMessageError(error)) {
+            await this.markDeployment(
+              card.id,
+              'ERROR',
+              `Could not delete managed Discord message: ${errorMessage(error)}`,
+            );
+            throw error;
+          }
+        }
       }
     }
     await this.prisma.gameServerCard.delete({ where: { id: card.id } });
@@ -224,25 +371,36 @@ export class GameServerCardService {
     if (source === null)
       throw new PublicError('GAME_SERVER_CARD_NOT_FOUND', 'Display deployment not found.');
     if (source.channelId === destination.id) return source;
-    const created = await this.publishDeployment(source.gameServerId, destination);
-    await this.removeDeployment(source.id);
-    return created;
+    return this.withGameServerLock(source.gameServerId, async () => {
+      const current = await this.prisma.gameServerCard.findUnique({ where: { id: cardId } });
+      if (current === null)
+        throw new PublicError('GAME_SERVER_CARD_NOT_FOUND', 'Display deployment not found.');
+      if (current.channelId === destination.id) return current;
+      const created = await this.publishDeploymentUnlocked(current.gameServerId, destination);
+      await this.removeDeploymentUnlocked(current);
+      return created;
+    });
   }
 
-  public async removeDeploymentsForGameServer(gameServerId: string): Promise<void> {
-    const cards = await this.prisma.gameServerCard.findMany({
-      where: { gameServerId },
-      select: { id: true },
+  public async removeDeploymentsForGameServer(
+    gameServerId: string,
+    afterRemoval?: () => Promise<void>,
+  ): Promise<void> {
+    await this.withGameServerLock(gameServerId, async () => {
+      const cards = await this.prisma.gameServerCard.findMany({ where: { gameServerId } });
+      for (const card of cards) await this.removeDeploymentUnlocked(card);
+      await afterRemoval?.();
     });
-    for (const card of cards) await this.removeDeployment(card.id);
   }
 
   public async refreshCardsForGameServer(gameServerId: string): Promise<void> {
-    const cards = await this.prisma.gameServerCard.findMany({
-      where: { gameServerId },
-      select: { id: true },
+    await this.withGameServerLock(gameServerId, async () => {
+      const cards = await this.prisma.gameServerCard.findMany({
+        where: { gameServerId },
+        select: { id: true },
+      });
+      for (const card of cards) await scheduleGameServerCardRefresh(this.prisma, card.id);
     });
-    for (const card of cards) await scheduleGameServerCardRefresh(this.prisma, card.id);
   }
 
   private async markDeployment(
@@ -254,6 +412,30 @@ export class GameServerCardService {
       where: { id: cardId },
       data: { state, lastError, lastReconciledAt: new Date() },
     });
+  }
+
+  private async persistedDeployment(fallback: Deployment): Promise<Deployment> {
+    return (
+      (await this.prisma.gameServerCard.findUnique({
+        where: { id: fallback.id },
+        select: { id: true, channelId: true, messageId: true },
+      })) ?? fallback
+    );
+  }
+
+  private async isModuleEnabled(guildId: string): Promise<boolean> {
+    const settings = await this.prisma.gameServerSettings.findUnique({
+      where: { guildId },
+      select: { enabled: true },
+    });
+    return settings?.enabled !== false;
+  }
+
+  private async withGameServerLock<T>(
+    gameServerId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.gameServerLock(`game-server-card:${gameServerId}`, operation);
   }
 }
 
@@ -280,6 +462,9 @@ function fingerprintsEqual(stored: unknown, current: ReturnType<typeof cardFinge
 }
 function isUnknownMessageError(error: unknown): boolean {
   return error instanceof DiscordAPIError && error.code === 10_008;
+}
+function isUnknownChannelError(error: unknown): boolean {
+  return error instanceof DiscordAPIError && error.code === 10_003;
 }
 function retryAt(error: unknown): Date | null {
   if (error instanceof RateLimitError)

@@ -530,6 +530,7 @@ model GameServer {
   connectDomain    String?                  @map("connect_domain")
   joinUrl          String?                  @map("join_url")
   imageUrl         String?                  @map("image_url")
+  cardProfile      Json?                    @map("card_profile")
   sortOrder        Int                      @default(0) @map("sort_order")
   version          Int                      @default(0)
   createdAt        DateTime                 @default(now()) @map("created_at")

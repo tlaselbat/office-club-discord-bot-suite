@@ -25,6 +25,7 @@ a:hover{color:#c3e2ff}
 .card h1,.card h2{margin:0 0 1rem;color:#f6faff;letter-spacing:-.015em;overflow-wrap:anywhere}.card h1{font-size:1.4rem}.card h2{font-size:1.1rem}.card h1:last-child,.card h2:last-child{margin-bottom:0}
 .narrow{max-width:34rem;margin:12vh auto}
 form{display:grid;gap:1rem}.card>form{max-width:48rem}.card>form:not(:has(fieldset)){max-width:38rem}.card>form:has(.levels-table){max-width:none}
+.game-server-config-group{display:grid;gap:.85rem}.game-server-config-group .hint{margin:0}
 fieldset{min-width:0;margin:0;padding:1.15rem;border:1px solid rgb(156 189 224 / 17%);border-radius:11px;background:rgb(8 17 29 / 32%)}
 fieldset.card{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem 1.15rem;width:100%;max-width:48rem;margin:0;padding:1.15rem;box-shadow:none}fieldset.card .field{margin:0}legend{padding:0 .45rem;color:#c8d7e7;font-size:.88rem;font-weight:700}
 label{display:grid;gap:.4rem;color:#dbe8f5;font-size:.92rem;font-weight:600}.field{margin-bottom:.5rem}.hint{margin:.2rem 0;color:#9fafc1;font-size:.85rem;overflow-wrap:anywhere}

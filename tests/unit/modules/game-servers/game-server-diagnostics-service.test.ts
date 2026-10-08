@@ -27,6 +27,25 @@ const baseServer = {
 };
 
 describe('GameServerDiagnosticsService', () => {
+  it('reports the legacy enabled default without a saved settings row', async () => {
+    const prisma = {
+      gameServerSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+      gameServer: { findMany: vi.fn().mockResolvedValue([]) },
+    } as unknown as PrismaClient;
+    const report = await new GameServerDiagnosticsService(prisma, {} as never).runPersisted(
+      guildId,
+    );
+    expect(report.settings).toContainEqual({
+      label: 'Module settings',
+      ok: true,
+      detail: 'Enabled by default',
+    });
+    expect(report.aggregate).toContainEqual({
+      label: 'Module state',
+      ok: true,
+      detail: 'Enabled by default',
+    });
+  });
   it('reports each Discord deployment without treating a global panel as configuration', async () => {
     const service = serviceWith([
       {

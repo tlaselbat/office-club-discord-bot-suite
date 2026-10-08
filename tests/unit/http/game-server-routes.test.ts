@@ -1,0 +1,202 @@
+import type { FastifyInstance } from 'fastify';
+import Fastify from 'fastify';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { registerGameServersRoutes } from '../../../src/http/routes/admin/game-servers.js';
+import type { SharedHelpers } from '../../../src/http/routes/admin/shared.js';
+import { PublicError } from '../../../src/errors/public-error.js';
+
+const guildId = '12345678901234567';
+const serverId = '513af1bb-31fa-4b17-bd2e-2ec450984cea';
+const apps: FastifyInstance[] = [];
+afterEach(async () => {
+  await Promise.all(apps.splice(0).map((app) => app.close()));
+});
+
+function fixture() {
+  const saved = {
+    id: serverId,
+    guildId,
+    displayName: 'Saved arena',
+    description: 'Saved description',
+    enabled: true,
+    public: true,
+    connectDomain: 'saved.example.com',
+    joinUrl: null,
+    imageUrl: null,
+    sortOrder: 3,
+    provider: 'DATHOST',
+    providerServerId: 'provider-1',
+    version: 4,
+    snapshot: null,
+    cards: [],
+    cardProfile: {
+      accentColor: '#123456',
+      thumbnailImageUrl: 'https://example.com/icon.png',
+      onlineEmojiId: '22345678901234567',
+    },
+  };
+  const updateServer = vi.fn().mockResolvedValue(undefined);
+  const shared = {
+    deps: {
+      prisma: {
+        gameServer: {
+          findFirst: vi.fn().mockResolvedValue(saved),
+          findMany: vi.fn().mockResolvedValue([saved]),
+        },
+        gameServerSettings: {
+          findUnique: vi.fn().mockResolvedValue({ enabled: true, version: 2 }),
+        },
+      },
+      gameServerAdmin: { updateServer, listAvailableServers: vi.fn().mockResolvedValue([]) },
+      gameServerDiagnostics: { runLive: vi.fn() },
+    },
+    headers: (reply: unknown) => reply,
+    authenticate: vi.fn().mockResolvedValue({ discordUserId: 'owner', csrf: 'csrf' }),
+    authenticatePost: vi.fn().mockResolvedValue({ discordUserId: 'owner', csrf: 'csrf' }),
+    guild: vi.fn().mockReturnValue({
+      name: 'Office Club',
+      channels: { fetch: vi.fn().mockResolvedValue(new Map()) },
+    }),
+    requestId: () => 'request-1',
+  };
+  const app = Fastify();
+  registerGameServersRoutes(app, shared as unknown as SharedHelpers);
+  apps.push(app);
+  const payload = {
+    csrf: 'csrf',
+    version: '4',
+    displayName: 'Unsaved arena',
+    description: 'New description',
+    enabled: '1',
+    public: '1',
+    sortOrder: '5',
+    accentColor: '#abcdef',
+    thumbnailImageUrl: 'https://example.com/new.png',
+    onlineEmojiId: '32345678901234567',
+  };
+  return {
+    app,
+    shared,
+    updateServer,
+    payload,
+    url: `/admin/guilds/${guildId}/game-servers/${serverId}/edit`,
+  };
+}
+
+describe('Game Server configuration routes', () => {
+  it('hydrates saved registration and Card Profile', async () => {
+    const { app, url } = fixture();
+    const response = await app.inject({ method: 'GET', url });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('value="#123456"');
+    expect(response.body).toContain('value="https://example.com/icon.png"');
+    expect(response.body).toContain('value="22345678901234567"');
+    expect(response.body).toContain('Saved description');
+  });
+
+  it('saves typed profile fields through the authoritative service', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const response = await app.inject({ method: 'POST', url, payload });
+    expect(response.statusCode).toBe(303);
+    expect(updateServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        guildId,
+        gameServerId: serverId,
+        expectedVersion: 4,
+        cardProfile: expect.objectContaining({
+          accentColor: '#abcdef',
+          onlineEmojiId: '32345678901234567',
+        }),
+      }),
+    );
+  });
+
+  it('retains unsaved values and field errors on malformed profile input', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, onlineEmojiId: 'invalid', enabled: undefined },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('value="Unsaved arena"');
+    expect(response.body).toContain('value="invalid"');
+    expect(response.body).toContain('aria-invalid="true"');
+    expect(response.body).toContain('Saved arena');
+    expect(response.body).not.toContain('name="enabled" value="1" checked');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it('keeps the submitted version and edits after a concurrency conflict', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    updateServer.mockRejectedValue(
+      new PublicError('STALE_CONFIGURATION', 'Configuration changed; reload and try again.'),
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, version: '3' },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toContain('name="version" value="3"');
+    expect(response.body).toContain('value="Unsaved arena"');
+    expect(response.body).toContain('Configuration changed');
+  });
+
+  it('rejects malformed HTTPS URLs with field feedback and retains edits', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, imageUrl: 'https://', joinUrl: 'http://example.com' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('id="imageUrl-error"');
+    expect(response.body).toContain('id="joinUrl-error"');
+    expect(response.body).toContain('value="Unsaved arena"');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it('does not mutate when authentication fails', async () => {
+    const { app, url, payload, shared, updateServer } = fixture();
+    shared.authenticatePost.mockResolvedValue(null);
+    await app.inject({ method: 'POST', url, payload });
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes provider outages from empty inventory', async () => {
+    const { app, shared } = fixture();
+    shared.deps.gameServerAdmin.listAvailableServers.mockRejectedValue(new Error('provider down'));
+    const response = await app.inject({
+      method: 'GET',
+      url: `/admin/guilds/${guildId}/game-servers`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('DatHost inventory is unavailable');
+    expect(response.body).toContain('Saved arena');
+  });
+
+  it('shows the legacy enabled default when no module settings row exists', async () => {
+    const { app, shared } = fixture();
+    shared.deps.prisma.gameServerSettings.findUnique.mockResolvedValue(null);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/admin/guilds/${guildId}/game-servers`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('Disable module');
+    expect(response.body).not.toContain('>Enable module</button>');
+  });
+
+  it('renders actionable diagnostics failure feedback', async () => {
+    const { app, shared } = fixture();
+    shared.deps.gameServerDiagnostics.runLive.mockRejectedValue(new Error('provider down'));
+    const response = await app.inject({
+      method: 'POST',
+      url: `/admin/guilds/${guildId}/game-servers/diagnostics`,
+      payload: { csrf: 'csrf' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('Diagnostics are unavailable');
+  });
+});

@@ -86,7 +86,7 @@ export class GameServerDiagnosticsService {
 
   private settingsChecks(settings: { enabled: boolean } | null): GameServerDiagnosticCheck[] {
     if (settings === null) {
-      return [{ label: 'Module settings', ok: false, detail: 'Not configured' }];
+      return [{ label: 'Module settings', ok: true, detail: 'Enabled by default' }];
     }
     const checks: GameServerDiagnosticCheck[] = [
       {
@@ -107,9 +107,9 @@ export class GameServerDiagnosticsService {
     return [
       {
         label: 'Module state',
-        ok: settings?.enabled === true,
+        ok: settings?.enabled !== false,
         detail:
-          settings?.enabled === true ? 'Enabled' : settings === null ? 'Unconfigured' : 'Disabled',
+          settings === null ? 'Enabled by default' : settings.enabled ? 'Enabled' : 'Disabled',
       },
       {
         label: 'Registered servers',

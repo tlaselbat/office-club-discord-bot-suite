@@ -7,6 +7,7 @@ import { GameServerPollService } from '../../../../src/modules/game-servers/poll
 function createMockPrisma(registration: unknown, transaction?: unknown): PrismaClient {
   return {
     gameServer: { findUnique: vi.fn().mockResolvedValue(registration) },
+    gameServerSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     $transaction: vi.fn(async (callback) =>
       typeof callback === 'function' ? callback(transaction ?? {}) : Promise.resolve(),
     ),
@@ -34,6 +35,24 @@ describe('GameServerPollService registration state', () => {
       expect(cards.refreshCardsForGameServer).not.toHaveBeenCalled();
     },
   );
+
+  it('does not call DatHost when persisted module settings explicitly disable the guild', async () => {
+    const database = createMockPrisma({
+      id: 'one',
+      guildId: 'guild',
+      enabled: true,
+      providerServerId: 'provider',
+      snapshot: null,
+    });
+    database.gameServerSettings.findUnique = vi.fn().mockResolvedValue({ enabled: false });
+    const provider = { observe: vi.fn() } as unknown as DatHostGameServerProvider;
+    const cards = createCardService();
+    await expect(
+      new GameServerPollService(database, provider, cards).poll('one'),
+    ).resolves.toBeUndefined();
+    expect(provider.observe).not.toHaveBeenCalled();
+    expect(database.$transaction).not.toHaveBeenCalled();
+  });
 
   it('polls enabled private registrations because visibility does not control telemetry', async () => {
     const transaction = {

@@ -44,6 +44,8 @@ const serverView: ServerView = {
 };
 
 const serverRecord = { ...serverView, guildId: 'guild-1' };
+const immediateLock = async <T>(_key: string, operation: () => Promise<T>): Promise<T> =>
+  operation();
 
 function createMockPrisma(overrides: Record<string, unknown> = {}): PrismaClient {
   const base = {
@@ -58,13 +60,22 @@ function createMockPrisma(overrides: Record<string, unknown> = {}): PrismaClient
     gameServer: {
       findFirst: vi.fn().mockResolvedValue(serverRecord),
     },
+    gameServerSettings: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
     job: { upsert: vi.fn().mockResolvedValue({}) },
   };
   const merged = {
     ...base,
     ...overrides,
     gameServerCard: { ...base.gameServerCard, ...(overrides.gameServerCard ?? {}) },
+    $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
   };
+  Object.assign(merged, {
+    $transaction: vi.fn(async (callback: (transaction: typeof merged) => Promise<unknown>) =>
+      callback(merged),
+    ),
+  });
   return merged as unknown as PrismaClient;
 }
 
@@ -111,8 +122,47 @@ function unknownMessageError(): DiscordAPIError {
   );
 }
 
+function unknownChannelError(): DiscordAPIError {
+  return new DiscordAPIError(
+    { message: 'Unknown Channel', code: 10_003 },
+    10_003,
+    404,
+    'GET',
+    'https://discord.com/api/channels/channel-1',
+    { body: undefined, files: undefined } as unknown as never,
+  );
+}
+
 describe('GameServerCardService', () => {
   describe('publishDeployment', () => {
+    it('serializes publication and returns the persisted message id', async () => {
+      const prisma = createMockPrisma({
+        gameServerCard: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi
+            .fn()
+            .mockResolvedValue({ id: 'card-1', channelId: 'channel-1', messageId: null }),
+          findUnique: vi
+            .fn()
+            .mockResolvedValue({ ...createCard(), messageId: 'persisted-message' }),
+        },
+      });
+      const discord = createMockDiscord();
+      const lockKeys: string[] = [];
+      const lock = async <T>(key: string, operation: () => Promise<T>): Promise<T> => {
+        lockKeys.push(key);
+        return operation();
+      };
+      const service = new GameServerCardService(prisma, discord, 'secret', lock);
+      const channel = (await discord.channels.fetch('channel-1')) as unknown as TextBasedChannel;
+
+      await expect(service.publishDeployment(serverView.id, channel)).resolves.toMatchObject({
+        id: 'card-1',
+        channelId: 'channel-1',
+        messageId: 'persisted-message',
+      });
+      expect(lockKeys).toEqual([`game-server-card:${serverView.id}`]);
+    });
     it('deletes a newly sent bot message if card persistence fails', async () => {
       const message = {
         id: 'msg-new',
@@ -140,7 +190,7 @@ describe('GameServerCardService', () => {
         channels: { fetch: vi.fn().mockResolvedValue(channel) },
       } as unknown as Client;
       await expect(
-        new GameServerCardService(prisma, discord, 'secret').publishDeployment(
+        new GameServerCardService(prisma, discord, 'secret', immediateLock).publishDeployment(
           serverView.id,
           channel as unknown as TextBasedChannel,
         ),
@@ -152,7 +202,7 @@ describe('GameServerCardService', () => {
         gameServerCard: { findUnique: vi.fn().mockResolvedValue(createCard()) },
       });
       const discord = createMockDiscord();
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       const channel = (await discord.channels.fetch('channel-1')) as unknown as TextBasedChannel;
       await service.publishDeployment(serverView.id, channel);
       const mockSend = (channel as unknown as { send: ReturnType<typeof vi.fn> }).send;
@@ -183,7 +233,7 @@ describe('GameServerCardService', () => {
         },
       });
       const discord = createMockDiscord();
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       await service.publishDeployment(serverView.id, {
         id: 'channel-2',
         isTextBased: vi.fn().mockReturnValue(true),
@@ -210,7 +260,7 @@ describe('GameServerCardService', () => {
         },
       });
       const discord = createMockDiscord();
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       const channel = (await discord.channels.fetch('channel-1')) as unknown as TextBasedChannel;
 
       await service.publishDeployment(serverView.id, channel);
@@ -226,16 +276,95 @@ describe('GameServerCardService', () => {
         gameServer: { findFirst: vi.fn().mockResolvedValue(null) },
       });
       const discord = createMockDiscord();
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       await expect(
         service.publishDeployment(serverView.id, {
           id: 'channel-1',
         } as unknown as TextBasedChannel),
       ).rejects.toThrow('Selected game server is no longer available or is not public.');
     });
+
+    it('rejects publication when the Game Servers module is explicitly disabled', async () => {
+      const prisma = createMockPrisma({
+        gameServerSettings: { findUnique: vi.fn().mockResolvedValue({ enabled: false }) },
+      });
+      const discord = createMockDiscord();
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+      const channel = (await discord.channels.fetch('channel-1')) as unknown as TextBasedChannel;
+
+      await expect(service.publishDeployment(serverView.id, channel)).rejects.toMatchObject({
+        code: 'GAME_SERVER_MODULE_DISABLED',
+      });
+      expect(prisma.gameServerCard.create).not.toHaveBeenCalled();
+      expect(
+        (channel as unknown as { send: ReturnType<typeof vi.fn> }).send,
+      ).not.toHaveBeenCalled();
+    });
   });
 
   describe('refreshCard', () => {
+    it('preserves a public deployment and skips Discord I/O when the module is disabled', async () => {
+      const prisma = createMockPrisma({
+        gameServerCard: { findUnique: vi.fn().mockResolvedValue(createCard()) },
+        gameServerSettings: { findUnique: vi.fn().mockResolvedValue({ enabled: false }) },
+      });
+      const discord = createMockDiscord();
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+
+      await expect(service.refreshCard('card-1')).resolves.toBeUndefined();
+      expect(discord.channels.fetch).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.update).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.delete).not.toHaveBeenCalled();
+    });
+
+    it('removes a private server deployment during refresh', async () => {
+      const message = {
+        id: 'msg-1',
+        author: { id: 'bot-1' },
+        delete: vi.fn().mockResolvedValue(undefined),
+      };
+      const channel = {
+        id: 'channel-1',
+        isTextBased: vi.fn().mockReturnValue(true),
+        isDMBased: vi.fn().mockReturnValue(false),
+        messages: { fetch: vi.fn().mockResolvedValue(message) },
+      };
+      const disabledCard = {
+        ...createCard(),
+        gameServer: { ...serverRecord, public: false },
+      };
+      const prisma = createMockPrisma({
+        gameServerCard: { findUnique: vi.fn().mockResolvedValue(disabledCard) },
+      });
+      const discord = {
+        user: { id: 'bot-1' },
+        channels: { fetch: vi.fn().mockResolvedValue(channel) },
+      } as unknown as Client;
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+
+      await expect(service.refreshCard('card-1')).resolves.toBeUndefined();
+      expect(message.delete).toHaveBeenCalledOnce();
+      expect(prisma.gameServerCard.delete).toHaveBeenCalledWith({ where: { id: 'card-1' } });
+      expect(prisma.gameServerCard.update).not.toHaveBeenCalled();
+    });
+
+    it('preserves a disabled server deployment during refresh', async () => {
+      const disabledCard = {
+        ...createCard(),
+        gameServer: { ...serverRecord, enabled: false },
+      };
+      const prisma = createMockPrisma({
+        gameServerCard: { findUnique: vi.fn().mockResolvedValue(disabledCard) },
+      });
+      const discord = createMockDiscord();
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+
+      await expect(service.refreshCard('card-1')).resolves.toBeUndefined();
+      expect(discord.channels.fetch).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.delete).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.update).not.toHaveBeenCalled();
+    });
+
     it.each(['layout', 'artwork'])(
       'refreshes older %s on the same message even when server state is unchanged',
       async (change) => {
@@ -251,7 +380,7 @@ describe('GameServerCardService', () => {
           },
         });
         const discord = createMockDiscord();
-        const service = new GameServerCardService(prisma, discord, 'secret');
+        const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
         await service.refreshCard('card-1');
         const channel = await discord.channels.fetch('channel-1');
         const mockChannel = channel as unknown as {
@@ -290,7 +419,7 @@ describe('GameServerCardService', () => {
       const discord = {
         channels: { fetch: vi.fn().mockResolvedValue(channel) },
       } as unknown as Client;
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       const result = await service.refreshCard('card-1');
       expect(result).toBeUndefined();
       expect(fetchMessages).toHaveBeenCalledWith('msg-1');
@@ -312,24 +441,7 @@ describe('GameServerCardService', () => {
         gameServerCard: {
           findUnique: vi.fn().mockResolvedValue(
             createCard({
-              fingerprint: {
-                layoutVersion: 16,
-                accentColor: 0x2b8aef,
-                displayName: '1v1 Arena',
-                status: 'Online',
-                players: '5 / 16 Players',
-                map: 'de_dust2',
-                location: 'Los Angeles',
-                connectAddress: 'arena.example.com:27015',
-                description:
-                  'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.',
-                bannerImageUrl:
-                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers/maps/fallback/clickcs-arena-banner-779a25c6.jpg',
-                thumbnailImageUrl:
-                  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-thumbnail.png',
-                hasJoinUrl: false,
-                updateThreads: [],
-              },
+              fingerprint: cardFingerprint(serverView),
             }),
           ),
         },
@@ -337,7 +449,7 @@ describe('GameServerCardService', () => {
       const discord = {
         channels: { fetch: vi.fn().mockResolvedValue(channel) },
       } as unknown as Client;
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       const result = await service.refreshCard('card-1');
       expect(result).toBeUndefined();
       expect(discord.channels.fetch).not.toHaveBeenCalled();
@@ -363,7 +475,7 @@ describe('GameServerCardService', () => {
       const discord = {
         channels: { fetch: vi.fn().mockResolvedValue(channel) },
       } as unknown as Client;
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       const result = await service.refreshCard('card-1');
       expect(result).toBeUndefined();
       expect(prisma.gameServerCard.delete).not.toHaveBeenCalled();
@@ -382,7 +494,7 @@ describe('GameServerCardService', () => {
         },
       });
       const discord = { channels: { fetch: vi.fn().mockResolvedValue(null) } } as unknown as Client;
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       const result = await service.refreshCard('card-1');
       expect(result).toBeUndefined();
       expect(prisma.gameServerCard.delete).not.toHaveBeenCalled();
@@ -396,7 +508,7 @@ describe('GameServerCardService', () => {
         gameServerCard: { findUnique: vi.fn().mockResolvedValue(null) },
       });
       const discord = createMockDiscord();
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       const result = await service.refreshCard('card-1');
       expect(result).toBeUndefined();
       expect(discord.channels.fetch).not.toHaveBeenCalled();
@@ -427,11 +539,108 @@ describe('GameServerCardService', () => {
       const discord = {
         channels: { fetch: vi.fn().mockResolvedValue(channel) },
       } as unknown as Client;
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       const before = Date.now();
       const result = await service.refreshCard('card-1');
       expect(result).toEqual({ rescheduleAt: expect.any(Date) });
       expect(result?.rescheduleAt.getTime()).toBeGreaterThanOrEqual(before + 2_000);
+    });
+  });
+
+  describe('removeDeployment', () => {
+    it('retains the deployment and marks an actionable error when message fetch fails', async () => {
+      const failure = new Error('Discord temporarily unavailable');
+      const prisma = createMockPrisma({
+        gameServerCard: { findUnique: vi.fn().mockResolvedValue(createCard()) },
+      });
+      const discord = createMockDiscord();
+      const channel = await discord.channels.fetch('channel-1');
+      (
+        channel as unknown as { messages: { fetch: ReturnType<typeof vi.fn> } }
+      ).messages.fetch.mockRejectedValue(failure);
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+
+      await expect(service.removeDeployment('card-1')).rejects.toThrow(
+        'Discord temporarily unavailable',
+      );
+      expect(prisma.gameServerCard.delete).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ state: 'ERROR' }) }),
+      );
+    });
+
+    it('removes a deployment after Discord confirms its managed message is unknown', async () => {
+      const prisma = createMockPrisma({
+        gameServerCard: { findUnique: vi.fn().mockResolvedValue(createCard()) },
+      });
+      const discord = createMockDiscord();
+      const channel = await discord.channels.fetch('channel-1');
+      (
+        channel as unknown as { messages: { fetch: ReturnType<typeof vi.fn> } }
+      ).messages.fetch.mockRejectedValue(unknownMessageError());
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+
+      await service.removeDeployment('card-1');
+      expect(prisma.gameServerCard.delete).toHaveBeenCalledWith({ where: { id: 'card-1' } });
+    });
+
+    it('does not delete a message authored by another Discord user', async () => {
+      const message = { id: 'msg-1', author: { id: 'other-user' }, delete: vi.fn() };
+      const prisma = createMockPrisma({
+        gameServerCard: { findUnique: vi.fn().mockResolvedValue(createCard()) },
+      });
+      const discord = createMockDiscord();
+      const channel = await discord.channels.fetch('channel-1');
+      (
+        channel as unknown as { messages: { fetch: ReturnType<typeof vi.fn> } }
+      ).messages.fetch.mockResolvedValue(message);
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+
+      await expect(service.removeDeployment('card-1')).rejects.toThrow(
+        'no longer authored by this bot',
+      );
+      expect(message.delete).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.delete).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ state: 'ERROR' }) }),
+      );
+    });
+
+    it('removes the deployment when Discord confirms its channel no longer exists', async () => {
+      const prisma = createMockPrisma({
+        gameServerCard: { findUnique: vi.fn().mockResolvedValue(createCard()) },
+      });
+      const discord = {
+        channels: { fetch: vi.fn().mockRejectedValue(unknownChannelError()) },
+      } as unknown as Client;
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+
+      await service.removeDeployment('card-1');
+      expect(prisma.gameServerCard.delete).toHaveBeenCalledWith({ where: { id: 'card-1' } });
+    });
+
+    it('retains and marks the deployment when Discord cannot delete its managed message', async () => {
+      const failure = new Error('Discord delete forbidden');
+      const message = {
+        id: 'msg-1',
+        author: { id: 'bot-1' },
+        delete: vi.fn().mockRejectedValue(failure),
+      };
+      const prisma = createMockPrisma({
+        gameServerCard: { findUnique: vi.fn().mockResolvedValue(createCard()) },
+      });
+      const discord = createMockDiscord();
+      const channel = await discord.channels.fetch('channel-1');
+      (
+        channel as unknown as { messages: { fetch: ReturnType<typeof vi.fn> } }
+      ).messages.fetch.mockResolvedValue(message);
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
+
+      await expect(service.removeDeployment('card-1')).rejects.toThrow('Discord delete forbidden');
+      expect(prisma.gameServerCard.delete).not.toHaveBeenCalled();
+      expect(prisma.gameServerCard.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ state: 'ERROR' }) }),
+      );
     });
   });
 
@@ -443,9 +652,33 @@ describe('GameServerCardService', () => {
         },
       });
       const discord = createMockDiscord();
-      const service = new GameServerCardService(prisma, discord, 'secret');
+      const service = new GameServerCardService(prisma, discord, 'secret', immediateLock);
       await service.refreshCardsForGameServer(serverView.id);
       expect(prisma.job.upsert).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('removeDeploymentsForGameServer', () => {
+    it('runs registration cleanup while the server lifecycle lock is held', async () => {
+      const events: string[] = [];
+      const lock = async <T>(_key: string, operation: () => Promise<T>): Promise<T> => {
+        events.push('lock');
+        try {
+          return await operation();
+        } finally {
+          events.push('unlock');
+        }
+      };
+      const prisma = createMockPrisma({
+        gameServerCard: { findMany: vi.fn().mockResolvedValue([]) },
+      });
+      const service = new GameServerCardService(prisma, createMockDiscord(), 'secret', lock);
+
+      await service.removeDeploymentsForGameServer(serverView.id, async () => {
+        events.push('after-removal');
+      });
+
+      expect(events).toEqual(['lock', 'after-removal', 'unlock']);
     });
   });
 });

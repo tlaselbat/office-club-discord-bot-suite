@@ -8,20 +8,20 @@ import {
 } from 'discord.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import {
+  cardAccentColor,
+  DEFAULT_CARD_DESCRIPTION,
+  isHttpsUrl,
+  resolveCardProfile,
+} from './card-profile.js';
 import { createGameServerCustomId } from './custom-id.js';
 
 const ASSET_BASE_URL =
   'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/game-servers';
 
-const SERVER_INFO_ASSET_BASE_URL =
-  'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info';
-
 // Discord caches external media by URL. Give revised artwork a new content-versioned
 // filename; replacing bytes at the old URL does not refresh already cached cards.
 const FALLBACK_BANNER = 'clickcs-arena-banner-779a25c6.jpg';
-
-const SERVER_CARD_DESCRIPTION =
-  'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.';
 
 const componentType = {
   actionRow: 1,
@@ -72,6 +72,7 @@ export interface ServerView {
   connectDomain: string | null;
   joinUrl: string | null;
   imageUrl: string | null;
+  cardProfile?: unknown;
   enabled: boolean;
   public: boolean;
   sortOrder: number;
@@ -101,7 +102,8 @@ export interface CardFingerprint {
   description: string;
   bannerImageUrl: string;
   thumbnailImageUrl: string;
-  hasJoinUrl: boolean;
+  joinUrl: string | null;
+  statusEmoji: string;
   updateThreads: Array<{
     type: UpdateThreadView['type'];
     threadId: string;
@@ -187,10 +189,11 @@ export function renderGameServerCard(server: ServerView, secret: string) {
   const displayMap = displayMapName(map);
   const description = cardDescription(server);
   const mapImageUrl = resolveMapImageUrl(map, server.imageUrl);
+  const profile = resolveCardProfile(server.cardProfile);
 
   const headerComponents: Record<string, unknown>[] = [
     textDisplay(
-      `# ${server.displayName}\n### ${statusEmoji(snapshot)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n-# \u2003\u2002${playerCount(snapshot).toLowerCase()}`,
+      `# ${server.displayName}\n### ${statusEmoji(snapshot, profile)} ${statusLabel(snapshot)}${location === null ? '' : ` · ${location}`}\n-# \u2003\u2002${playerCount(snapshot).toLowerCase()}`,
     ),
   ];
 
@@ -199,7 +202,7 @@ export function renderGameServerCard(server: ServerView, secret: string) {
     components: headerComponents,
     accessory: {
       type: componentType.thumbnail,
-      media: { url: serverIdentityIconUrl() },
+      media: { url: profile.thumbnailImageUrl },
     },
   };
 
@@ -220,7 +223,7 @@ export function renderGameServerCard(server: ServerView, secret: string) {
 
   const container: Record<string, unknown> = {
     type: componentType.container,
-    accentColor: 0x2b8aef,
+    accentColor: cardAccentColor(profile.accentColor),
     components: [
       headerSection,
       textDisplay(description),
@@ -279,17 +282,13 @@ export function renderGameServerDetail(server: ServerView) {
       value: `<t:${String(Math.floor(snapshot.observedAt.getTime() / 1000))}:R>`,
       inline: true,
     });
-  const components =
-    server.joinUrl === null
-      ? []
-      : [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setLabel('Connect')
-              .setStyle(ButtonStyle.Link)
-              .setURL(server.joinUrl),
-          ),
-        ];
+  const components = !isHttpsUrl(server.joinUrl)
+    ? []
+    : [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setLabel('Connect').setStyle(ButtonStyle.Link).setURL(server.joinUrl),
+        ),
+      ];
   return { embeds: [embed], components };
 }
 
@@ -297,9 +296,10 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const snapshot = server.snapshot;
   const map = snapshot?.map ?? null;
   const displayMap = displayMapName(map);
+  const profile = resolveCardProfile(server.cardProfile);
   return {
-    layoutVersion: 16,
-    accentColor: 0x2b8aef,
+    layoutVersion: 17,
+    accentColor: cardAccentColor(profile.accentColor),
     displayName: server.displayName,
     status: statusLabel(snapshot),
     players: playerCount(snapshot),
@@ -308,8 +308,9 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
     connectAddress: connectAddress(server),
     description: cardDescription(server),
     bannerImageUrl: resolveMapImageUrl(map, server.imageUrl),
-    thumbnailImageUrl: serverIdentityIconUrl(),
-    hasJoinUrl: server.joinUrl !== null,
+    thumbnailImageUrl: profile.thumbnailImageUrl,
+    joinUrl: isHttpsUrl(server.joinUrl) ? server.joinUrl : null,
+    statusEmoji: statusEmoji(snapshot, profile),
     updateThreads: (server.updateThreads ?? [])
       .map((thread) => ({
         type: thread.type,
@@ -399,33 +400,34 @@ function displayLocation(location: string | null): string | null {
 // The PNGs use a 128x128 transparent canvas with a 64x64 visible circle,
 // which makes the visible dot appear about half the diameter of a normal
 // full-frame Discord emoji.
-function customStatusEmoji(name: string, id: string | undefined): string {
-  const trimmedId = id?.trim();
-
+function customStatusEmoji(name: string, id: string | null): string {
   // Keep the card readable even if one of the deployment variables is missing.
   // The fallback is intentionally a small text dot rather than a full-size
   // Unicode colored-circle emoji.
-  return trimmedId ? `<:${name}:${trimmedId}>` : '•';
+  return id === null ? '•' : `<:${name}:${id}>`;
 }
 
-function statusEmoji(snapshot: SnapshotView | null): string {
+function statusEmoji(
+  snapshot: SnapshotView | null,
+  profile = resolveCardProfile(undefined),
+): string {
   if (snapshot === null) {
-    return customStatusEmoji('pending_dot', process.env.GAME_SERVER_EMOJI_PENDING_ID);
+    return customStatusEmoji('pending_dot', profile.pendingEmojiId);
   }
 
   if (snapshot.stale) {
-    return customStatusEmoji('warning_dot', process.env.GAME_SERVER_EMOJI_WARNING_ID);
+    return customStatusEmoji('warning_dot', profile.warningEmojiId);
   }
 
   if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE') {
-    return customStatusEmoji('online_dot', process.env.GAME_SERVER_EMOJI_ONLINE_ID);
+    return customStatusEmoji('online_dot', profile.onlineEmojiId);
   }
 
   if (snapshot.hostingState === 'STARTING' || snapshot.gameplayState === 'DEGRADED') {
-    return customStatusEmoji('warning_dot', process.env.GAME_SERVER_EMOJI_WARNING_ID);
+    return customStatusEmoji('warning_dot', profile.warningEmojiId);
   }
 
-  return customStatusEmoji('offline_dot', process.env.GAME_SERVER_EMOJI_OFFLINE_ID);
+  return customStatusEmoji('offline_dot', profile.offlineEmojiId);
 }
 
 function playerCount(snapshot: SnapshotView | null): string {
@@ -438,9 +440,9 @@ function playerCount(snapshot: SnapshotView | null): string {
 
 function statusLabel(snapshot: SnapshotView | null): string {
   if (snapshot === null) return 'Status pending';
+  if (snapshot.stale) return 'Status stale';
   if (snapshot.hostingState === 'STOPPED') return 'Offline';
   if (snapshot.hostingState === 'STARTING') return 'Server starting…';
-  if (snapshot.stale) return 'Status stale';
   if (snapshot.hostingState === 'RUNNING' && snapshot.gameplayState === 'AVAILABLE')
     return 'Online';
   if (snapshot.hostingState === 'RUNNING') return 'Server running • live data unavailable';
@@ -481,12 +483,8 @@ export function resolveMapImageUrl(
       }
     }
   }
-  if (serverImageUrl !== null) return serverImageUrl;
+  if (isHttpsUrl(serverImageUrl)) return serverImageUrl;
   return `${ASSET_BASE_URL}/maps/fallback/${FALLBACK_BANNER}`;
-}
-
-function serverIdentityIconUrl(): string {
-  return `${SERVER_INFO_ASSET_BASE_URL}/clickcs-server-thumbnail.png`;
 }
 
 export function displayMapName(map: string | null): string {
@@ -497,7 +495,7 @@ export function displayMapName(map: string | null): string {
 }
 
 function cardDescription(server: ServerView): string {
-  return server.description?.trim() || SERVER_CARD_DESCRIPTION;
+  return server.description?.trim() || DEFAULT_CARD_DESCRIPTION;
 }
 
 function color(snapshot: SnapshotView | null): number {

@@ -10,6 +10,12 @@ import {
 import { createGameServerCustomId } from '../../../../src/modules/game-servers/custom-id.js';
 import { GameServerUpdateThreadService } from '../../../../src/modules/game-servers/update-thread-service.js';
 
+vi.mock('../../../../src/database/prisma.js', () => ({
+  withDatabaseAdvisoryLock: vi.fn(
+    async (_prisma: unknown, _key: string, operation: () => Promise<unknown>) => operation(),
+  ),
+}));
+
 describe('managed update event lifecycle', () => {
   it('registers handlers once, backfills displayed servers through jobs, and removes listeners on stop', async () => {
     const emitter = new EventEmitter();

@@ -196,7 +196,7 @@ describe('Game Server rendering', () => {
           cardFingerprint({ ...view, updateThreads: [{ ...first, ...changes }, second] }),
         ).not.toEqual(cardFingerprint(view));
       }
-      expect(cardFingerprint(view).layoutVersion).toBe(16);
+      expect(cardFingerprint(view).layoutVersion).toBe(17);
     } finally {
       vi.useRealTimers();
     }
@@ -542,7 +542,58 @@ describe('Game Server rendering', () => {
   it('keeps the fingerprint stable when only observation times change', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
     expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
-    expect(cardFingerprint(view).layoutVersion).toBe(16);
+    expect(cardFingerprint(view).layoutVersion).toBe(17);
+  });
+
+  it('resolves card-profile overrides and safely falls back from malformed persisted media', () => {
+    const customized = {
+      ...server,
+      cardProfile: {
+        accentColor: '#123456',
+        thumbnailImageUrl: 'https://cdn.example.com/thumb.png',
+        onlineEmojiId: '12345678901234567',
+      },
+    };
+    const container = firstContainer(renderGameServerCard(customized, secret));
+    expect(container.accentColor).toBe(0x123456);
+    const header = containerComponents(container)[0] as Record<string, unknown>;
+    expect((header.accessory as Record<string, unknown>).media).toEqual({
+      url: 'https://cdn.example.com/thumb.png',
+    });
+    expect(textContents(container)).toContain('<:online_dot:12345678901234567>');
+    expect(cardFingerprint(customized)).not.toEqual(cardFingerprint(server));
+
+    const malformed = firstContainer(
+      renderGameServerCard(
+        { ...server, cardProfile: { thumbnailImageUrl: 'http://bad.example' } },
+        secret,
+      ),
+    );
+    const malformedHeader = containerComponents(malformed)[0] as Record<string, unknown>;
+    expect((malformedHeader.accessory as Record<string, unknown>).media).toEqual({
+      url: expect.stringContaining('clickcs-server-thumbnail.png'),
+    });
+  });
+
+  it('gives stale telemetry priority over stopped and starting state', () => {
+    const text = textContents(
+      firstContainer(
+        renderGameServerCard(
+          { ...server, snapshot: { ...baseSnapshot, hostingState: 'STOPPED', stale: true } },
+          secret,
+        ),
+      ),
+    );
+    expect(text).toContain('Status stale');
+  });
+
+  it('does not render malformed persisted media or detail join URLs', () => {
+    expect(
+      resolveMapImageUrl('aim_map_office', 'http://unsafe.example/map.jpg', () => false),
+    ).not.toContain('unsafe.example');
+    const detail = renderGameServerDetail({ ...server, joinUrl: 'not-a-url' });
+    expect(detail.components).toEqual([]);
+    expect(cardFingerprint({ ...server, joinUrl: 'not-a-url' }).joinUrl).toBeNull();
   });
 
   it('uses the configured custom status emoji when available', () => {

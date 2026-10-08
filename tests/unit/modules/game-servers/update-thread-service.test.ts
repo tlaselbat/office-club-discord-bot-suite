@@ -137,6 +137,7 @@ function fixture(initial: GameServerUpdateThread[] = [row()]) {
     );
   }
   const db = {
+    gameServerSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     gameServer: {
       findUnique: vi.fn().mockResolvedValue({
         id: serverId,
@@ -242,6 +243,14 @@ afterEach(() => {
 });
 
 describe('managed update lifecycle', () => {
+  it('does not create or reconcile Discord threads while the module is disabled', async () => {
+    const f = fixture();
+    f.db.gameServerSettings.findUnique.mockResolvedValue({ enabled: false } as never);
+    await f.service.ensureThread(serverId, 'ANNOUNCEMENTS');
+    await expect(f.service.reconcile(serverId)).resolves.toBeUndefined();
+    expect(f.fetch).not.toHaveBeenCalled();
+    expect(f.parent.threads.create).not.toHaveBeenCalled();
+  });
   it('creates both missing resources and then preserves IDs without duplicate creation', async () => {
     const f = fixture([]);
     f.threads.clear();

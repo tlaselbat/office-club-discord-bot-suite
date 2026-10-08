@@ -13,6 +13,7 @@ import {
   loginPage,
   page,
   panelCss,
+  panelScript,
   type GeneralPageModel,
 } from '../admin/views.js';
 import { registerCompetitiveRoutes } from './admin/competitive.js';
@@ -39,6 +40,9 @@ export function registerAdminRoutes(
 
   app.get('/admin/assets/panel.css', (_request, reply) =>
     reply.header('cache-control', 'public, max-age=3600').type('text/css').send(panelCss),
+  );
+  app.get('/admin/assets/panel.js', (_request, reply) =>
+    reply.header('cache-control', 'public, max-age=3600').type('text/javascript').send(panelScript),
   );
 
   app.get('/admin/login', async (_request, reply) => {

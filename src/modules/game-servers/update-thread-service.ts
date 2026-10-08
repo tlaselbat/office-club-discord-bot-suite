@@ -56,6 +56,10 @@ export class GameServerUpdateThreadService {
           include: { cards: true },
         });
         if (server === null || !server.enabled || !server.public) return;
+        const settings = await tx.gameServerSettings.findUnique({
+          where: { guildId: server.guildId },
+        });
+        if (settings?.enabled === false) return;
         const card = server.cards[0];
         if (card === undefined) return;
         const stored = await tx.gameServerUpdateThread.findUnique({
@@ -206,6 +210,10 @@ export class GameServerUpdateThreadService {
     });
     if (server === null || !server.enabled || !server.public || server.cards.length === 0)
       return undefined;
+    const settings = await this.prisma.gameServerSettings.findUnique({
+      where: { guildId: server.guildId },
+    });
+    if (settings?.enabled === false) return undefined;
     await this.ensureThreads(gameServerId);
     const threads = await this.prisma.gameServerUpdateThread.findMany({ where: { gameServerId } });
     for (const thread of threads) await this.syncHistory(thread);

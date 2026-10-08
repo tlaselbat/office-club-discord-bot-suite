@@ -10,6 +10,13 @@ import {
 } from '../../admin/views.js';
 import { idSchema } from './shared.js';
 import type { SharedHelpers } from './shared.js';
+import { cardProfileSchema, isHttpsUrl } from '../../../modules/game-servers/card-profile.js';
+
+const optionalHttpsUrl = z
+  .string()
+  .max(500)
+  .refine((value) => value === '' || isHttpsUrl(value), 'Must be a valid HTTPS URL')
+  .optional();
 
 const displaySchema = z
   .object({ csrf: z.string().min(1).max(128), gameServerId: z.uuid(), channelId: idSchema })
@@ -49,9 +56,15 @@ const serverEditSchema = z
     enabled: z.literal('1').optional(),
     public: z.literal('1').optional(),
     connectDomain: z.string().max(256).optional(),
-    joinUrl: z.string().max(500).optional(),
-    imageUrl: z.string().max(500).optional(),
+    joinUrl: optionalHttpsUrl,
+    imageUrl: optionalHttpsUrl,
     sortOrder: z.coerce.number().int().min(0).default(0),
+    accentColor: cardProfileSchema.shape.accentColor,
+    thumbnailImageUrl: optionalHttpsUrl,
+    onlineEmojiId: z.string().max(20).optional(),
+    offlineEmojiId: z.string().max(20).optional(),
+    warningEmojiId: z.string().max(20).optional(),
+    pendingEmojiId: z.string().max(20).optional(),
   })
   .strict();
 
@@ -87,11 +100,12 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       }),
       fetchTextChannels(guildId),
     ]);
-    const available = await shared.deps.gameServerAdmin
-      .listAvailableServers(guildId)
-      .catch(
-        () => [] as Awaited<ReturnType<typeof shared.deps.gameServerAdmin.listAvailableServers>>,
-      );
+    let inventoryError: string | undefined;
+    const available = await shared.deps.gameServerAdmin.listAvailableServers(guildId).catch(() => {
+      inventoryError =
+        'DatHost inventory is unavailable. Saved servers and displays are still shown; retry registration later.';
+      return [] as Awaited<ReturnType<typeof shared.deps.gameServerAdmin.listAvailableServers>>;
+    });
     const cards = servers.flatMap((server) =>
       server.cards.map((card) => ({
         id: card.id,
@@ -111,7 +125,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       name: shared.guild(guildId)?.name ?? '',
       username: auth.discordUserId,
       csrf: auth.csrf,
-      moduleEnabled: settings?.enabled ?? false,
+      moduleEnabled: settings?.enabled ?? true,
       settingsVersion: settings?.version ?? null,
       textChannels: channels,
       servers: servers.map((server) => ({
@@ -141,7 +155,10 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       cards,
       availableServers: available,
       ...(extras?.diagnostics === undefined ? {} : { diagnostics: extras.diagnostics }),
-      ...(extras?.errors === undefined ? {} : { errors: extras.errors }),
+      errors: [
+        ...(extras?.errors ?? []),
+        ...(inventoryError === undefined ? [] : [inventoryError]),
+      ],
       ...(extras?.notice === undefined ? {} : { notice: extras.notice }),
     });
   };
@@ -350,9 +367,20 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       const params = z.object({ guildId: idSchema }).safeParse(request.params);
       if (!params.success || shared.guild(params.data.guildId) === undefined)
         return reply.code(404).type('text/html').send('<h1>Not found</h1>');
-      const report = await shared.deps.gameServerDiagnostics.runLive(params.data.guildId);
-      const html = await buildGameServersPage(params.data.guildId, auth, { diagnostics: report });
-      return reply.type('text/html').send(html);
+      try {
+        const report = await shared.deps.gameServerDiagnostics.runLive(params.data.guildId);
+        const html = await buildGameServersPage(params.data.guildId, auth, { diagnostics: report });
+        return await reply.type('text/html').send(html);
+      } catch (error: unknown) {
+        const html = await buildGameServersPage(params.data.guildId, auth, {
+          errors: [
+            error instanceof PublicError
+              ? error.publicMessage
+              : 'Diagnostics are unavailable. Retry shortly.',
+          ],
+        });
+        return reply.code(400).type('text/html').send(html);
+      }
     },
   );
 
@@ -395,7 +423,12 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
     guildId: string,
     serverId: string,
     auth: { discordUserId: string; csrf: string },
-    extras?: { errors?: string[]; notice?: string; fieldErrors?: Record<string, string[]> },
+    extras?: {
+      errors?: string[];
+      notice?: string;
+      fieldErrors?: Record<string, string[]>;
+      submitted?: Record<string, unknown>;
+    },
   ) => {
     const server = await shared.deps.prisma.gameServer.findFirst({
       where: { id: serverId, guildId },
@@ -421,6 +454,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         provider: server.provider,
         providerServerId: server.providerServerId,
         version: server.version,
+        cardProfile: server.cardProfile,
       },
       snapshot:
         server.snapshot === null
@@ -461,6 +495,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       ...(extras?.errors === undefined ? {} : { errors: extras.errors }),
       ...(extras?.notice === undefined ? {} : { notice: extras.notice }),
       ...(extras?.fieldErrors === undefined ? {} : { fieldErrors: extras.fieldErrors }),
+      ...(extras?.submitted === undefined ? {} : { submitted: extras.submitted }),
     });
   };
 
@@ -489,9 +524,31 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       if (!params.success || shared.guild(params.data.guildId) === undefined)
         return reply.code(404).type('text/html').send('<h1>Not found</h1>');
       const body = serverEditSchema.safeParse(request.body);
+      const submitted =
+        typeof request.body === 'object' && request.body !== null && !Array.isArray(request.body)
+          ? (request.body as Record<string, unknown>)
+          : {};
       if (!body.success) {
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
           errors: ['Review the fields and try again.'],
+          fieldErrors: z.flattenError(body.error).fieldErrors,
+          submitted,
+        });
+        return reply.code(400).type('text/html').send(html);
+      }
+      const profile = cardProfileSchema.safeParse({
+        accentColor: body.data.accentColor,
+        thumbnailImageUrl: body.data.thumbnailImageUrl || null,
+        onlineEmojiId: body.data.onlineEmojiId || null,
+        offlineEmojiId: body.data.offlineEmojiId || null,
+        warningEmojiId: body.data.warningEmojiId || null,
+        pendingEmojiId: body.data.pendingEmojiId || null,
+      });
+      if (!profile.success) {
+        const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
+          errors: ['Review the Card Profile fields and try again.'],
+          fieldErrors: z.flattenError(profile.error).fieldErrors,
+          submitted,
         });
         return reply.code(400).type('text/html').send(html);
       }
@@ -510,14 +567,19 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           joinUrl: body.data.joinUrl,
           imageUrl: body.data.imageUrl,
           sortOrder: body.data.sortOrder,
+          cardProfile: profile.data,
         });
       } catch (error: unknown) {
         const message =
           error instanceof PublicError ? error.publicMessage : 'Could not update server.';
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
           errors: [message],
+          submitted,
         });
-        return reply.code(400).type('text/html').send(html);
+        return reply
+          .code(error instanceof PublicError && error.code === 'STALE_CONFIGURATION' ? 409 : 400)
+          .type('text/html')
+          .send(html);
       }
       return reply.redirect(`/admin/guilds/${params.data.guildId}/game-servers`, 303);
     },

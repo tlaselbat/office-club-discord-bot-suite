@@ -19,6 +19,7 @@ export {
   type ShellOptions,
 } from './views/components.js';
 export { panelCss } from './views/styles.js';
+export { panelScript } from './views/client.js';
 export { guildIndex, type GuildSummary } from './views/pages/guild-index.js';
 export { generalPage, type GeneralPageModel } from './views/pages/general.js';
 export { competitivePage, type CompetitivePageModel } from './views/pages/competitive.js';

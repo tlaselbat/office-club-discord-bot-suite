@@ -221,7 +221,7 @@ export function createSharedHelpers(deps: AdminRoutesDependencies): SharedHelper
         releaseVariant: 'production-ready',
         operational:
           gameServerSettings === null
-            ? 'Unconfigured'
+            ? 'Enabled (default)'
             : gameServerSettings.enabled
               ? gameServers.some(serverNeedsAttention)
                 ? 'Needs attention'
@@ -229,14 +229,14 @@ export function createSharedHelpers(deps: AdminRoutesDependencies): SharedHelper
               : 'Disabled',
         operationalVariant:
           gameServerSettings === null
-            ? 'unconfigured'
+            ? 'enabled'
             : gameServerSettings.enabled
               ? gameServers.some(serverNeedsAttention)
                 ? 'needs-attention'
                 : 'enabled'
               : 'disabled',
         configured: gameServerSettings !== null,
-        enabled: gameServerSettings?.enabled ?? false,
+        enabled: gameServerSettings?.enabled ?? true,
         version: gameServerSettings?.version ?? null,
       },
       competitive: {
