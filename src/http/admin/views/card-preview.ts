@@ -138,6 +138,12 @@ const updateCardPreview = () => {
             output.append(gallery);
           }
         });
+        const rendered=Array.from(output.children).slice(updateStart);
+        rendered.forEach((item,index)=>{
+          if(item.dataset.discordComponent!=='Separator')return;
+          const before=rendered[index-1],after=rendered[index+1];
+          if(!before||!after||before.dataset.discordComponent==='Separator'||after.dataset.discordComponent==='Separator')item.remove();
+        });
       }else if(entries.length){
         addHeading();
         entries.forEach((entry,index)=>{
