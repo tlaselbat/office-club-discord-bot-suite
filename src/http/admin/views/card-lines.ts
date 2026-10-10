@@ -32,6 +32,7 @@ let removed = null;
 let initial = '';
 let initialLayout = null;
 let invalidLayout = false;
+let overComponentBudget = false;
 let submitted = Boolean(cardForm?.querySelector('[data-submitted-edits]'));
 const selectionKey = 'office-card-element:' + window.location.pathname;
 const escapeText = (value) => { const element = document.createElement('span');element.textContent=String(value);return element.innerHTML; };
@@ -43,10 +44,30 @@ const serializeElement = (node) => {
   } else if(base.type === 'gallery') base.items=Array.from(node._content.querySelectorAll('[data-gallery-item]')).map((item)=>({id:item.dataset.itemId,source:item.querySelector('[data-layout-field="source"]').value,url:item.querySelector('[data-layout-field="url"]').value||null,description:item.querySelector('[data-layout-field="description"]').value}));
   else if(base.type === 'separator') Object.assign(base,{divider:read(node,'divider').checked,spacing:Number(read(node,'spacing').value)});
   else if(base.type === 'updates') { const field=(name)=>read(node,name); Object.assign(base,{showHeading:field('updatesShowHeading').checked,title:field('updatesTitle').value,headingStyle:field('headingStyle').value,feedOrder:feedRows(node).map((row)=>row.dataset.feedOrderItem),separator:{enabled:field('updatesSeparatorEnabled').checked,divider:field('updatesSeparatorDivider').checked,spacing:Number(field('updatesSeparatorSpacing').value)},emptyBehavior:field('emptyBehavior').value,announcements:{visible:field('announcementsVisible').checked,displayLabel:field('announcementsLabel').value,textStyle:field('announcementsStyle').value,emptyPlaceholder:field('announcementsEmpty').value,showTimestamp:field('announcementsTimestamp').checked,showOpenButton:field('announcementsOpen').checked,openButtonLabel:field('announcementsButton').value,latestMessageLength:Number(field('announcementsLength').value)},changelog:{visible:field('changelogVisible').checked,displayLabel:field('changelogLabel').value,textStyle:field('changelogStyle').value,emptyPlaceholder:field('changelogEmpty').value,showTimestamp:field('changelogTimestamp').checked,showOpenButton:field('changelogOpen').checked,openButtonLabel:field('changelogButton').value,latestMessageLength:Number(field('changelogLength').value)}}); }
-  if(base.type==='updates')base.blocks=updateBlockRows(node).map(serializeUpdateBlock);
+  if(base.type==='updates'){
+    base.blocks=updateBlockRows(node).map(serializeUpdateBlock);
+    base.feedOrder=[...new Set([...base.blocks.filter((block)=>block.type==='feed').map((block)=>block.feed),'ANNOUNCEMENTS','CHANGELOG'])].slice(0,2);
+  }
   return base;
 };
-const saveLayout = () => { if(layoutJson && !invalidLayout) layoutJson.value=JSON.stringify({version:2,elements:layoutNodes().map(serializeElement)}); };
+const saveLayout = () => {
+  if(!layoutJson||invalidLayout)return;
+  const elements=layoutNodes().map(serializeElement);
+  let count=1;
+  elements.forEach((element)=>{
+    if(!element.visible)return;
+    if(element.type==='section'||element.type==='actions'){count+=3;return;}
+    if(element.type!=='updates'){count++;return;}
+    (element.blocks||[]).forEach((block)=>{
+      if(!block.visible)return;
+      if(block.type==='heading'){if(element.showHeading)count++;return;}
+      if(block.type==='feed'){const config=block.feed==='ANNOUNCEMENTS'?element.announcements:element.changelog;if(config.visible)count+=config.showOpenButton?4:2;return;}
+      count++;
+    });
+  });
+  overComponentBudget=count>40;
+  layoutJson.value=JSON.stringify({version:2,elements});
+};
 const announce = (text) => { const status=document.getElementById('card-layout-status');if(status) status.textContent=text; };
 const refreshRows = () => {
   layoutNodes().forEach((node,index,nodes)=>{
@@ -115,8 +136,8 @@ const updateDirtyState = () => {
   saveLayout();
   const dirty=submitted||new URLSearchParams(new FormData(cardForm)).toString()!==initial;
   cardForm.dataset.dirty=String(dirty);
-  if(dirtyStatus)dirtyStatus.textContent=dirty?'Unsaved changes. Save changes to apply them.':'All changes saved.';
-  const save=cardForm.querySelector('button[type="submit"]');if(save&&cardForm.dataset.saving!=='true')save.disabled=!dirty||invalidLayout;
+  if(dirtyStatus)dirtyStatus.textContent=overComponentBudget?'Discord allows at most 40 nested components. Hide or remove elements to save.':dirty?'Unsaved changes. Save changes to apply them.':'All changes saved.';
+  const save=cardForm.querySelector('button[type="submit"]');if(save&&cardForm.dataset.saving!=='true')save.disabled=!dirty||invalidLayout||overComponentBudget;
   const discard=cardForm.querySelector('[data-discard-server-changes]');if(discard)discard.disabled=!dirty;
   refreshRows();updateCardPreview();
 };
@@ -199,9 +220,11 @@ const renderUpdateBlock = (node,block) => {
   if(block.type==='heading')config.innerHTML='<p class="hint">Edit the heading text and style in Heading settings below. Drag its position using ↑ and ↓.</p>';
   if(block.type==='feed')config.innerHTML='<p class="hint">Edit the label, Open button and excerpt in '+name+' settings below.</p>';
   if(block.type==='text'){
-    config.innerHTML='<label>Text content<textarea data-block-field="template" maxlength="500" rows="3"></textarea></label>'+
+    config.innerHTML='<div class="description-toolbar" role="group" aria-label="Updates text formatting">'+[['Bold','**'],['Italic','*'],['Underline','__'],['Strikethrough','~~'],['Inline code',String.fromCharCode(96)]].map(([label,marker])=>'<button type="button" class="secondary" data-update-markdown="'+escapeText(marker)+'">'+label+'</button>').join('')+'</div>'+
+      '<label>Text content<textarea data-block-field="template" maxlength="500" rows="3"></textarea></label>'+
       '<label>Text style<select data-block-field="style"><option value="large">Large heading</option><option value="medium">Medium heading</option><option value="small">Small heading</option><option value="normal">Normal text</option><option value="subtext">Subtext</option></select></label>'+
-      '<p class="hint">Discord Markdown and the same {placeholders} used elsewhere on the card are supported.</p>';
+      '<label>Insert placeholder<select data-update-placeholder>'+placeholders.map(([name,description])=>'<option value="{'+name+'}">{'+name+'} — '+escapeText(description)+'</option>').join('')+'</select></label>'+
+      '<button type="button" class="secondary" data-update-insert>Insert placeholder</button>';
     config.querySelector('[data-block-field="template"]').value=block.template||'';
     config.querySelector('[data-block-field="style"]').value=block.style||'normal';
   }
@@ -286,6 +309,13 @@ cardForm?.addEventListener('click',(event)=>{
   else if(button.dataset.updateMove&&node){const block=button.closest('[data-update-block]');if(!block)return;const sibling=button.dataset.updateMove==='up'?block.previousElementSibling:block.nextElementSibling;if(sibling){if(button.dataset.updateMove==='up')block.parentElement.insertBefore(block,sibling);else block.parentElement.insertBefore(sibling,block);announce('Updates element moved.');}button.focus();}
   else if(button.hasAttribute('data-update-remove')&&node){button.closest('[data-update-block]')?.remove();announce('Updates element removed.');}
   else if(button.hasAttribute('data-update-duplicate')&&node){if(updateBlockRows(node).length>=25)return;const block=button.closest('[data-update-block]');if(!block||!['text','separator','gallery'].includes(block.dataset.updateBlock))return;const clone=serializeUpdateBlock(block);clone.id=crypto.randomUUID();if(clone.items)clone.items=clone.items.map((item)=>({...item,id:crypto.randomUUID()}));const added=renderUpdateBlock(node,clone);block.after(added);announce('Updates element duplicated.');}
+  else if((button.hasAttribute('data-update-insert')||button.dataset.updateMarkdown)&&node){
+    const block=button.closest('[data-update-block]');const control=block?.querySelector('[data-block-field="template"]');if(!control)return;
+    const start=control.selectionStart,end=control.selectionEnd,marker=button.dataset.updateMarkdown;
+    const insertion=marker?marker+(control.value.slice(start,end)||'text')+marker:block.querySelector('[data-update-placeholder]').value;
+    if(control.value.length-(end-start)+insertion.length>500){announce('Text would exceed 500 characters.');return;}
+    control.setRangeText(insertion,start,end,'end');control.focus();
+  }
   else if(button.hasAttribute('data-update-gallery-add')&&node){const block=button.closest('[data-update-block]');const holder=block?.querySelector('[data-gallery-items]');if(holder&&holder.children.length<10)addGalleryItem(node,makeUpdateBlock('gallery').items[0],holder);}
   else if(button.hasAttribute('data-select-layout')){selectElement(node.dataset.layoutId);if(window.innerWidth<=760)layoutProperties.scrollIntoView({block:'start'});return;}
   if(button.dataset.addLayout){const type=button.dataset.addLayout;if(layoutNodes().length>=35||invalidLayout||(type==='actions'&&layoutNodes().some((n)=>n.dataset.layoutElement==='actions')))return;const menu=button.closest('.layout-add-menu');if(menu)menu.open=false;const added=renderLayoutElement(newElement(type));selectElement(added.dataset.layoutId,true);announce('Element added.');}
@@ -320,7 +350,7 @@ cardForm?.addEventListener('invalid',(event)=>{
 cardForm?.addEventListener('input',updateDirtyState);
 cardForm?.addEventListener('change',(event)=>{if(event.target?.id==='card-preview-mode'){updateCardPreview();return;}updateDirtyState();});
 window.addEventListener('beforeunload',(event)=>{if(cardForm?.dataset.dirty!=='true'||cardForm?.dataset.saving==='true')return;event.preventDefault();event.returnValue='';});
-cardForm?.addEventListener('submit',(event)=>{if(invalidLayout){event.preventDefault();announce('Invalid layout data. Discard the malformed draft before saving.');return;}saveLayout();cardForm.dataset.saving='true';const save=cardForm.querySelector('button[type="submit"]');save.disabled=true;save.textContent='Saving…';if(dirtyStatus)dirtyStatus.textContent='Saving changes…';});
+cardForm?.addEventListener('submit',(event)=>{if(invalidLayout){event.preventDefault();announce('Invalid layout data. Discard the malformed draft before saving.');return;}saveLayout();if(overComponentBudget){event.preventDefault();announce('Too many Discord components. Hide or remove elements before saving.');return;}cardForm.dataset.saving='true';const save=cardForm.querySelector('button[type="submit"]');save.disabled=true;save.textContent='Saving…';if(dirtyStatus)dirtyStatus.textContent='Saving changes…';});
 const sectionLinks=Array.from(document.querySelectorAll('.game-server-section-nav a'));
 const updateActiveSection=()=>sectionLinks.forEach((link)=>{if(link.hash===(window.location.hash||'#server-settings'))link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');});
 window.addEventListener('hashchange',updateActiveSection);updateActiveSection();
