@@ -323,34 +323,37 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
     rawSavedLayout !== undefined && !cardLayoutSchema.safeParse(rawSavedLayout).success;
   const legacyConnectId = stableLayoutId('legacy-button:connect');
   const legacyMapRulesId = stableLayoutId('legacy-button:map-rules');
-  const layoutButtons = profile.layout?.buttons ?? [
-    ...(profile.buttons.connect
-      ? [
-          {
-            id: legacyConnectId,
-            label: profile.buttons.connectLabel,
-            emoji: '▶',
-            style: 'primary' as const,
-            action: 'connect' as const,
-            destination: null,
-            visible: true,
-          },
-        ]
-      : []),
-    ...(profile.buttons.mapRules
-      ? [
-          {
-            id: legacyMapRulesId,
-            label: profile.buttons.mapRulesLabel,
-            emoji: '🗺',
-            style: 'secondary' as const,
-            action: 'map-rules' as const,
-            destination: null,
-            visible: true,
-          },
-        ]
-      : []),
-  ];
+  const layoutButtons =
+    profile.layout?.version === 3
+      ? profile.layout.buttons
+      : [
+          ...(profile.buttons.connect
+            ? [
+                {
+                  id: legacyConnectId,
+                  label: profile.buttons.connectLabel,
+                  emoji: '▶',
+                  style: 'primary' as const,
+                  action: 'connect' as const,
+                  destination: null,
+                  visible: true,
+                },
+              ]
+            : []),
+          ...(profile.buttons.mapRules
+            ? [
+                {
+                  id: legacyMapRulesId,
+                  label: profile.buttons.mapRulesLabel,
+                  emoji: '🗺',
+                  style: 'secondary' as const,
+                  action: 'map-rules' as const,
+                  destination: null,
+                  visible: true,
+                },
+              ]
+            : []),
+        ];
   const defaultLayoutButtons = [
     {
       id: legacyConnectId,

@@ -25,7 +25,9 @@ import {
   resolveCardLines,
   resolveCardLayout,
   resolveCardProfile,
+  type CardLayoutElement,
 } from '../../../../src/modules/game-servers/card-profile.js';
+import { parseGameServerCustomId } from '../../../../src/modules/game-servers/custom-id.js';
 
 const baseSnapshot = {
   hostingState: 'RUNNING',
@@ -521,8 +523,8 @@ describe('Game Server rendering', () => {
       items: [{ media: { url: 'https://example.com/release.png' }, description: 'Release art' }],
     });
     expect((parts[4] as { content: string }).content).toContain('Latest Updates');
-    expect(parts[0]?.components).toHaveLength(1);
-    expect(parts[5]?.components).toHaveLength(1);
+    expect(parts[0]?.components).toHaveLength(2);
+    expect(parts[5]?.components).toHaveLength(2);
     expect((parts[0]?.accessory as { url: string }).url).toContain('/100000000000000011');
     expect((parts[5]?.accessory as { url: string }).url).toContain('/100000000000000010');
   });
@@ -530,7 +532,7 @@ describe('Game Server rendering', () => {
   it('renders an optional native separator only between two rendered feeds', () => {
     const baseLayout = resolveCardLayout({});
     const layout = [
-      ...baseLayout.slice(0, -2),
+      ...baseLayout.slice(0, -3),
       {
         ...feedTextRow('ANNOUNCEMENTS', '00000000-0000-4000-8000-000000000411'),
         emptyBehavior: 'hide',
@@ -1499,5 +1501,102 @@ describe('generic card line rendering', () => {
     expect(contents.every((content) => content.trim().length > 0)).toBe(true);
     expect(componentCount(container)).toBeLessThanOrEqual(40);
     expect(contents.join('')).toContain('update');
+  });
+  it('rejects rendered Containers with more than ten direct children before publication', () => {
+    const text = resolveCardLayout({}).find((element) => element.type === 'text');
+    if (!text) throw new Error('Expected text layout fixture');
+    const elements: CardLayoutElement[] = Array.from({ length: 11 }, (_, index) => ({
+      ...text,
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      label: `Line ${String(index + 1)}`,
+      template: `Line ${String(index + 1)}`,
+    }));
+    expect(() =>
+      renderGameServerCard(
+        { ...server, cardProfile: { layout: { version: 3, elements: elements.slice(0, 10) } } },
+        secret,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      renderGameServerCard(
+        { ...server, cardProfile: { layout: { version: 3, elements } } },
+        secret,
+      ),
+    ).toThrow('10 direct Container child limit');
+  });
+  it('renders legacy v2 Updates and signed actions without changing their appearance or behavior', () => {
+    const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000555');
+    if (updates.type !== 'updates') throw new Error('Expected Updates fixture');
+    const legacyUpdates = {
+      ...updates,
+      title: '**Latest Updates**',
+      showHeading: true,
+      announcements: {
+        ...updates.announcements,
+        displayLabel: '📢 **Announcements**',
+        timestampMode: 'discord_native' as const,
+        showNew: true,
+        showTimestamp: true,
+        showOpenButton: true,
+      },
+      changelog: {
+        ...updates.changelog,
+        displayLabel: '🛠 **Changelog**',
+        timestampMode: 'discord_native' as const,
+        showNew: true,
+        showTimestamp: true,
+        showOpenButton: true,
+      },
+    };
+    const legacyLayout = resolveCardLayout({});
+    const actions = legacyLayout.find((element) => element.type === 'actions');
+    if (!actions) throw new Error('Expected legacy action row');
+    const view = {
+      ...server,
+      cardProfile: {
+        buttons: { connect: true, mapRules: true, connectLabel: 'Join', mapRulesLabel: 'Rules' },
+        layout: { version: 2 as const, elements: [actions, legacyUpdates] },
+      },
+      updateThreads: [
+        {
+          type: 'ANNOUNCEMENTS' as const,
+          threadId: '123456789012345670',
+          latestMessageText: 'Announcement excerpt',
+          latestMessageAt: new Date('2026-10-10T00:00:00Z'),
+          notificationExpiresAt: new Date(Date.now() + 60_000),
+        },
+        {
+          type: 'CHANGELOG' as const,
+          threadId: '123456789012345671',
+          latestMessageText: 'Changelog excerpt',
+          latestMessageAt: new Date('2026-10-09T00:00:00Z'),
+          notificationExpiresAt: new Date(Date.now() + 60_000),
+        },
+      ],
+    };
+    const components = containerComponents(firstContainer(renderGameServerCard(view, secret)));
+    const actionRow = components[0] as { components: Array<{ customId: string; label: string }> };
+    expect(actionRow.components.map((button) => button.label)).toEqual(['Join', 'Rules']);
+    expect(
+      actionRow.components.map((button) => parseGameServerCustomId(button.customId, secret)),
+    ).toEqual([
+      { action: 'connect', value: server.id },
+      { action: 'map-rules', value: server.id },
+    ]);
+    expect(components[1]).toMatchObject({
+      type: ComponentType.TextDisplay,
+      content: '**Latest Updates**',
+    });
+    const announcement = components.find(
+      (component) =>
+        component.type === ComponentType.Section &&
+        (component.components as Array<{ content: string }>)[0]?.content.includes('Announcements'),
+    ) as { components: Array<{ content: string }>; accessory: { url: string; label: string } };
+    expect(announcement.components[0]?.content).toContain('📢 **Announcements** 🆕');
+    expect(announcement.components[1]?.content).toContain('<t:1791590400:R>');
+    expect(announcement.accessory).toMatchObject({
+      label: 'Open',
+      url: 'https://discord.com/channels/123456789012345678/123456789012345670',
+    });
   });
 });

@@ -813,6 +813,59 @@ export function normalizeCardProfile(value: unknown): CardProfile {
       ? {}
       : (() => {
           const raw = source.layout as { version?: unknown; elements?: unknown; buttons?: unknown };
+          if ((raw.version === 1 || raw.version === 2) && Array.isArray(raw.elements)) {
+            const defaults = defaultUpdatesElement(stableLayoutId('community-updates'));
+            const elements = raw.elements.map((value: unknown) => {
+              if (
+                value === null ||
+                typeof value !== 'object' ||
+                Array.isArray(value) ||
+                (value as Record<string, unknown>).type !== 'updates' ||
+                defaults.type !== 'updates'
+              )
+                return value;
+              const element = value as Record<string, unknown>;
+              const legacyFeed = (
+                key: 'announcements' | 'changelog',
+                fallback: (typeof defaults)['announcements'],
+              ) => {
+                const saved =
+                  typeof element[key] === 'object' && element[key] !== null
+                    ? (element[key] as Record<string, unknown>)
+                    : {};
+                return {
+                  ...fallback,
+                  ...saved,
+                  displayLabel:
+                    typeof saved.displayLabel === 'string'
+                      ? saved.displayLabel
+                      : key === 'announcements'
+                        ? '📢 **Announcements**'
+                        : '🛠 **Changelog**',
+                  timestampMode: 'discord_native',
+                  showNew: true,
+                };
+              };
+              return {
+                ...defaults,
+                ...element,
+                title: typeof element.title === 'string' ? element.title : '**Latest Updates**',
+                showHeading: typeof element.showHeading === 'boolean' ? element.showHeading : true,
+                emptyBehavior:
+                  element.emptyBehavior === 'hide_empty_entries'
+                    ? 'hide_empty_entries'
+                    : 'show_placeholders',
+                announcements: legacyFeed('announcements', defaults.announcements),
+                changelog: legacyFeed('changelog', defaults.changelog),
+              };
+            });
+            const parsed = cardLayoutSchema.safeParse({
+              version: raw.version,
+              buttons: Array.isArray(raw.buttons) ? raw.buttons : [],
+              elements,
+            });
+            return parsed.success ? { layout: parsed.data } : {};
+          }
           const migrated =
             (raw.version === 1 || raw.version === 2 || raw.version === CARD_LAYOUT_VERSION) &&
             Array.isArray(raw.elements)

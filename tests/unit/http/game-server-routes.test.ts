@@ -205,13 +205,19 @@ describe('Game Server configuration routes', () => {
     });
     expect(response.statusCode).toBe(303);
     const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
+    expect(command.cardProfile.layout?.version).toBe(2);
     expect(command.cardProfile.layout?.elements.map((element) => element.type)).toEqual(
-      elements.map((element) => (element.type === 'actions' ? 'button_row' : element.type)),
+      elements.map((element) => element.type),
     );
     expect(command.cardProfile.layout?.elements.map((element) => element.id)).toEqual(
       elements.map((element) => element.id),
     );
-    expect(command.cardProfile.layout?.buttons.length).toBeGreaterThanOrEqual(2);
+    expect(command.cardProfile.buttons).toMatchObject({
+      connect: true,
+      mapRules: true,
+      connectLabel: 'Connect',
+      mapRulesLabel: 'Map & Rules',
+    });
   });
   it('accepts restored default legacy buttons on the first edit submission', async () => {
     const { app, url, payload, updateServer } = fixture();
@@ -292,17 +298,21 @@ describe('Game Server configuration routes', () => {
     });
     expect(result.statusCode).toBe(303);
     const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
-    expect(command.cardProfile.layout?.version).toBe(3);
-    const savedRows = command.cardProfile.layout?.elements.filter(
-      (element) => element.type === 'text' && element.template.includes('preview'),
-    );
-    expect(savedRows).toHaveLength(2);
-    expect(savedRows?.map((row) => row.id)).toEqual([
-      '00000000-0000-4000-8000-000000000105',
-      '00000000-0000-4000-8000-000000000106',
-    ]);
+    expect(command.cardProfile.layout?.version).toBe(2);
     expect(
-      command.cardProfile.layout?.elements.find((element) => element.id === blocks[0]?.id),
+      command.cardProfile.layout?.elements.find((element) => element.type === 'updates'),
+    ).toMatchObject({
+      type: 'updates',
+      blocks,
+    });
+    const savedUpdates = command.cardProfile.layout?.elements.find(
+      (element) => element.type === 'updates',
+    );
+    expect(savedUpdates?.type).toBe('updates');
+    expect(
+      savedUpdates?.type === 'updates'
+        ? savedUpdates.blocks?.find((block) => block.id === blocks[0]?.id)
+        : undefined,
     ).toMatchObject({
       type: 'text',
       template: 'Patch notes for {servername}',

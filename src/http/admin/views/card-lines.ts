@@ -142,7 +142,7 @@ const renderButtonDefinition = (button) => {
   row.querySelector('[data-button-field="label"]').value=row.dataset.initialDisplayLabel;
   for(const key of ['style','action','destination']){const control=row.querySelector('[data-button-field="'+key+'"]');if(control)control.value=button[key]??'';}
   row.querySelector('[data-button-field="visible"]').checked=button.visible!==false;
-  const action=row.querySelector('[data-button-field="action"]');const style=row.querySelector('[data-button-field="style"]');const linkStyle=style.querySelector('option[value="link"]');const sync=(enforceStyle=false)=>{const isLink=action.value.includes('thread')||action.value==='external-https-url';const external=action.value==='external-https-url';row.querySelector('[data-button-destination]').hidden=!external;row.querySelector('[data-button-field="destination"]').required=external;row.querySelector('[data-button-style-setting]').hidden=isLink;linkStyle.disabled=!isLink;if(enforceStyle){if(isLink)style.value='link';else if(style.value==='link')style.value='secondary';}const incompatible=isLink?style.value!=='link':style.value==='link';const help=action.value==='connect'?'Connect runs the server’s configured connection action.':action.value==='map-rules'?'Map & Rules opens the server’s map and rules action.':action.value==='copy-address'?'Copy Address copies the server address for the user.':action.value==='announcements-thread'?'Opens the configured announcements thread when available.':action.value==='changelog-thread'?'Opens the configured changelog thread when available.':'Link buttons open a public HTTPS destination.';row.querySelector('[data-button-action-help]').textContent=help+(incompatible?' Saved style/action combination is incompatible; choosing this action again will set the compatible style.':'');};
+  const action=row.querySelector('[data-button-field="action"]');const style=row.querySelector('[data-button-field="style"]');const linkStyle=style.querySelector('option[value="link"]');const sync=(enforceStyle=false)=>{const isLink=action.value.includes('thread')||action.value==='external-https-url';const external=action.value==='external-https-url';row.querySelector('[data-button-destination]').hidden=!external;row.querySelector('[data-button-field="destination"]').required=external;row.querySelector('[data-button-style-setting]').hidden=isLink;linkStyle.disabled=!isLink;if(enforceStyle){if(isLink)style.value='link';else if(style.value==='link')style.value='secondary';}const incompatible=isLink?style.value!=='link':style.value==='link';const help=action.value==='connect'?'Connect runs the server’s configured connection action.':action.value==='map-rules'?'Map & Rules opens the server’s map and rules action.':action.value==='copy-address'?'Copy Address replies privately with the server address for the user to copy.':action.value==='announcements-thread'?'Opens the configured announcements thread when available.':action.value==='changelog-thread'?'Opens the configured changelog thread when available.':'Link buttons open a public HTTPS destination.';row.querySelector('[data-button-action-help]').textContent=help+(incompatible?' Saved style/action combination is incompatible; choosing this action again will set the compatible style.':'');};
   action.addEventListener('change',()=>sync(true));sync();buttonLibrary.append(row);return row;
 };
 const readButtonDefinitions=()=>Array.from(buttonLibrary?.querySelectorAll('[data-button-definition]')??[]).map((row)=>{const displayedLabel=row.querySelector('[data-button-field="label"]').value;const unchanged=displayedLabel===row.dataset.initialDisplayLabel;return {id:row.dataset.buttonDefinition,label:unchanged?row.dataset.savedLabel:displayedLabel,emoji:unchanged?(row.dataset.savedEmoji||null):null,style:row.querySelector('[data-button-field="style"]').value,action:row.querySelector('[data-button-field="action"]').value,destination:row.querySelector('[data-button-field="destination"]').value||null,visible:row.querySelector('[data-button-field="visible"]').checked};});
@@ -256,7 +256,18 @@ const saveLayout = () => {
       count++;
     });
   });
-  overComponentBudget=count>40;
+  let previewThreads=[];try{previewThreads=JSON.parse(document.getElementById('card-template-preview')?.dataset.updateThreads||'[]')}catch{}
+  const directChildren=elements.reduce((total,element)=>{
+    if(!element.visible)return total;
+    if(element.type==='updates')return total+(element.blocks||[]).reduce((sum,block)=>{
+      if(!block.visible)return sum;
+      if(block.type==='heading')return sum+(element.showHeading?1:0);
+      if(block.type==='feed'){const settings=block.feed==='ANNOUNCEMENTS'?element.announcements:element.changelog;const thread=previewThreads.find((item)=>item.type===block.feed);if(!settings.visible||(element.emptyBehavior==='hide_empty_entries'&&!thread?.latestMessageText?.trim()))return sum;const hasOpenSection=settings.showOpenButton&&/^\d{17,20}$/.test(thread?.threadId||'')&&/^\d{17,20}$/.test(document.getElementById('card-template-preview')?.dataset.guildId||'');return sum+(hasOpenSection?1:2);}
+      return sum+1;
+    },0);
+    return total+1;
+  },0);
+  overComponentBudget=count>40||directChildren>10;
   layoutJson.value=JSON.stringify({version:3,buttons:readButtonDefinitions(),elements});
 };
 const announce = (text) => { const status=document.getElementById('card-layout-status');if(status) status.textContent=text; };
@@ -335,7 +346,7 @@ const updateDirtyState = () => {
   saveLayout();
   const dirty=submitted||serializeForm()!==initial;
   cardForm.dataset.dirty=String(dirty);
-  if(dirtyStatus)dirtyStatus.textContent=invalidLayout?(layoutJson?.dataset.savedLayoutInvalid==='true'&&!submitted?'Saved card layout is invalid. Restore defaults to recover; saving replaces the card layout.':'Submitted layout is invalid. Discard changes to reload saved configuration.'):overComponentBudget?'Discord allows at most 40 nested components. Hide or remove elements to save.':dirty?'Unsaved changes across the full configuration. Save changes to apply them.':'All changes saved.';
+  if(dirtyStatus)dirtyStatus.textContent=invalidLayout?(layoutJson?.dataset.savedLayoutInvalid==='true'&&!submitted?'Saved card layout is invalid. Restore defaults to recover; saving replaces the card layout.':'Submitted layout is invalid. Discard changes to reload saved configuration.'):(overComponentBudget?'Discord allows at most 40 nested components and 10 direct Container children. Hide or remove elements to save.':dirty?'Unsaved changes across the full configuration. Save changes to apply them.':'All changes saved.');
   const save=cardForm.querySelector('button[type="submit"]');if(save&&cardForm.dataset.saving!=='true')save.disabled=!dirty||invalidLayout||overComponentBudget||invalidButtonPlacement;
   const discard=cardForm.querySelector('[data-discard-server-changes]');if(discard)discard.disabled=!dirty;
   refreshRows();updateCardPreview();
@@ -601,6 +612,7 @@ const handlePreviewSelection=(event)=>{
   if(!target)return;
   const element=target.closest('[data-preview-element]');if(!element)return;
   event.preventDefault();event.stopPropagation();selectElement(element.dataset.previewElement);
+  const nestedId=element.dataset.previewNestedBlock;const nestedBlock=nestedId?layoutProperties?.querySelector('[data-update-block-id="'+CSS.escape(nestedId)+'"]'):null;if(nestedBlock){nestedBlock.scrollIntoView({block:'nearest'});const nestedControl=nestedBlock.querySelector('[data-block-field="template"],[data-gallery-items] [data-layout-field="description"]');nestedControl?.focus();}
   const buttonId=target.dataset.previewButtonId;
   let focusedPanel=layoutProperties;
   if(buttonId){showPropertiesPanel('buttons');focusedPanel=buttonLibraryPanel;const field=buttonLibrary?.querySelector('[data-button-definition="'+CSS.escape(buttonId)+'"] [data-button-field="label"]');field?.focus();}

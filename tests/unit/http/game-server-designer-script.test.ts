@@ -79,5 +79,14 @@ describe('Game Servers designer browser script', () => {
       "node.setAttribute('aria-pressed',String(node.dataset.previewElement===selectedLayoutId))",
     );
     expect(cardPreviewScript).toContain('span.dataset.previewButtonId=button.id');
+    expect(cardPreviewScript).toContain('display.dataset.previewNestedBlock=block.id');
+    expect(cardPreviewScript).toContain('gallery.dataset.previewNestedBlock=block.id');
+    expect(cardLineScript).toContain('const nestedId=element.dataset.previewNestedBlock');
+    expect(cardLineScript).toContain('nestedBlock.scrollIntoView({block:');
+    expect(cardLineScript).toContain('directChildren>10');
+    expect(cardLineScript).toContain('10 direct Container children');
+    expect(cardLineScript).toContain(
+      'Copy Address replies privately with the server address for the user to copy.',
+    );
   });
 });

@@ -190,10 +190,10 @@ const updateCardPreview = () => {
           if(block.visible===false)return;
           if(block.type==='heading')addHeading();
           else if(block.type==='feed'){const entry=entries.find((row)=>row.type===block.feed);if(entry)addFeed(entry);}
-          else if(block.type==='text'){const text=resolveLineTemplate(block.template||'',updateValueMap({...block,conditionalVisibility:{source:'ANNOUNCEMENTS'}}));if(text.trim()){const display=document.createElement('div');display.dataset.previewElement=block.id;display.dataset.discordComponent='TextDisplay';appendText(display,styleLineText(text,block.style||'normal'));output.append(display);}}
+          else if(block.type==='text'){const text=resolveLineTemplate(block.template||'',updateValueMap({...block,conditionalVisibility:{source:'ANNOUNCEMENTS'}}));if(text.trim()){const display=document.createElement('div');display.dataset.previewElement=element.id;display.dataset.previewNestedBlock=block.id;display.dataset.discordComponent='TextDisplay';appendText(display,styleLineText(text,block.style||'normal'));output.append(display);}}
           else if(block.type==='separator')addSeparator(block.divider,block.spacing);
           else if(block.type==='gallery'){
-            const gallery=document.createElement('div');gallery.className='preview-media-gallery';gallery.dataset.previewElement=block.id;gallery.dataset.discordComponent='MediaGallery';
+            const gallery=document.createElement('div');gallery.className='preview-media-gallery';gallery.dataset.previewElement=element.id;gallery.dataset.previewNestedBlock=block.id;gallery.dataset.discordComponent='MediaGallery';
             (block.items||[]).forEach((item)=>{
               const url=item.source==='map'?mapImage:item.source==='fallback'?fallback:item.url||fallback;
               gallery.append(media(url,resolveLineTemplate(item.description||values.currentmap+' map artwork',values)));

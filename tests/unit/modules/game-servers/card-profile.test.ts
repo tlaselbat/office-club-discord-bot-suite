@@ -11,6 +11,7 @@ import {
   normalizeCardProfile,
   resolveCardLayout,
   resolveCardProfile,
+  type CardLayoutElement,
   validateCardTemplate,
 } from '../../../../src/modules/game-servers/card-profile.js';
 
@@ -177,18 +178,18 @@ describe('generic card line contract', () => {
     ).toBe(false);
   });
 
-  it('migrates legacy Updates visibility to independent text rows and preserves intentional removal', () => {
+  it('retains legacy layout versions and their element order until an explicit save', () => {
     const legacy = resolveCardLayout({});
     const legacyLayout = { version: 1, elements: legacy.slice(0, 8) };
     const migrated = normalizeCardProfile({
       layout: legacyLayout,
       visibleFields: { updates: false },
     });
-    expect(migrated.layout?.version).toBe(3);
-    expect(
-      migrated.layout?.elements.filter((element) => element.type === 'text').slice(-2),
-    ).toHaveLength(2);
-    expect(migrated.layout?.elements.slice(-2).every((element) => !element.visible)).toBe(true);
+    expect(migrated.layout?.version).toBe(1);
+    expect(migrated.layout?.elements).toHaveLength(8);
+    expect(migrated.layout?.elements.map((element) => element.id)).toEqual(
+      legacyLayout.elements.map((element) => element.id),
+    );
 
     const removed = cardProfileSchema.parse({
       layout: {
@@ -228,7 +229,7 @@ describe('generic card line contract', () => {
     ).toBe(false);
   });
 
-  it('converts version 2 feed settings into editable version 3 text rows', () => {
+  it('retains version 2 feed settings, labels, and native timestamp behavior', () => {
     const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000001');
     if (updates.type !== 'updates') throw new Error('Expected legacy Updates fixture');
     const customized = {
@@ -237,33 +238,94 @@ describe('generic card line contract', () => {
       title: 'Community News',
       feedOrder: ['CHANGELOG', 'ANNOUNCEMENTS'] as const,
       announcements: { ...updates.announcements, displayLabel: 'News', latestMessageLength: 500 },
-      changelog: { ...updates.changelog, showTimestamp: false, openButtonLabel: 'Read notes' },
+      changelog: {
+        ...updates.changelog,
+        displayLabel: undefined,
+        showTimestamp: false,
+        openButtonLabel: 'Read notes',
+      },
     };
     const normalized = normalizeCardProfile({ layout: { version: 2, elements: [customized] } });
-    expect(normalized.layout?.version).toBe(3);
-    expect(normalized.layout?.elements.map((element) => element.type)).toEqual([
-      'text',
-      'text',
-      'text',
-    ]);
+    expect(normalized.layout?.version).toBe(2);
     expect(normalized.layout?.elements[0]).toMatchObject({
-      label: 'Latest Updates',
-      template: 'Community News',
-    });
-    expect(normalized.layout?.elements[1]).toMatchObject({
-      label: 'Changelog',
-      template: expect.stringContaining('{changelog.preview}'),
-      previewLength: 240,
-      accessory: { destination: 'CHANGELOG', label: 'Read notes', enabled: true },
-    });
-    expect(normalized.layout?.elements[2]).toMatchObject({
-      label: 'News',
-      previewLength: 500,
-      accessory: { destination: 'ANNOUNCEMENTS', enabled: true },
+      type: 'updates',
+      id: updates.id,
+      title: 'Community News',
+      showHeading: true,
+      feedOrder: ['CHANGELOG', 'ANNOUNCEMENTS'],
+      announcements: {
+        displayLabel: 'News',
+        latestMessageLength: 500,
+        timestampMode: 'discord_native',
+      },
+      changelog: {
+        displayLabel: '🛠 **Changelog**',
+        showTimestamp: false,
+        timestampMode: 'discord_native',
+        openButtonLabel: 'Read notes',
+      },
     });
   });
 
-  it('migrates legacy action rows to stable button definitions without changing element order', () => {
+  it('restores pre-v3 defaults for incomplete legacy Updates profiles', () => {
+    const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000002');
+    if (updates.type !== 'updates') throw new Error('Expected Updates fixture');
+    const legacy = {
+      ...updates,
+      title: undefined,
+      showHeading: undefined,
+      announcements: {
+        ...updates.announcements,
+        displayLabel: undefined,
+        timestampMode: undefined,
+        showNew: undefined,
+      },
+      changelog: {
+        ...updates.changelog,
+        displayLabel: undefined,
+        timestampMode: undefined,
+        showNew: undefined,
+      },
+    };
+    const normalized = normalizeCardProfile({ layout: { version: 2, elements: [legacy] } });
+    expect(normalized.layout?.elements[0]).toMatchObject({
+      type: 'updates',
+      title: '**Latest Updates**',
+      showHeading: true,
+      announcements: {
+        displayLabel: '📢 **Announcements**',
+        timestampMode: 'discord_native',
+        showNew: true,
+      },
+      changelog: {
+        displayLabel: '🛠 **Changelog**',
+        timestampMode: 'discord_native',
+        showNew: true,
+      },
+    });
+  });
+
+  it('keeps max-size legacy layouts instead of falling back to default layout', () => {
+    const base = resolveCardLayout({}).find((element) => element.type === 'text');
+    const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000099');
+    if (!base || updates.type !== 'updates') throw new Error('Expected layout fixtures');
+    for (const updatePosition of [0, 17, 34]) {
+      const lines: CardLayoutElement[] = Array.from({ length: 34 }, (_, index) => ({
+        ...base,
+        id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        label: `Text ${String(index + 1)}`,
+        visible: index < 6,
+      }));
+      lines.splice(updatePosition, 0, updates);
+      const result = normalizeCardProfile({ layout: { version: 2, elements: lines } });
+      expect(result.layout?.version).toBe(2);
+      expect(result.layout?.elements).toHaveLength(35);
+      expect(result.layout?.elements[updatePosition]?.type).toBe('updates');
+      expect(result.layout?.elements[updatePosition]?.id).toBe(updates.id);
+    }
+  });
+
+  it('retains legacy action rows and keeps their signed button configuration', () => {
     const layout = {
       version: 2,
       elements: [
@@ -301,11 +363,14 @@ describe('generic card line contract', () => {
     expect(first?.elements.map((element) => element.id)).toEqual(
       layout.elements.map((element) => element.id),
     );
-    expect(first?.elements[1]).toMatchObject({
-      type: 'button_row',
-      buttonIds: [expect.any(String), expect.any(String)],
+    expect(first?.version).toBe(2);
+    expect(first?.elements[1]).toMatchObject({ type: 'actions', visible: true });
+    expect(normalizeCardProfile(input).buttons).toMatchObject({
+      connect: true,
+      mapRules: true,
+      connectLabel: 'Join',
+      mapRulesLabel: 'Rules',
     });
-    expect(first?.buttons.map((button) => button.label)).toEqual(['Join', 'Rules']);
   });
 
   it('allows repeated button placements while rejecting dangling and overfull placements and unsafe links', () => {
@@ -547,6 +612,6 @@ describe('generic card line contract', () => {
     const compatible = normalizeCardProfile({
       layout: { version: 2, elements: [...textElements.slice(0, 29), updates] },
     });
-    expect(compatible.layout?.elements).toHaveLength(31);
+    expect(compatible.layout?.elements).toHaveLength(30);
   });
 });

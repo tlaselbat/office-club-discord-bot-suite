@@ -443,6 +443,8 @@ function validateRenderedLayout(container: Record<string, unknown>): void {
     (node.accessory === undefined ? 0 : count(node.accessory as Record<string, unknown>));
   if (count(container) > 40)
     throw new Error('Card layout exceeds Discord’s 40 component message limit.');
+  if (children.length > 10)
+    throw new Error('Card layout exceeds Discord’s 10 direct Container child limit.');
   for (const child of children) {
     if (child.type === componentType.section) {
       const content = child.components as Record<string, unknown>[];
