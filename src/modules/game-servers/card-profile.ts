@@ -148,6 +148,32 @@ const updatesFeedSchema = z.object({
   openButtonLabel: z.string().trim().min(1).max(80),
   latestMessageLength: z.number().int().min(40).max(1000),
 });
+/** Optional nested layout. Older profiles retain their exact feed-order rendering until edited. */
+const updateBlockSchema = z.discriminatedUnion('type', [
+  z.object({ id: z.uuid(), type: z.literal('heading'), visible: z.boolean() }),
+  z.object({
+    id: z.uuid(), type: z.literal('feed'), visible: z.boolean(),
+    feed: z.enum(['ANNOUNCEMENTS', 'CHANGELOG']),
+  }),
+  z.object({
+    id: z.uuid(), type: z.literal('text'), visible: z.boolean(),
+    template: validatedTemplate(), style: z.enum(CARD_LINE_STYLES),
+  }),
+  z.object({
+    id: z.uuid(), type: z.literal('separator'), visible: z.boolean(),
+    divider: z.boolean(), spacing: z.union([z.literal(1), z.literal(2)]),
+  }),
+  z.object({
+    id: z.uuid(), type: z.literal('gallery'), visible: z.boolean(),
+    items: z.array(z.object({
+      id: z.uuid(),
+      source: z.enum(['map', 'custom', 'fallback']),
+      url: httpsUrl.nullable().default(null),
+      description: z.string().max(1024),
+    })).min(1).max(10),
+  }),
+]);
+export type UpdateLayoutBlock = z.infer<typeof updateBlockSchema>;
 const updatesElementSchema = z
   .object({
     id: z.uuid(),
@@ -157,6 +183,7 @@ const updatesElementSchema = z
     showHeading: z.boolean().default(true),
     title: z.string().trim().max(80),
     headingStyle: z.enum(['normal', 'heading', 'subtext']),
+    blocks: z.array(updateBlockSchema).max(25).optional(),
     feedOrder: z
       .array(z.enum(['ANNOUNCEMENTS', 'CHANGELOG']))
       .length(2)
@@ -176,6 +203,18 @@ const updatesElementSchema = z
   .superRefine((updates, context) => {
     if (updates.showHeading && !updates.title)
       context.addIssue({ code: 'custom', path: ['title'], message: 'Enter a heading or hide it.' });
+    if (updates.blocks !== undefined) {
+      const ids = updates.blocks.map((block) => block.id);
+      if (new Set(ids).size !== ids.length)
+        context.addIssue({ code: 'custom', path: ['blocks'], message: 'Update block IDs must be unique.' });
+      for (const type of ['heading', 'ANNOUNCEMENTS', 'CHANGELOG'] as const) {
+        const matches = updates.blocks.filter((block) =>
+          type === 'heading' ? block.type === 'heading' : block.type === 'feed' && block.feed === type,
+        );
+        if (matches.length > 1)
+          context.addIssue({ code: 'custom', path: ['blocks'], message: 'Heading and feed blocks can appear only once.' });
+      }
+    }
   });
 const cardLayoutElementSchema = z.discriminatedUnion('type', [
   z.object({
@@ -252,6 +291,17 @@ export const cardLayoutSchema = z
         if (element.type === 'section') return total + 3;
         if (element.type === 'actions') return total + 3;
         if (element.type !== 'updates') return total + 1;
+        if (element.blocks !== undefined) {
+          return total + element.blocks.reduce((sum, block) => {
+            if (!block.visible) return sum;
+            if (block.type === 'heading') return sum + (element.showHeading ? 1 : 0);
+            if (block.type === 'feed') {
+              const feed = block.feed === 'ANNOUNCEMENTS' ? element.announcements : element.changelog;
+              return sum + (feed.visible ? (feed.showOpenButton ? 4 : 2) : 0);
+            }
+            return sum + 1;
+          }, 0);
+        }
         const visibleFeeds = [element.announcements, element.changelog].filter(
           (feed) => feed.visible,
         );
