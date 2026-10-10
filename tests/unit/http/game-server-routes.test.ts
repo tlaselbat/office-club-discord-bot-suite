@@ -159,7 +159,10 @@ describe('Game Server configuration routes', () => {
   });
   it('persists and hydrates a custom Community Updates nested layout', async () => {
     const { app, url, payload, updateServer, shared } = fixture();
-    const original = await shared.deps.prisma.gameServer.findFirst();
+    const original = (await shared.deps.prisma.gameServer.findFirst()) as {
+      cardProfile: unknown;
+      description: string | null;
+    };
     const layout = resolveCardLayout(original.cardProfile, original.description);
     const blocks = [
       {
