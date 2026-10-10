@@ -122,6 +122,7 @@ const updateCardPreview = () => {
         const line=document.createElement(divider?'hr':'div');line.className=(divider?'preview-separator':'preview-separator-space')+(spacing===2?' preview-separator-large':'');line.dataset.previewElement=element.id;line.dataset.discordComponent='Separator';output.append(line);
       };
       if(Array.isArray(element.blocks)){
+        const updateStart=output.children.length;
         element.blocks.forEach((block)=>{
           if(block.visible===false)return;
           if(block.type==='heading')addHeading();
