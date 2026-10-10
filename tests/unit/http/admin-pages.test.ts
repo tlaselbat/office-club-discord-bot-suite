@@ -248,8 +248,10 @@ describe('admin page views', () => {
     expect(html).toContain('panel.css?v=game-server-editor-17');
     expect(html).toContain('panel.js?v=game-server-editor-17');
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
-    expect(html).toContain('href="#card-designer">Card Designer</a>');
-    expect(html).toContain('href="#operations">Live &amp; publishing</a>');
+    expect(html).toContain('href="#card-designer">Card Design</a>');
+    expect(html).toContain('href="#server-settings">Server Settings</a>');
+    expect(html).toContain('href="#deployments">Publishing</a>');
+    expect(html).toContain('href="#diagnostics">Diagnostics</a>');
     expect(html).toContain('class="game-server-savebar"');
     expect(html).toContain('data-discard-server-changes');
     expect(html).toContain('id="card-layout-properties"');

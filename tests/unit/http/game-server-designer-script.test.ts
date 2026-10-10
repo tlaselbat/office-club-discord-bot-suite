@@ -62,4 +62,22 @@ describe('Game Servers designer browser script', () => {
     );
     expect(cardPreviewScript).toContain("const customEmoji=String(button.label||'').match");
   });
+
+  it('supports selectable preview blocks, relative insertion and draft undo/redo', () => {
+    expect(cardLineScript).toContain(
+      "previewRoot?.addEventListener('click',handlePreviewSelection)",
+    );
+    expect(cardLineScript).toContain("event.key!=='Enter'&&event.key!==' '");
+    expect(cardLineScript).toContain('const insertRelativeToSelection=(type,side)=>');
+    expect(cardLineScript).toContain('const historyLimit=50');
+    expect(cardLineScript).toContain('const updatePlaceholderSuggestions=(control)=>');
+    expect(cardLineScript).toContain("control.setAttribute('aria-autocomplete','list')");
+    expect(cardLineScript).toContain("list?.querySelector('[data-placeholder-choice]')?.focus()");
+    expect(cardLineScript).toContain('runHistory(undoHistory,redoHistory)');
+    expect(cardLineScript).toContain('runHistory(redoHistory,undoHistory)');
+    expect(cardPreviewScript).toContain(
+      "node.setAttribute('aria-pressed',String(node.dataset.previewElement===selectedLayoutId))",
+    );
+    expect(cardPreviewScript).toContain('span.dataset.previewButtonId=button.id');
+  });
 });

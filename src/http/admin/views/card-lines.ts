@@ -116,6 +116,8 @@ const buttonLibraryEmpty = document.querySelector('[data-button-library-empty]')
 const buttonLibraryCount = document.getElementById('card-button-count');
 const previewRoot = document.getElementById('card-template-preview');
 const cardForm = layoutEditors?.closest('form');
+const designerIntro=document.querySelector('#card-text-settings > .hint');
+if(designerIntro)designerIntro.textContent='Select an outline row or preview block to edit it. Use Insert above/below to add near the selection.';
 const dirtyStatus = document.getElementById('card-config-dirty-status');
 const appendInlineMarkdown = ${appendInlineMarkdown.toString()};
 const formControl = (name) => cardForm?.querySelector('[name="' + name + '"]');
@@ -172,6 +174,44 @@ let overComponentBudget = false;
 let invalidButtonPlacement = false;
 let submitted = Boolean(cardForm?.querySelector('[data-submitted-edits]'));
 const selectionKey = 'office-card-element:' + window.location.pathname;
+const historyLimit=50;
+const undoHistory=[];
+const redoHistory=[];
+let historySnapshot=null;
+let historyCoalesceKey='';
+let historyCoalesceAt=0;
+const staticHistoryFields=()=>Array.from(cardForm?.querySelectorAll('input[name],select[name],textarea[name]')||[]).filter((control)=>!control.closest('#card-layout-editors,#card-layout-properties,#card-button-library-panel')&&control.name!=='layoutJson');
+const captureHistorySnapshot=()=>{
+  const fields=staticHistoryFields().map((control)=>({name:control.name,type:control.type,value:control.value,checked:control instanceof HTMLInputElement?control.checked:null}));
+  return {fields,layout:layoutJson?.value??'',selectedLayoutId};
+};
+const sameSnapshot=(left,right)=>Boolean(left&&right&&left.layout===right.layout&&JSON.stringify(left.fields)===JSON.stringify(right.fields));
+const refreshHistoryButtons=()=>{
+  const undo=cardForm?.querySelector('[data-card-undo]');const redo=cardForm?.querySelector('[data-card-redo]');
+  if(undo)undo.disabled=!undoHistory.length;if(redo)redo.disabled=!redoHistory.length;
+};
+const addActionButton=(parent,label,attributes={})=>{const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=label;for(const [name,value]of Object.entries(attributes))button.setAttribute(name,value);parent.append(button);return button;};
+const contextToolbar=document.createElement('div');contextToolbar.className='card-layout-context-actions';contextToolbar.setAttribute('aria-label','Selected element actions');
+const insertTypeLabel=document.createElement('label');insertTypeLabel.textContent='Insert type';const insertType=document.createElement('select');insertType.id='card-insert-type';
+for(const [value,label]of [['text','Text'],['section','Text and thumbnail'],['gallery','Image gallery'],['separator','Separator'],['button_row','Button Row'],['updates','Community Updates']]){const option=document.createElement('option');option.value=value;option.textContent=label;insertType.append(option);}insertTypeLabel.append(insertType);contextToolbar.append(insertTypeLabel);
+addActionButton(contextToolbar,'Insert above',{'data-insert-relative':'above'});addActionButton(contextToolbar,'Insert below',{'data-insert-relative':'below'});addActionButton(contextToolbar,'Undo',{'data-card-undo':'','disabled':''});addActionButton(contextToolbar,'Redo',{'data-card-redo':'','disabled':''});
+layoutEditors?.before(contextToolbar);
+const previewHeading=document.querySelector('.game-server-preview .preview-heading');if(previewHeading){const actions=document.createElement('div');actions.className='preview-heading-actions';addActionButton(actions,'Insert above',{'data-insert-relative':'above'});addActionButton(actions,'Insert below',{'data-insert-relative':'below'});previewHeading.append(actions);}
+const commitHistoryChange=(key='',coalesce=false)=>{
+  const next=captureHistorySnapshot();if(!historySnapshot){historySnapshot=next;return;}
+  if(sameSnapshot(next,historySnapshot)){historySnapshot=next;return;}
+  const now=Date.now();
+  if(!coalesce||key!==historyCoalesceKey||now-historyCoalesceAt>700){
+    undoHistory.push(historySnapshot);if(undoHistory.length>historyLimit)undoHistory.shift();redoHistory.length=0;
+  }
+  historySnapshot=next;historyCoalesceKey=coalesce?key:'';historyCoalesceAt=now;refreshHistoryButtons();
+};
+const applyHistorySnapshot=(snapshot)=>{
+  const controls=staticHistoryFields();snapshot.fields.forEach((field,index)=>{const control=controls[index];if(!control||control.name!==field.name||control.type!==field.type)return;control.value=field.value;if(control instanceof HTMLInputElement&&field.checked!==null)control.checked=field.checked;});
+  try{const layout=JSON.parse(snapshot.layout);restoreButtonLibrary(layout.buttons);invalidLayout=false;layoutJson.dataset.layoutValid='true';layoutJson.dataset.savedLayoutInvalid='false';rebuild({version:3,buttons:layout.buttons||[],elements:layout.elements||layout},snapshot.selectedLayoutId);}catch{return;}
+  selectedLayoutId=snapshot.selectedLayoutId;refreshRows();updateDirtyState();
+};
+const runHistory=(from,to)=>{if(!from.length)return;const current=captureHistorySnapshot();const snapshot=from.pop();to.push(current);applyHistorySnapshot(snapshot);historySnapshot=captureHistorySnapshot();historyCoalesceKey='';refreshHistoryButtons();announce(to===redoHistory?'Draft change undone.':'Draft change restored.');};
 const escapeText = (value) => { const element = document.createElement('span');element.textContent=String(value);return element.innerHTML; };
 const serializeElement = (node) => {
   const base = { id: node.dataset.layoutId, type: node.dataset.layoutElement, label: read(node,'label').value, visible: read(node,'visible').checked };
@@ -286,6 +326,8 @@ const refreshRows = () => {
     }
   });
   cardForm?.querySelectorAll('[data-add-layout]').forEach((button)=>{button.disabled=invalidLayout||layoutNodes().length>=(button.dataset.addLayout==='updates'?33:35)||(button.dataset.addLayout==='actions'&&layoutNodes().some((node)=>node.dataset.layoutElement==='actions'));});
+  const insertTypeValue=insertType.value;const atLimit=layoutNodes().length>=(insertTypeValue==='updates'?33:35);const exclusiveExists=(insertTypeValue==='updates'&&layoutNodes().some((node)=>node.dataset.layoutElement==='updates'))||(insertTypeValue==='actions'&&layoutNodes().some((node)=>node.dataset.layoutElement==='actions'));
+  document.querySelectorAll('[data-insert-relative]').forEach((button)=>{button.disabled=invalidLayout||!selectedLayoutId||atLimit||exclusiveExists;});
   refreshButtonLibrary();
 };
 const updateDirtyState = () => {
@@ -307,6 +349,8 @@ const selectElement = (id, focus=false) => {
   layoutProperties.replaceChildren(heading,node._content);node._content.hidden=false;
   showPropertiesPanel('elements');refreshButtonLibrary();
   refreshRows();
+  saveLayout();updateCardPreview();
+  if(!document.querySelector('#card-preview-lines [data-preview-element="'+CSS.escape(id)+'"]'))announce('Selected element is not shown in this preview because it is hidden, empty, or suppressed by the selected preview state.');
   if(focus)node._content.querySelector('[data-layout-field="label"]')?.focus();
 };
 const newElement = (type) => {
@@ -460,13 +504,47 @@ const previewIcon = (state, mode) => {
 
 ${cardPreviewScript}
 const refreshUndo = () => {
-  const holder=document.getElementById('card-layout-undo');if(!holder)return;
-  holder.replaceChildren();if(!removed)return;
-  holder.className='card-layout-undo';holder.append(document.createTextNode('Element removed. '));const undo=document.createElement('button');undo.type='button';undo.className='secondary';undo.dataset.layoutUndo='true';undo.textContent='Undo removal';undo.disabled=layoutNodes().length>=35;holder.append(undo);
+  refreshHistoryButtons();
+};
+const insertRelativeToSelection=(type,side)=>{
+  const selected=layoutNodes().find((item)=>item.dataset.layoutId===selectedLayoutId);
+  if(!selected||layoutNodes().length>=(type==='updates'?33:35)||invalidLayout)return false;
+  if((type==='actions'&&layoutNodes().some((item)=>item.dataset.layoutElement==='actions'))||(type==='updates'&&layoutNodes().some((item)=>item.dataset.layoutElement==='updates')))return false;
+  const added=renderLayoutElement(newElement(type));
+  if(side==='above')layoutEditors.insertBefore(added,selected);else layoutEditors.insertBefore(added,selected.nextElementSibling);
+  selectElement(added.dataset.layoutId,true);announce(type+' inserted '+side+'.');return true;
+};
+const clearDraftHistory=()=>{undoHistory.length=0;redoHistory.length=0;historyCoalesceKey='';historySnapshot=captureHistorySnapshot();refreshHistoryButtons();};
+const placeholderSuggestions=new WeakMap();
+const hidePlaceholderSuggestions=(control)=>{const list=placeholderSuggestions.get(control);if(list){list.hidden=true;control.setAttribute('aria-expanded','false');}};
+const insertSuggestedPlaceholder=(control,list,value)=>{
+  const start=Number(list.dataset.start),end=Number(list.dataset.end),insertion='{'+value+'}';
+  if(control.value.length-(end-start)+insertion.length>500){hidePlaceholderSuggestions(control);announce('Placeholder would exceed the 500-character template limit.');control.focus();return;}
+  control.setRangeText(insertion,start,end,'end');hidePlaceholderSuggestions(control);control.focus();control.dispatchEvent(new Event('input',{bubbles:true}));
+};
+const updatePlaceholderSuggestions=(control)=>{
+  if(!(control instanceof HTMLTextAreaElement)||!control.matches('[data-layout-field="template"],[data-block-field="template"]'))return;
+  const cursor=control.selectionStart,prefix=control.value.slice(0,cursor),opening=prefix.lastIndexOf('{');
+  const query=opening<0?'':prefix.slice(opening+1);
+  if(opening<0||query.includes('}')||!/^[a-z0-9_.]*$/i.test(query)){hidePlaceholderSuggestions(control);return;}
+  let list=placeholderSuggestions.get(control);
+  if(!list){
+    list=document.createElement('div');list.id='placeholder-suggestions-'+crypto.randomUUID();list.className='placeholder-suggestions';list.setAttribute('role','listbox');list.setAttribute('aria-label','Placeholder suggestions');
+    control.closest('label')?.insertAdjacentElement('afterend',list);placeholderSuggestions.set(control,list);control.setAttribute('aria-autocomplete','list');control.setAttribute('aria-controls',list.id);
+  }
+  list.replaceChildren();list.dataset.start=String(opening);list.dataset.end=String(cursor);
+  const matches=placeholders.filter(([name])=>name.toLowerCase().includes(query.toLowerCase())).slice(0,12);
+  if(matches.length){for(const [name,description]of matches){const option=document.createElement('button');option.type='button';option.setAttribute('role','option');option.dataset.placeholderChoice='true';option.dataset.placeholderValue=name;option.textContent='{'+name+'} · '+description;option.addEventListener('pointerdown',(event)=>event.preventDefault());list.append(option);}}
+  else{const empty=document.createElement('p');empty.textContent='No matching placeholders';list.append(empty);}
+  list.hidden=false;control.setAttribute('aria-expanded','true');
 };
 cardForm?.addEventListener('click',(event)=>{
   if(!(event.target instanceof Element))return;
   const button=event.target.closest('button');if(!button)return;
+  const placeholderChoice=button.closest('[data-placeholder-choice]');if(placeholderChoice){const control=Array.from(cardForm.querySelectorAll('textarea')).find((item)=>placeholderSuggestions.get(item)===placeholderChoice.closest('[role="listbox"]'));if(control)insertSuggestedPlaceholder(control,placeholderChoice.closest('[role="listbox"]'),placeholderChoice.dataset.placeholderValue);return;}
+  if(button.hasAttribute('data-card-undo')){runHistory(undoHistory,redoHistory);return;}
+  if(button.hasAttribute('data-card-redo')){runHistory(redoHistory,undoHistory);return;}
+  if(button.dataset.insertRelative){insertRelativeToSelection(insertType.value,button.dataset.insertRelative);refreshRows();updateDirtyState();return;}
   if(button.dataset.propertiesTab){showPropertiesPanel(button.dataset.propertiesTab);return;}
   const node=button.closest('[data-layout-element]')||layoutNodes().find((item)=>item.dataset.layoutId===selectedLayoutId);
   if(button.hasAttribute('data-button-add')){showPropertiesPanel('buttons');const row=addButtonDefinition();buttonDefinitions=readButtonDefinitions();refreshButtonReferences();updateDirtyState();row.querySelector('[data-button-field="label"]').focus();return;}
@@ -503,7 +581,7 @@ cardForm?.addEventListener('click',(event)=>{
   else if(button.hasAttribute('data-reset-feed-order')&&node){for(const feed of ['ANNOUNCEMENTS','CHANGELOG']){const row=node._content.querySelector('[data-feed-order-item="'+feed+'"]');node._content.querySelector('.updates-feed-order').append(row);}syncFeedSeparator(node);refreshRows();announce('Default feed order restored.');}
   else if(button.dataset.feedMove&&node){const row=button.closest('[data-feed-order-item]');const rows=feedRows(node);const index=rows.indexOf(row);const next=rows[button.dataset.feedMove==='up'?index-1:index+1];if(next){if(button.dataset.feedMove==='up')row.parentElement.insertBefore(row,next);else row.parentElement.insertBefore(next,row);syncFeedSeparator(node);announce('Community Updates feed order changed.');}button.focus();refreshRows();}
   else if(button.hasAttribute('data-layout-duplicate')&&node){if(layoutNodes().length>=35||node.dataset.layoutElement==='actions'||node.dataset.layoutElement==='updates')return;const copy=serializeElement(node);copy.id=crypto.randomUUID();copy.label=(copy.label+' copy').slice(0,80);if(copy.items)copy.items=copy.items.map((item)=>({...item,id:crypto.randomUUID()}));const added=renderLayoutElement(copy);layoutEditors.insertBefore(added,node.nextElementSibling);selectElement(added.dataset.layoutId);announce('Element duplicated.');}
-  else if(button.hasAttribute('data-layout-remove')&&node){if(layoutNodes().length<=1)return;removed={element:serializeElement(node),index:layoutNodes().indexOf(node)};const next=node.nextElementSibling||node.previousElementSibling;node.remove();if(node.dataset.layoutId===selectedLayoutId){selectedLayoutId=null;selectElement(next.dataset.layoutId);}refreshUndo();announce('Element removed. Undo is available.');}
+  else if(button.hasAttribute('data-layout-remove')&&node){if(layoutNodes().length<=1)return;const next=node.nextElementSibling||node.previousElementSibling;node.remove();if(node.dataset.layoutId===selectedLayoutId){selectedLayoutId=null;selectElement(next.dataset.layoutId);}announce('Element removed. Undo is available.');}
   else if(button.hasAttribute('data-layout-undo')&&removed){if(layoutNodes().length>=35)return;const next=layoutNodes()[removed.index];const added=renderLayoutElement(removed.element);if(next)layoutEditors.insertBefore(added,next);removed=null;refreshUndo();selectElement(added.dataset.layoutId);announce('Removal undone.');}
   else if(button.hasAttribute('data-gallery-add')&&node){if(node._content.querySelectorAll('[data-gallery-item]').length>=10)return;addGalleryItem(node,newElement('gallery').items[0]);}
   else if((button.dataset.galleryMove||button.hasAttribute('data-gallery-remove'))&&node){const item=button.closest('[data-gallery-item]');if(!item)return;const holder=item.parentElement;if(button.hasAttribute('data-gallery-remove')){if(holder.children.length>1)item.remove();}else{const next=button.dataset.galleryMove==='up'?item.previousElementSibling:item.nextElementSibling;if(next){if(button.dataset.galleryMove==='up')holder.insertBefore(item,next);else holder.insertBefore(next,item);}}}
@@ -512,10 +590,35 @@ cardForm?.addEventListener('click',(event)=>{
   else if(button.hasAttribute('data-layout-restore')&&node){const original=originalElements.get(node.dataset.layoutId)||{...newElement(node.dataset.layoutElement),id:node.dataset.layoutId};const index=layoutNodes().indexOf(node);const selected=node.dataset.layoutId;const added=renderLayoutElement(original);node.remove();layoutEditors.insertBefore(added,layoutNodes()[index]||null);selectElement(selected);announce('Element restored.');}
   else if(button.hasAttribute('data-layout-convert-text')&&node){const element=serializeElement(node);element.type='text';delete element.thumbnailUrl;const index=layoutNodes().indexOf(node);const added=renderLayoutElement(element);node.remove();layoutEditors.insertBefore(added,layoutNodes()[index]||null);selectElement(element.id);}
   else if(button.hasAttribute('data-reset-card-profile')){let defaults,layout;try{defaults=JSON.parse(button.dataset.defaults);layout=JSON.parse(button.dataset.defaultLayout);}catch{return;}for(const[name,value]of Object.entries(defaults)){const control=formControl(name);if(control?.type==='checkbox'){control.value='1';control.checked=value===true;}else if(control)control.value=String(value);}restoreButtonLibrary(layout.buttons);invalidLayout=false;layoutJson.dataset.layoutValid='true';layoutJson.dataset.savedLayoutInvalid='false';rebuild(layout);removed=null;refreshUndo();announce('Card defaults restored. Save to replace the current card layout.');}
-  else if(button.hasAttribute('data-discard-server-changes')){if(submitted){cardForm.dataset.dirty='false';window.location.reload();return;}cardForm.reset();invalidLayout=initialLayout===null;if(initialLayout){restoreButtonLibrary(initialLayout.buttons);rebuild(initialLayout);}removed=null;refreshUndo();announce('Unsaved changes discarded.');}
+  else if(button.hasAttribute('data-discard-server-changes')){if(submitted){cardForm.dataset.dirty='false';window.location.reload();return;}cardForm.reset();invalidLayout=initialLayout===null;if(initialLayout){restoreButtonLibrary(initialLayout.buttons);rebuild(initialLayout);}removed=null;refreshUndo();announce('Unsaved changes discarded.');clearDraftHistory();}
   else if(button.hasAttribute('data-expand-preview')){const expanded=previewRoot.classList.toggle('is-expanded');button.setAttribute('aria-expanded',String(expanded));button.textContent=expanded?'Narrow preview':'Widen preview';previewRoot.scrollIntoView({block:'start'});return;}
   else return;
   refreshRows();refreshUndo();updateDirtyState();
+});
+cardForm?.addEventListener('click',()=>{queueMicrotask(()=>commitHistoryChange());});
+const handlePreviewSelection=(event)=>{
+  const target=event.target instanceof Element?event.target.closest('[data-preview-element],[data-preview-button-id],[data-preview-action]'):null;
+  if(!target)return;
+  const element=target.closest('[data-preview-element]');if(!element)return;
+  event.preventDefault();event.stopPropagation();selectElement(element.dataset.previewElement);
+  const buttonId=target.dataset.previewButtonId;
+  let focusedPanel=layoutProperties;
+  if(buttonId){showPropertiesPanel('buttons');focusedPanel=buttonLibraryPanel;const field=buttonLibrary?.querySelector('[data-button-definition="'+CSS.escape(buttonId)+'"] [data-button-field="label"]');field?.focus();}
+  else if(target.dataset.previewAction){const field=formControl(target.dataset.previewAction==='connect'?'connectButtonLabel':'mapRulesButtonLabel');field?.focus();}
+  if(window.matchMedia('(max-width: 760px)').matches){const inspectorStart=buttonId?buttonLibraryPanel?.querySelector('.card-button-library-header'):layoutProperties?.querySelector('.card-layout-property-header');requestAnimationFrame(()=>{(inspectorStart||focusedPanel)?.scrollIntoView({block:'start'});});}
+};
+previewRoot?.addEventListener('click',handlePreviewSelection);
+previewRoot?.addEventListener('keydown',(event)=>{if(event.key!=='Enter'&&event.key!==' ')return;const target=event.target instanceof Element?event.target.closest('[data-preview-element],[data-preview-button-id],[data-preview-action]'):null;if(!target)return;event.preventDefault();handlePreviewSelection(event);});
+cardForm?.addEventListener('keydown',(event)=>{
+  if(event.target instanceof HTMLTextAreaElement&&event.target.getAttribute('aria-expanded')==='true'){
+    const list=placeholderSuggestions.get(event.target);if(event.key==='ArrowDown'){event.preventDefault();list?.querySelector('[data-placeholder-choice]')?.focus();return;}if(event.key==='Escape'){event.preventDefault();hidePlaceholderSuggestions(event.target);return;}
+  }
+  if(event.target instanceof HTMLElement&&event.target.matches('[data-placeholder-choice]')){
+    const choices=Array.from(event.target.closest('[role="listbox"]').querySelectorAll('[data-placeholder-choice]'));const index=choices.indexOf(event.target);if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();choices[(index+(event.key==='ArrowDown'?1:-1)+choices.length)%choices.length]?.focus();return;}if(event.key==='Escape'){event.preventDefault();const control=Array.from(cardForm.querySelectorAll('textarea')).find((item)=>placeholderSuggestions.get(item)===event.target.closest('[role="listbox"]'));if(control){hidePlaceholderSuggestions(control);control.focus();}return;}
+  }
+  if(!(event.ctrlKey||event.metaKey)||!['z','y'].includes(event.key.toLowerCase()))return;
+  if(event.target instanceof HTMLElement&&(event.target.isContentEditable||event.target.matches('input,textarea,select,[role="textbox"]')))return;
+  event.preventDefault();const redo=event.key.toLowerCase()==='y'||event.shiftKey;runHistory(redo?redoHistory:undoHistory,redo?undoHistory:redoHistory);
 });
 cardForm?.addEventListener('invalid',(event)=>{
   const control=event.target;if(!(control instanceof HTMLInputElement||control instanceof HTMLTextAreaElement||control instanceof HTMLSelectElement))return;
@@ -523,18 +626,18 @@ cardForm?.addEventListener('invalid',(event)=>{
   let parent=control.parentElement;while(parent&&parent!==cardForm){if(parent instanceof HTMLDetailsElement)parent.open=true;parent=parent.parentElement;}
   control.focus();announce(control.validationMessage||'Review the selected field before saving.');
 },true);
-cardForm?.addEventListener('input',updateDirtyState);
-cardForm?.addEventListener('change',(event)=>{if(event.target?.id==='card-preview-mode'){updateCardPreview();return;}const node=event.target?.closest?.('[data-layout-element]');if(event.target?.matches?.('[data-layout-field="accessoryButtonId"]'))syncTextAccessory(node);updateDirtyState();});
+cardForm?.addEventListener('input',(event)=>{const control=event.target;updatePlaceholderSuggestions(control);updateDirtyState();const key=(control?.closest?.('[data-layout-id]')?.dataset.layoutId||'')+':'+(control?.name||control?.dataset?.layoutField||control?.dataset?.blockField||control?.id||'typing');commitHistoryChange(String(key),true);});
+cardForm?.addEventListener('change',(event)=>{if(event.target?.id==='card-preview-mode'){updateCardPreview();return;}const node=event.target?.closest?.('[data-layout-element]');if(event.target?.matches?.('[data-layout-field="accessoryButtonId"]'))syncTextAccessory(node);updateDirtyState();commitHistoryChange();});
 window.addEventListener('beforeunload',(event)=>{if(cardForm?.dataset.dirty!=='true'||cardForm?.dataset.saving==='true')return;event.preventDefault();event.returnValue='';});
-cardForm?.addEventListener('submit',(event)=>{if(invalidLayout){event.preventDefault();announce('Invalid layout data. Discard the malformed draft before saving.');return;}saveLayout();if(invalidButtonPlacement){event.preventDefault();announce('Every placement must reference an existing button. Button Rows can contain one to five placements.');return;}if(overComponentBudget){event.preventDefault();announce('Too many Discord components. Hide or remove elements before saving.');return;}cardForm.dataset.saving='true';const save=cardForm.querySelector('button[type="submit"]');save.disabled=true;save.textContent='Saving…';if(dirtyStatus)dirtyStatus.textContent='Saving changes…';});
+cardForm?.addEventListener('submit',(event)=>{if(invalidLayout){event.preventDefault();announce('Invalid layout data. Discard the malformed draft before saving.');return;}saveLayout();if(invalidButtonPlacement){event.preventDefault();announce('Every placement must reference an existing button. Button Rows can contain one to five placements.');return;}if(overComponentBudget){event.preventDefault();announce('Too many Discord components. Hide or remove elements before saving.');return;}clearDraftHistory();cardForm.dataset.saving='true';const save=cardForm.querySelector('button[type="submit"]');save.disabled=true;save.textContent='Saving…';if(dirtyStatus)dirtyStatus.textContent='Saving changes…';});
 const sectionLinks=Array.from(document.querySelectorAll('.game-server-section-nav a'));
-const updateActiveSection=()=>sectionLinks.forEach((link)=>{if(link.hash===(window.location.hash||'#server-settings'))link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');});
+const updateActiveSection=()=>sectionLinks.forEach((link)=>{if(link.hash===(window.location.hash||'#card-designer'))link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');});
 window.addEventListener('hashchange',updateActiveSection);updateActiveSection();
 const fitPreview=()=>{if(previewRoot)previewRoot.dataset.tall=String(previewRoot.getBoundingClientRect().height>window.innerHeight-220);};
 if(previewRoot){new ResizeObserver(fitPreview).observe(previewRoot);window.addEventListener('resize',fitPreview);fitPreview();}
 if(layoutEditors&&layoutJson){
   try{if(layoutJson.dataset.layoutValid!=='true')throw new Error('Invalid layout');const persisted=JSON.parse(layoutJson.value);const elements=Array.isArray(persisted)?persisted:persisted.elements;if(!Array.isArray(elements)||!elements.length||elements.length>35)throw new Error('Invalid layout');restoreButtonLibrary(persisted.buttons);initialLayout={version:3,buttons:buttonDefinitions,elements};elements.forEach((element)=>originalElements.set(element.id,structuredClone(element)));let selected;try{selected=sessionStorage.getItem(selectionKey);}catch{}rebuild(initialLayout,selected);}
   catch(error){console.error('Card Designer layout initialization failed',error);invalidLayout=true;layoutJson.dataset.layoutValid='false';const savedInvalid=layoutJson.dataset.savedLayoutInvalid==='true'&&!submitted;layoutProperties.textContent=savedInvalid?'The saved card layout is invalid and is preserved. Restore card defaults to recover; saving replaces the entire card layout.':'The submitted layout is invalid and is preserved. Discard changes to reload the saved configuration.';announce(savedInvalid?'Saved layout is invalid. Restore card defaults to recover.':'Invalid submitted draft preserved. Discard changes to reload the saved configuration.');}
-  initial=serializeForm();updateDirtyState();
+  initial=serializeForm();updateDirtyState();clearDraftHistory();
 }
 `;

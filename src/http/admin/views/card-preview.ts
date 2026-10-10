@@ -68,7 +68,7 @@ const updateCardPreview = () => {
     const row = document.createElement('div'); row.className = 'preview-action-row';
     [['showConnectButton','connectButtonLabel','Connect','▶'],['showMapRulesButton','mapRulesButtonLabel','Map & Rules','🗺']].forEach(([visible,name,fallbackLabel,icon],index) => {
       if (!formControl(visible)?.checked) return;
-      const button = document.createElement('span'); button.className = 'preview-action' + (index ? ' secondary' : '');
+      const button = document.createElement('span'); button.className = 'preview-action' + (index ? ' secondary' : '');button.dataset.previewAction=index?'map-rules':'connect';
       button.textContent = icon + ' ' + inputValue(name, fallbackLabel); row.append(button);
     });
     return row;
@@ -95,7 +95,7 @@ const updateCardPreview = () => {
     if(missing&&mode==='current')return {label:buttonLabel+' · destination unavailable',missing:true};
     return {label:buttonLabel,missing:false};
   };
-  const previewButtonNode=(button)=>{const item=previewConfiguredButton(button);if(!item)return null;const span=document.createElement('span');span.className='preview-action preview-button-'+(button.style||'secondary')+(item.missing?' preview-button-missing':'');span.textContent=item.label;span.dataset.discordAccessory='Button';return span;};
+  const previewButtonNode=(button)=>{const item=previewConfiguredButton(button);if(!item)return null;const span=document.createElement('span');span.className='preview-action preview-button-'+(button.style||'secondary')+(item.missing?' preview-button-missing':'');span.textContent=item.label;span.dataset.discordAccessory='Button';span.dataset.previewButtonId=button.id;return span;};
   const escapeUpdatePreview=(value)=>value.replace(/@/g,'@\u200b').replace(/([\\\x60*_{}<>\x5b\x5d()#+\-.!|>~])/g,'\\$1');
   const updateValueMap=(element)=>{
     const result={...values};
@@ -238,5 +238,15 @@ const updateCardPreview = () => {
   });
   document.getElementById('card-preview-artwork')?.replaceChildren();
   document.getElementById('card-preview-actions')?.replaceChildren();
+  if(typeof output.querySelectorAll==='function'){
+    output.querySelectorAll('[data-preview-element]').forEach((node)=>{
+      node.tabIndex=0;node.setAttribute('role','button');
+      const element=elements.find((item)=>item.id===node.dataset.previewElement);
+      node.setAttribute('aria-label','Select '+(element?.label||'card element')+' in the editor');
+      node.setAttribute('aria-pressed',String(node.dataset.previewElement===selectedLayoutId));
+      node.toggleAttribute('data-preview-selected',node.dataset.previewElement===selectedLayoutId);
+    });
+    output.querySelectorAll('[data-preview-action],[data-preview-button-id]').forEach((node)=>{node.tabIndex=0;node.setAttribute('role','button');node.setAttribute('aria-label','Edit '+(node.textContent.trim()||'button')+' settings');});
+  }
 };
 `;
