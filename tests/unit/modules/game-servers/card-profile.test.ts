@@ -308,7 +308,7 @@ describe('generic card line contract', () => {
     expect(first?.buttons.map((button) => button.label)).toEqual(['Join', 'Rules']);
   });
 
-  it('rejects dangling, duplicated and overfull button placements and unsafe link destinations', () => {
+  it('allows repeated button placements while rejecting dangling and overfull placements and unsafe links', () => {
     const button = (id: string) => ({
       id,
       label: 'Go',
@@ -336,6 +336,15 @@ describe('generic card line contract', () => {
     ).toBe(true);
     const firstId = ids[0] ?? '';
     const secondId = ids[1] ?? '';
+    expect(
+      cardProfileSchema.safeParse({
+        layout: {
+          version: 3,
+          buttons: [button(firstId)],
+          elements: [{ ...row, buttonIds: [firstId, firstId] }],
+        },
+      }).success,
+    ).toBe(true);
     const buttonWithLabel = (label: string) => ({
       layout: {
         version: 3,

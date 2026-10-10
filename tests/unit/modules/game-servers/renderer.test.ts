@@ -1000,7 +1000,7 @@ describe('Game Server rendering', () => {
               type: 'button_row',
               label: 'Quick actions',
               visible: true,
-              buttonIds: [secondId, firstId],
+              buttonIds: [secondId, firstId, firstId],
             },
           ],
         },
@@ -1011,13 +1011,18 @@ describe('Game Server rendering', () => {
     const rendered = Array.isArray(row?.components)
       ? (row.components as Record<string, unknown>[])
       : [];
-    expect(rendered.map((button) => button.label)).toEqual(['Copy server address', 'Join now']);
+    expect(rendered.map((button) => button.label)).toEqual([
+      'Copy server address',
+      'Join now',
+      'Join now',
+    ]);
     expect(rendered[1]?.emoji).toEqual({
       animated: false,
       name: 'party',
       id: '12345678901234567',
     });
-    expect(rendered.map((button) => button.customId)).toHaveLength(2);
+    expect(rendered.map((button) => button.customId)).toHaveLength(3);
+    expect(rendered[2]?.customId).toBe(rendered[1]?.customId);
     expect(new Set(rendered.map((button) => button.customId)).size).toBe(2);
     expect(rendered.every((button) => String(button.customId).length <= 100)).toBe(true);
   });

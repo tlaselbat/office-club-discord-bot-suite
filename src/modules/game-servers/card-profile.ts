@@ -431,7 +431,6 @@ export const cardLayoutSchema = z
         message: 'Button IDs must be unique.',
       });
     const definitions = new Set(buttonIds);
-    const placements = new Set<string>();
     for (const element of layout.elements) {
       const refs =
         element.type === 'button_row'
@@ -446,13 +445,6 @@ export const cardLayoutSchema = z
             path: ['elements'],
             message: 'Button placement refers to a missing button.',
           });
-        if (placements.has(id))
-          context.addIssue({
-            code: 'custom',
-            path: ['elements'],
-            message: 'A button can only be placed once.',
-          });
-        placements.add(id);
       }
     }
     for (const button of layout.buttons) {
