@@ -538,7 +538,13 @@ function renderUpdatesSection(
         components.push({ type: componentType.mediaGallery, items });
       }
     }
-    return components;
+    return components.filter((part, index) => {
+      if (part.type !== componentType.separator) return true;
+      const before = components[index - 1];
+      const after = components[index + 1];
+      return before !== undefined && after !== undefined &&
+        before.type !== componentType.separator && after.type !== componentType.separator;
+    });
   }
   const feeds = element.feedOrder
     .map((type) =>
