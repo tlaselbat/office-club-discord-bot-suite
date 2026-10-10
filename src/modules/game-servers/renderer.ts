@@ -215,7 +215,7 @@ function renderLayoutCard(
         (element): element is Extract<CardLayoutElement, { type: 'updates' }> =>
           element.type === 'updates',
       )
-      .map((element) => [element.id, element.visible ? renderUpdatesSection(server, element) : []]),
+      .map((element) => [element.id, element.visible ? renderUpdatesSection(server, element, values, mapImageUrl, displayMap) : []]),
   );
   for (const [index, element] of layout.entries()) {
     if (!element.visible) continue;
@@ -455,6 +455,9 @@ export function hasFreshUpdate(thread: UpdateThreadView, now = new Date()): bool
 function renderUpdatesSection(
   server: ServerView,
   element: Extract<CardLayoutElement, { type: 'updates' }>,
+  values: Record<string, string>,
+  mapImageUrl: string,
+  displayMap: string,
 ): Record<string, unknown>[] {
   const threads = new Map((server.updateThreads ?? []).map((thread) => [thread.type, thread]));
   const renderFeed = (
@@ -495,6 +498,48 @@ function renderUpdatesSection(
         ]
       : [titleDisplay, summaryDisplay];
   };
+  if (element.blocks !== undefined) {
+    const components: Record<string, unknown>[] = [];
+    const feedsByType = new Map([
+      ['ANNOUNCEMENTS', renderFeed('ANNOUNCEMENTS', element.announcements)],
+      ['CHANGELOG', renderFeed('CHANGELOG', element.changelog)],
+    ]);
+    for (const block of element.blocks) {
+      if (!block.visible) continue;
+      if (block.type === 'heading') {
+        if (element.showHeading)
+          components.push(updateTextDisplay(styleCardLine(
+            element.title.replace(/@/g, '@\\u200b'), updateLineStyle(element.headingStyle),
+          )));
+      } else if (block.type === 'feed') {
+        components.push(...(feedsByType.get(block.feed) ?? []));
+      } else if (block.type === 'text') {
+        const content = styleCardLine(resolveCardTemplate(block.template, values), block.style);
+        if (content.trim()) components.push(updateTextDisplay(content));
+      } else if (block.type === 'separator') {
+        components.push({
+          type: componentType.separator,
+          divider: block.divider,
+          spacing: block.spacing,
+        });
+      } else if (block.type === 'gallery') {
+        const items = block.items.map((item) => ({
+          media: {
+            url: item.source === 'map'
+              ? mapImageUrl
+              : item.source === 'fallback'
+                ? resolveMapImageUrl(null, null)
+                : (item.url ?? resolveMapImageUrl(null, null)),
+          },
+          description: resolveCardTemplate(
+            item.description || `${displayMap} map artwork`, values,
+          ),
+        }));
+        components.push({ type: componentType.mediaGallery, items });
+      }
+    }
+    return components;
+  }
   const feeds = element.feedOrder
     .map((type) =>
       renderFeed(type, type === 'ANNOUNCEMENTS' ? element.announcements : element.changelog),
