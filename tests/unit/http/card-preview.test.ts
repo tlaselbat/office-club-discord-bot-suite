@@ -51,6 +51,7 @@ describe('Game Server card preview', () => {
       id: 'updates',
       type: 'updates',
       visible: true,
+      showHeading: true,
       title: '**Latest Updates**',
       headingStyle: 'normal',
       emptyBehavior: 'show_placeholders',

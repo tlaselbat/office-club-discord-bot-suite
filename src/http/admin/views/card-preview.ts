@@ -19,7 +19,7 @@ const updateCardPreview = () => {
   values.serveraddress = host ? host + (values.serverport ? ':' + values.serverport : '') : 'Unavailable';
   values.severaddress = values.serveraddress;
   const sourceStatus = document.getElementById('card-preview-source');
-  const configurationStatus = cardForm?.dataset.dirty === 'true' ? 'unsaved configuration edits' : 'saved configuration';
+  const configurationStatus = typeof cardForm !== 'undefined' && cardForm?.dataset.dirty === 'true' ? 'unsaved configuration edits' : 'saved configuration';
   if (sourceStatus) sourceStatus.textContent = mode === 'current' ? 'Current cached telemetry · ' + (previewRoot.dataset.rawMap || 'No map observed') + ' · ' + configurationStatus + '. Updates use cached Discord messages.' : 'Example telemetry and example Updates · ' + configurationStatus;
   const https = (value) => { try { const url = new URL(value); return url.protocol === 'https:' ? url.href : null; } catch { return null; } };
   const fallback = previewRoot.dataset.fallbackImage ?? '';
