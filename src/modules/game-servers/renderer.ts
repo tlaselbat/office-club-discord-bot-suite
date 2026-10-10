@@ -483,7 +483,7 @@ function renderUpdatesSection(
       ? [
           {
             type: componentType.section,
-            components: [titleDisplay],
+            components: [titleDisplay, summaryDisplay],
             accessory: {
               type: componentType.button,
               style: buttonStyle.link,
@@ -491,7 +491,6 @@ function renderUpdatesSection(
               url: `https://discord.com/channels/${server.guildId}/${thread.threadId}`,
             },
           },
-          summaryDisplay,
         ]
       : [titleDisplay, summaryDisplay];
   };

@@ -23,7 +23,7 @@ class PreviewElement {
 }
 
 describe('Game Server card preview', () => {
-  it('keeps each Open accessory on its title row and places summaries in following text displays', () => {
+  it('keeps each Open accessory with its title and summary in one Section', () => {
     const output = new PreviewElement();
     const sourceStatus = new PreviewElement();
     const mode = { value: 'current' };
@@ -51,6 +51,7 @@ describe('Game Server card preview', () => {
       id: 'updates',
       type: 'updates',
       visible: true,
+      showHeading: true,
       title: '**Latest Updates**',
       headingStyle: 'normal',
       emptyBehavior: 'show_placeholders',
@@ -84,6 +85,7 @@ describe('Game Server card preview', () => {
     ]);
     const context = {
       HTMLElement: PreviewElement,
+      cardForm: new PreviewElement(),
       document: {
         getElementById: (id: string) => nodes.get(id) ?? null,
         createElement: () => new PreviewElement(),
@@ -105,18 +107,15 @@ describe('Game Server card preview', () => {
     expect(output.children.map((child) => child.dataset.discordComponent)).toEqual([
       'TextDisplay',
       'Section',
-      'TextDisplay',
       'Section',
-      'TextDisplay',
     ]);
-    const [heading, announcements, announcementSummary, changelog, changelogSummary] =
-      output.children;
+    const [heading, announcements, changelog] = output.children;
     expect(heading?.textContent).toBe('**Latest Updates**');
     expect(announcements?.children[0]?.textContent).toBe('📢 **Announcements**');
-    expect(announcements?.children[1]?.dataset.discordAccessory).toBe('Button');
-    expect(announcementSummary?.textContent).toBe('No announcements yet.');
+    expect(announcements?.children[2]?.dataset.discordAccessory).toBe('Button');
+    expect(announcements?.children[1]?.textContent).toBe('No announcements yet.');
     expect(changelog?.children[0]?.textContent).toBe('🛠 **Changelog**');
-    expect(changelog?.children[1]?.dataset.discordAccessory).toBe('Button');
-    expect(changelogSummary?.textContent).toContain('Detailed changelog');
+    expect(changelog?.children[2]?.dataset.discordAccessory).toBe('Button');
+    expect(changelog?.children[1]?.textContent).toContain('Detailed changelog');
   });
 });
