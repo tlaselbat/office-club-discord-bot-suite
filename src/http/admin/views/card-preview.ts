@@ -26,11 +26,19 @@ const updateCardPreview = () => {
   const knownMap = mode === 'current' ? previewRoot.dataset.mapKnown === 'true' : mode !== 'missing' && previewRoot.dataset.exampleMapKnown === 'true';
   const mapImage = knownMap ? (mode === 'current' ? previewRoot.dataset.mapImage : previewRoot.dataset.exampleMapImage) : https(inputValue('imageUrl')) || fallback;
   const appendText = (parent, content) => {
-    String(content).split('\n').forEach((line) => {
+    parent.classList.add('preview-text-display');
+    const lines = String(content).split('\n');
+    lines.forEach((line, index) => {
+      const previousWasHeading = index > 0 && /^#{1,3}\s/.test(lines[index - 1] ?? '');
+      if (index > 0 && !previousWasHeading) parent.append(document.createElement('br'));
       const heading = line.match(/^(#{1,3}|-#)\s+(.*)$/);
-      const element = document.createElement(heading ? heading[1] === '-#' ? 'small' : 'h' + heading[1].length : 'p');
-      appendInlineMarkdown(element, heading ? heading[2] : line || '\u200b');
-      parent.append(element);
+      if (heading) {
+        const element = document.createElement(heading[1] === '-#' ? 'small' : 'h' + heading[1].length);
+        appendInlineMarkdown(element, heading[2]);
+        parent.append(element);
+      } else if (line) {
+        appendInlineMarkdown(parent, line);
+      }
     });
   };
   const media = (url, description, thumbnail = false) => {
@@ -130,19 +138,21 @@ const updateCardPreview = () => {
         const hasButton=config.showOpenButton&&(validThread||mode!=='current');
         const label=config.displayLabel+(config.showNew!==false&&mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');
         const title=document.createElement('div');
-        title.className=(hasButton?'preview-section':'preview-text-display')+' preview-updates preview-update-title';
+        title.className=(hasButton?'preview-section preview-update-section':'preview-text-display')+' preview-updates preview-update-title';
         title.dataset.previewElement=element.id;title.dataset.discordComponent=hasButton?'Section':'TextDisplay';
         if(hasButton){
-          const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';appendText(titleText,label);title.append(titleText);
+          const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';
+          appendText(titleText,styleLineText(label,config.textStyle==='heading'?'large':config.textStyle||'normal'));
+          title.append(titleText);
           const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);
-        }else appendText(title,label);
+        }else appendText(title,styleLineText(label,config.textStyle==='heading'?'large':config.textStyle||'normal'));
         const content=source||config.emptyPlaceholder;
-        const formatted=styleLineText(source?escapeUpdatePreview(content):content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
+        const formatted=source?escapeUpdatePreview(content):content;
         let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);
         const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';
         summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';
         appendText(summary,[formatted,time].filter(Boolean).join('\n'));
-        if(hasButton)title.append(summary);
+        if(hasButton)title.insertBefore(summary,title.lastChild);
         output.append(title);
         if(!hasButton)output.append(summary);
       };
@@ -181,21 +191,20 @@ const updateCardPreview = () => {
           const hasButton=config.showOpenButton&&(validThread||mode!=='current');
           const label=config.displayLabel+(config.showNew!==false&&mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');
           const content=source||config.emptyPlaceholder;
-          const formatted=styleLineText(source?escapeUpdatePreview(content):content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
+          const formatted=source?escapeUpdatePreview(content):content;
           let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);
           const title=document.createElement('div');
           title.className=(hasButton?'preview-section preview-update-section':'preview-text-display')+' preview-updates preview-update-title';
           title.dataset.previewElement=element.id;title.dataset.discordComponent=hasButton?'Section':'TextDisplay';
+          const styledLabel=styleLineText(label,config.textStyle==='heading'?'large':config.textStyle||'normal');
           if(hasButton){
-            const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';appendText(titleText,label);title.append(titleText);
-          }else appendText(title,label);
+            const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';appendText(titleText,styledLabel);title.append(titleText);
+            const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);
+          }else appendText(title,styledLabel);
           const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';
           summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';
           appendText(summary,[formatted,time].filter(Boolean).join('\n'));
-          if(hasButton){
-            title.append(summary);
-            const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);
-          }
+          if(hasButton)title.insertBefore(summary,title.lastChild);
           output.append(title);
           if(!hasButton)output.append(summary);
         });

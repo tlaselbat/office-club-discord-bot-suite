@@ -133,6 +133,17 @@ form:has(#card-layout-workspace):has(.game-server-preview.is-expanded){grid-temp
 @media(max-width:1120px){form:has(#card-layout-workspace){grid-template-columns:minmax(0,1fr)}form:has(#card-layout-workspace)>#card-designer,form:has(#card-layout-workspace)>.game-server-preview{grid-column:1;grid-row:auto;position:static}#card-layout-workspace{grid-template-columns:minmax(230px,.8fr) minmax(0,1.2fr)}#card-layout-editors{grid-template-columns:1fr}.card-layout-row{grid-template-columns:minmax(0,1fr) auto}.game-server-preview{width:100%;max-width:760px;justify-self:center}.game-server-section-nav{position:static}#server-settings{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){#card-layout-workspace{grid-template-columns:minmax(0,1fr)}#card-layout-editors{grid-template-columns:repeat(2,minmax(0,1fr))}.card-layout-row{grid-template-columns:minmax(0,1fr)}.card-settings-content{grid-template-columns:1fr}.game-server-savebar{position:static}#server-settings{grid-template-columns:1fr}}
 @media(max-width:520px){.card-layout-row{grid-template-columns:minmax(0,1fr) auto}#card-designer,#card-text-settings,#card-layout-properties{padding:.7rem}.card-layout-property-actions{flex-direction:row}.card-layout-property-actions button{width:auto}.preview-heading{align-items:flex-start}.preview-heading h2{font-size:1rem}.preview-heading button{max-width:9rem}.preview-thumbnail{width:64px;height:64px}.layout-add-actions button{flex:1 1 9rem}.game-server-preview{padding:.75rem}.game-server-savebar button{font-size:.9rem}}
+.game-server-preview #card-preview-lines{display:grid;gap:.5rem;font-family:"gg sans","Noto Sans","Helvetica Neue",Helvetica,Arial,sans-serif;font-size:16px;font-weight:400;line-height:1.375;color:#dbdee1}
+.game-server-preview #card-preview-lines>div{margin:0;font:inherit;line-height:inherit;color:inherit}
+.game-server-preview #card-preview-lines [data-discord-component="TextDisplay"],.game-server-preview #card-preview-lines .preview-text-display{margin:0;font:inherit;line-height:inherit;color:inherit}
+.game-server-preview #card-preview-lines h1,.game-server-preview #card-preview-lines h2,.game-server-preview #card-preview-lines h3{display:block;margin:0;color:#f2f3f5;font-weight:700;line-height:1.25}
+.game-server-preview #card-preview-lines h1{font-size:1.5em}.game-server-preview #card-preview-lines h2{font-size:1.25em}.game-server-preview #card-preview-lines h3{font-size:1em}
+.game-server-preview #card-preview-lines small{font-size:.875em;font-weight:400;line-height:inherit;color:#949ba4}
+.game-server-preview #card-preview-lines code{padding:.1em .25em;border-radius:3px;background:#1e1f22;color:#dbdee1;font-family:Consolas,"Liberation Mono",Menlo,monospace;font-size:.875em;line-height:inherit}
+.game-server-preview #card-preview-lines .preview-discord-emoji{display:inline-block;width:1.375em;height:1.375em;max-width:none;object-fit:contain;vertical-align:-.35em;overflow-wrap:normal;word-break:normal}
+.game-server-preview #card-preview-lines hr{align-self:stretch;margin:0;border:0;border-top:1px solid rgb(148 155 164 / 35%)}
+.game-server-preview #card-preview-lines .preview-update-section{gap:.15rem 1rem}
+.game-server-preview #card-preview-lines .preview-update-section>.preview-action{min-height:32px;padding:0 16px;border:0;border-radius:3px;font-size:14px;font-weight:500;line-height:18px;white-space:nowrap}
 .preview-spoiler{color:transparent;background:currentColor;border-radius:3px;cursor:pointer}.preview-spoiler.is-revealed{color:inherit;background:transparent}
 
 `;

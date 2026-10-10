@@ -2,6 +2,105 @@ import { resolveCardTemplate, styleCardLine } from '../../../modules/game-server
 import { CARD_PLACEHOLDERS } from '../../../modules/game-servers/card-profile.js';
 import { cardPreviewScript } from './card-preview.js';
 
+type MarkdownPreviewNode = {
+  className: string;
+  alt: string;
+  src: string;
+  textContent: string;
+  classList: { toggle(name: string): void };
+  append(...nodes: MarkdownPreviewNode[]): void;
+  addEventListener(type: string, listener: () => void, options?: { once?: boolean }): void;
+  replaceWith(node: MarkdownPreviewNode): void;
+};
+type MarkdownPreviewDocument = {
+  createElement(tag: string): MarkdownPreviewNode;
+  createTextNode(text: string): MarkdownPreviewNode;
+};
+
+export const appendInlineMarkdown = (
+  parent: MarkdownPreviewNode,
+  content: string,
+  doc: MarkdownPreviewDocument = (
+    globalThis as typeof globalThis & { document: MarkdownPreviewDocument }
+  ).document,
+): void => {
+  const pattern =
+    /(\\[\\\x60*_{}\x5b\x5d()#+\-.!|><~])|(<a?:[A-Za-z0-9_]{2,32}:\d{17,20}>)|(\x60[^\x60\n]+\x60|\|\|[^|\n]+?\|\||\*\*\*[^\n]+?\*\*\*|\*\*[^\n]+?\*\*|__[^\n]+?__|~~[^\n]+?~~|\*[^\n]+?\*)/g;
+  let offset = 0;
+  for (const match of content.matchAll(pattern)) {
+    parent.append(doc.createTextNode(content.slice(offset, match.index)));
+    if (match[1]) {
+      parent.append(doc.createTextNode(match[1].slice(1)));
+      offset = match.index + match[0].length;
+      continue;
+    }
+    if (match[2]) {
+      const emoji = match[2].match(/^<(a?):([A-Za-z0-9_]{2,32}):(\d{17,20})>$/);
+      if (emoji) {
+        const image = doc.createElement('img');
+        image.className = 'preview-discord-emoji';
+        image.alt = ':' + (emoji[2] ?? '') + ':';
+        image.src =
+          'https://cdn.discordapp.com/emojis/' +
+          (emoji[3] ?? '') +
+          (emoji[1] ? '.gif' : '.webp') +
+          '?size=32&quality=lossless';
+        image.addEventListener(
+          'error',
+          () => {
+            image.replaceWith(doc.createTextNode(image.alt));
+          },
+          { once: true },
+        );
+        parent.append(image);
+      }
+      offset = match.index + match[0].length;
+      continue;
+    }
+    const token = match[3] ?? '';
+    const marker = token.startsWith('\x60')
+      ? '\x60'
+      : token.startsWith('||')
+        ? '||'
+        : token.startsWith('***')
+          ? '***'
+          : token.startsWith('**')
+            ? '**'
+            : token.startsWith('__')
+              ? '__'
+              : token.startsWith('~~')
+                ? '~~'
+                : '*';
+    const element = doc.createElement(
+      marker === '\x60'
+        ? 'code'
+        : marker === '||'
+          ? 'span'
+          : marker === '*'
+            ? 'em'
+            : marker === '__'
+              ? 'u'
+              : marker === '~~'
+                ? 's'
+                : 'strong',
+    );
+    if (marker === '||') {
+      element.className = 'preview-spoiler';
+      element.addEventListener('click', () => element.classList.toggle('is-revealed'));
+    }
+    const inner = token.slice(marker.length, -marker.length);
+    if (marker === '\x60') element.textContent = inner;
+    else if (marker === '***') {
+      const italic = doc.createElement('em');
+      appendInlineMarkdown(italic, inner, doc);
+      element.append(italic);
+    } else appendInlineMarkdown(element, inner, doc);
+    parent.append(element);
+    offset = match.index + token.length;
+  }
+  parent.append(doc.createTextNode(content.slice(offset)));
+};
+
 /** One set of authoritative element controls; selecting a row moves its controls into the panel. */
 export const cardLineScript = String.raw`
 const resolveLineTemplate = ${resolveCardTemplate.toString()};
@@ -13,6 +112,7 @@ const layoutJson = document.getElementById('card-layout-json');
 const previewRoot = document.getElementById('card-template-preview');
 const cardForm = layoutEditors?.closest('form');
 const dirtyStatus = document.getElementById('card-config-dirty-status');
+const appendInlineMarkdown = ${appendInlineMarkdown.toString()};
 const formControl = (name) => cardForm?.querySelector('[name="' + name + '"]');
 const inputValue = (name, fallback = '') => formControl(name)?.value ?? fallback;
 const layoutNodes = () => Array.from(layoutEditors?.querySelectorAll('[data-layout-element]') ?? []);
@@ -284,26 +384,6 @@ const rebuild = (layout, selected=selectedLayoutId) => {
   selectElement(layoutNodes().some((node)=>node.dataset.layoutId===selected)?selected:layoutNodes()[0]?.dataset.layoutId);
   refreshRows();saveLayout();
 };
-const appendInlineMarkdown = (parent, content) => {
-  const pattern = /(\\[\\\x60*_{}\[\]()#+\-.!|><~])|(\x60[^\x60\n]+\x60|\|\|[^|\n]+?\|\||\*\*\*[^\n]+?\*\*\*|\*\*[^\n]+?\*\*|__[^\n]+?__|~~[^\n]+?~~|\*[^\n]+?\*)/g;
-  let offset = 0;
-  for (const match of content.matchAll(pattern)) {
-    parent.append(document.createTextNode(content.slice(offset, match.index)));
-    if(match[1]){parent.append(document.createTextNode(match[1].slice(1)));offset=match.index+match[0].length;continue;}
-    const token = match[2];
-    const marker = token.startsWith('\x60') ? '\x60' : token.startsWith('||') ? '||' : token.startsWith('***') ? '***' : token.startsWith('**') ? '**' : token.startsWith('__') ? '__' : token.startsWith('~~') ? '~~' : '*';
-    const element = document.createElement(marker === '\x60' ? 'code' : marker === '||' ? 'span' : marker === '*' ? 'em' : marker === '__' ? 'u' : marker === '~~' ? 's' : 'strong');
-    if(marker==='||'){element.className='preview-spoiler';element.addEventListener('click',()=>element.classList.toggle('is-revealed'));}
-    const inner = token.slice(marker.length, -marker.length);
-    if (marker === '\x60') element.textContent = inner;
-    else if (marker === '***') { const italic = document.createElement('em'); appendInlineMarkdown(italic, inner); element.append(italic); }
-    else appendInlineMarkdown(element, inner);
-    parent.append(element);
-    offset = match.index + token.length;
-  }
-  parent.append(document.createTextNode(content.slice(offset)));
-};
-
 const previewIcon = (state, mode) => {
   const kind = mode === 'current' && state !== 'pending' && state !== 'stale' && previewRoot?.dataset.gameplayState === 'DEGRADED' ? 'warning' : state === 'online' ? 'online' : state === 'offline' || state === 'unavailable' ? 'offline' : state === 'pending' ? 'pending' : 'warning';
   const id = inputValue(kind + 'EmojiId');
