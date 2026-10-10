@@ -146,6 +146,64 @@ const httpsUrl = z.url().refine((value) => new URL(value).protocol === 'https:',
 const emojiId = z.string().regex(/^\d{17,20}$/, 'Must be a Discord emoji ID');
 
 export const CARD_LAYOUT_VERSION = 3;
+export const CARD_BUTTON_STYLES = ['primary', 'secondary', 'success', 'danger', 'link'] as const;
+export type CardButtonStyle = (typeof CARD_BUTTON_STYLES)[number];
+const cardButtonSchema = z
+  .object({
+    id: z.uuid(),
+    label: z.string().trim().min(1).max(80),
+    emoji: z.string().max(100).nullable().default(null),
+    style: z.enum(CARD_BUTTON_STYLES).default('secondary'),
+    action: z.enum([
+      'connect',
+      'map-rules',
+      'copy-address',
+      'announcements-thread',
+      'changelog-thread',
+      'external-https-url',
+    ]),
+    destination: z.string().max(2048).nullable().default(null),
+    visible: z.boolean().default(true),
+  })
+  .superRefine((button, context) => {
+    const linked =
+      button.action === 'announcements-thread' ||
+      button.action === 'changelog-thread' ||
+      button.action === 'external-https-url';
+    if (linked !== (button.style === 'link'))
+      context.addIssue({
+        code: 'custom',
+        path: ['style'],
+        message: 'Link actions require Link style, and interactive actions require a button style.',
+      });
+    if (button.action === 'external-https-url') {
+      if (!button.destination || !httpsUrl.safeParse(button.destination).success)
+        context.addIssue({
+          code: 'custom',
+          path: ['destination'],
+          message: 'Enter a valid HTTPS destination.',
+        });
+    } else if (button.destination !== null)
+      context.addIssue({
+        code: 'custom',
+        path: ['destination'],
+        message: 'This action does not use a destination.',
+      });
+    if (
+      button.emoji !== null &&
+      button.emoji.length > 0 &&
+      !/^<a?:[A-Za-z0-9_]{2,32}:\d{17,20}>$/.test(button.emoji) &&
+      !/^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\uFE0F|\u200D|\u20E3)+$/u.test(
+        button.emoji,
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['emoji'],
+        message: 'Enter one Unicode emoji or a valid custom Discord emoji.',
+      });
+  });
+export type CardButton = z.infer<typeof cardButtonSchema>;
 const updatesFeedSchema = z.object({
   visible: z.boolean().default(true),
   displayLabel: z.string().trim().min(1).max(80),
@@ -270,6 +328,7 @@ const cardLayoutElementSchema = z.discriminatedUnion('type', [
         visibility: z.enum(['thread_exists', 'message_exists', 'never']),
       })
       .optional(),
+    accessoryButtonId: z.uuid().optional(),
     conditionalVisibility: z
       .object({
         mode: z.enum(['always', 'thread_exists', 'message_exists', 'any_update_visible']),
@@ -314,6 +373,7 @@ const cardLayoutElementSchema = z.discriminatedUnion('type', [
     style: z.enum(CARD_LINE_STYLES),
     timestampMode: z.enum(['plain', 'discord_native']).default('plain'),
     thumbnailUrl: httpsUrl.nullable().default(null),
+    accessoryButtonId: z.uuid().optional(),
   }),
   z.object({
     id: z.uuid(),
@@ -321,12 +381,20 @@ const cardLayoutElementSchema = z.discriminatedUnion('type', [
     label: z.string().trim().min(1).max(80),
     visible: z.boolean(),
   }),
+  z.object({
+    id: z.uuid(),
+    type: z.literal('button_row'),
+    label: z.string().trim().min(1).max(80),
+    visible: z.boolean(),
+    buttonIds: z.array(z.uuid()).min(1).max(5),
+  }),
   updatesElementSchema,
 ]);
 export type CardLayoutElement = z.infer<typeof cardLayoutElementSchema>;
 export const cardLayoutSchema = z
   .object({
     version: z.union([z.literal(1), z.literal(2), z.literal(CARD_LAYOUT_VERSION)]),
+    buttons: z.array(cardButtonSchema).max(100).default([]),
     elements: z.array(cardLayoutElementSchema).min(1).max(35),
   })
   .superRefine((layout, context) => {
@@ -340,13 +408,66 @@ export const cardLayoutSchema = z
         code: 'custom',
         message: 'Only one Community Updates element is supported.',
       });
+    const buttonIds = layout.buttons.map((button) => button.id);
+    if (new Set(buttonIds).size !== buttonIds.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['buttons'],
+        message: 'Button IDs must be unique.',
+      });
+    const definitions = new Set(buttonIds);
+    const placements = new Set<string>();
+    for (const element of layout.elements) {
+      const refs =
+        element.type === 'button_row'
+          ? element.buttonIds
+          : (element.type === 'text' || element.type === 'section') && element.accessoryButtonId
+            ? [element.accessoryButtonId]
+            : [];
+      for (const id of refs) {
+        if (!definitions.has(id))
+          context.addIssue({
+            code: 'custom',
+            path: ['elements'],
+            message: 'Button placement refers to a missing button.',
+          });
+        if (placements.has(id))
+          context.addIssue({
+            code: 'custom',
+            path: ['elements'],
+            message: 'A button can only be placed once.',
+          });
+        placements.add(id);
+      }
+    }
+    for (const button of layout.buttons) {
+      if (
+        button.style !== 'link' &&
+        button.emoji?.startsWith('<') &&
+        !/^<a?:[A-Za-z0-9_]{2,32}:\d{17,20}>$/.test(button.emoji)
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['buttons'],
+          message: 'Custom emoji must use a valid Discord emoji format.',
+        });
+    }
     const componentCount =
       1 +
       layout.elements.reduce((total, element) => {
         if (!element.visible) return total;
-        if (element.type === 'section') return total + 3;
         if (element.type === 'actions') return total + 3;
-        if (element.type === 'text') return total + (element.accessory?.enabled ? 3 : 1);
+        if (element.type === 'button_row')
+          return (
+            total +
+            1 +
+            element.buttonIds.filter(
+              (id) => layout.buttons.find((button) => button.id === id)?.visible !== false,
+            ).length
+          );
+        if (element.type === 'text')
+          return total + (element.accessoryButtonId || element.accessory?.enabled ? 3 : 1);
+        if (element.type === 'section') return total + 3;
         if (element.type !== 'updates') return total + 1;
         if (element.blocks !== undefined) {
           return (
@@ -684,7 +805,7 @@ export function normalizeCardProfile(value: unknown): CardProfile {
     ...(source.layout === undefined
       ? {}
       : (() => {
-          const raw = source.layout as { version?: unknown; elements?: unknown };
+          const raw = source.layout as { version?: unknown; elements?: unknown; buttons?: unknown };
           const migrated =
             (raw.version === 1 || raw.version === 2 || raw.version === CARD_LAYOUT_VERSION) &&
             Array.isArray(raw.elements)
@@ -765,7 +886,72 @@ export function normalizeCardProfile(value: unknown): CardProfile {
                   if (raw.version < CARD_LAYOUT_VERSION) {
                     elements = migrateLegacyUpdateElements(elements);
                   }
-                  return { version: CARD_LAYOUT_VERSION, elements };
+                  const oldButtons = source.buttons as Record<string, unknown> | undefined;
+                  const definitions = Array.isArray(raw.buttons)
+                    ? raw.buttons
+                    : [
+                        ...(oldButtons?.connect !== false
+                          ? [
+                              {
+                                id: stableLayoutId('legacy-button:connect'),
+                                label:
+                                  typeof oldButtons?.connectLabel === 'string'
+                                    ? oldButtons.connectLabel
+                                    : 'Connect',
+                                emoji: '▶',
+                                style: 'primary',
+                                action: 'connect',
+                                destination: null,
+                                visible: true,
+                              },
+                            ]
+                          : []),
+                        ...(oldButtons?.mapRules !== false
+                          ? [
+                              {
+                                id: stableLayoutId('legacy-button:map-rules'),
+                                label:
+                                  typeof oldButtons?.mapRulesLabel === 'string'
+                                    ? oldButtons.mapRulesLabel
+                                    : 'Map & Rules',
+                                emoji: '🗺',
+                                style: 'secondary',
+                                action: 'map-rules',
+                                destination: null,
+                                visible: true,
+                              },
+                            ]
+                          : []),
+                      ];
+                  const buttonsByAction = new Map(
+                    (definitions as Record<string, unknown>[]).map((button) => [
+                      button.action,
+                      button.id,
+                    ]),
+                  );
+                  const withButtonRows = elements.map((value) => {
+                    if (value === null || typeof value !== 'object' || Array.isArray(value))
+                      return value;
+                    const element = value as Record<string, unknown>;
+                    if (element.type !== 'actions') return element;
+                    const buttonIds = ['connect', 'map-rules']
+                      .map((action) => buttonsByAction.get(action))
+                      .filter((id): id is string => typeof id === 'string');
+                    return buttonIds.length
+                      ? {
+                          id: element.id,
+                          type: 'button_row',
+                          label: element.label ?? 'Server actions',
+                          visible: element.visible !== false,
+                          buttonIds,
+                        }
+                      : { ...element, visible: false };
+                  });
+                  return {
+                    version: CARD_LAYOUT_VERSION,
+                    buttons: definitions,
+                    elements: withButtonRows,
+                  };
                 })()
               : source.layout;
           const parsed = cardLayoutSchema.safeParse(migrated);

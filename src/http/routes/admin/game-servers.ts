@@ -610,6 +610,18 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
               } catch {
                 layout = null;
               }
+              const validLayout = cardLayoutSchema.safeParse(layout);
+              if (validLayout.success) {
+                layout = normalizeCardProfile({
+                  layout,
+                  buttons: {
+                    connect: body.data.showConnectButton === '1',
+                    mapRules: body.data.showMapRulesButton === '1',
+                    connectLabel: body.data.connectButtonLabel,
+                    mapRulesLabel: body.data.mapRulesButtonLabel,
+                  },
+                }).layout;
+              }
               return { layout };
             })()
           : {}),

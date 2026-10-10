@@ -193,6 +193,7 @@ describe('generic card line contract', () => {
     const removed = cardProfileSchema.parse({
       layout: {
         version: 3,
+        buttons: migrated.layout?.buttons,
         elements: migrated.layout?.elements.filter((element) => element.type !== 'updates'),
       },
     });
@@ -260,6 +261,115 @@ describe('generic card line contract', () => {
       previewLength: 500,
       accessory: { destination: 'ANNOUNCEMENTS', enabled: true },
     });
+  });
+
+  it('migrates legacy action rows to stable button definitions without changing element order', () => {
+    const layout = {
+      version: 2,
+      elements: [
+        {
+          id: '00000000-0000-4000-8000-000000000011',
+          type: 'text',
+          label: 'Intro',
+          template: 'Hello',
+          visible: true,
+          style: 'normal',
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000012',
+          type: 'actions',
+          label: 'Server actions',
+          visible: true,
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000013',
+          type: 'separator',
+          label: 'End',
+          visible: true,
+          divider: true,
+          spacing: 1,
+        },
+      ],
+    };
+    const input = {
+      layout,
+      buttons: { connect: true, mapRules: true, connectLabel: 'Join', mapRulesLabel: 'Rules' },
+    };
+    const first = normalizeCardProfile(input).layout;
+    const second = normalizeCardProfile(input).layout;
+    expect(first).toEqual(second);
+    expect(first?.elements.map((element) => element.id)).toEqual(
+      layout.elements.map((element) => element.id),
+    );
+    expect(first?.elements[1]).toMatchObject({
+      type: 'button_row',
+      buttonIds: [expect.any(String), expect.any(String)],
+    });
+    expect(first?.buttons.map((button) => button.label)).toEqual(['Join', 'Rules']);
+  });
+
+  it('rejects dangling, duplicated and overfull button placements and unsafe link destinations', () => {
+    const button = (id: string) => ({
+      id,
+      label: 'Go',
+      emoji: null,
+      style: 'secondary',
+      action: 'copy-address',
+      destination: null,
+      visible: true,
+    });
+    const ids = Array.from(
+      { length: 6 },
+      (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    );
+    const row = {
+      id: '00000000-0000-4000-8000-000000000099',
+      type: 'button_row',
+      label: 'Buttons',
+      visible: true,
+      buttonIds: ids.slice(0, 5),
+    };
+    expect(
+      cardProfileSchema.safeParse({
+        layout: { version: 3, buttons: ids.slice(0, 5).map(button), elements: [row] },
+      }).success,
+    ).toBe(true);
+    const firstId = ids[0] ?? '';
+    const secondId = ids[1] ?? '';
+    expect(
+      cardProfileSchema.safeParse({
+        layout: {
+          version: 3,
+          buttons: ids.slice(0, 5).map(button),
+          elements: [{ ...row, buttonIds: [...ids.slice(0, 5), firstId] }],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      cardProfileSchema.safeParse({
+        layout: {
+          version: 3,
+          buttons: [button(firstId)],
+          elements: [{ ...row, buttonIds: [secondId] }],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      cardProfileSchema.safeParse({
+        layout: {
+          version: 3,
+          buttons: [
+            {
+              ...button(firstId),
+              action: 'external-https-url',
+              style: 'link',
+              destination: 'javascript:alert(1)',
+            },
+          ],
+          elements: [{ ...row, buttonIds: [firstId] }],
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it('defaults all new card lines and generated Updates rows to plain formatting', () => {

@@ -313,13 +313,90 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
       : model.submitted[key === 'connect' ? 'showConnectButton' : 'showMapRulesButton'] === '1';
   const savedLines = resolveCardLines(model.server.cardProfile, model.server.description);
   const savedLayout = resolveCardLayout(model.server.cardProfile, model.server.description);
+  const legacyConnectId = '00000000-0000-4000-8000-000000000301';
+  const legacyMapRulesId = '00000000-0000-4000-8000-000000000302';
+  const layoutButtons = profile.layout?.buttons ?? [
+    ...(profile.buttons.connect
+      ? [
+          {
+            id: legacyConnectId,
+            label: profile.buttons.connectLabel,
+            emoji: '▶',
+            style: 'primary' as const,
+            action: 'connect' as const,
+            destination: null,
+            visible: true,
+          },
+        ]
+      : []),
+    ...(profile.buttons.mapRules
+      ? [
+          {
+            id: legacyMapRulesId,
+            label: profile.buttons.mapRulesLabel,
+            emoji: '🗺',
+            style: 'secondary' as const,
+            action: 'map-rules' as const,
+            destination: null,
+            visible: true,
+          },
+        ]
+      : []),
+  ];
+  const defaultLayoutButtons = [
+    {
+      id: legacyConnectId,
+      label: 'Connect',
+      emoji: '▶',
+      style: 'primary' as const,
+      action: 'connect' as const,
+      destination: null,
+      visible: true,
+    },
+    {
+      id: legacyMapRulesId,
+      label: 'Map & Rules',
+      emoji: '🗺',
+      style: 'secondary' as const,
+      action: 'map-rules' as const,
+      destination: null,
+      visible: true,
+    },
+  ];
+  const defaultLayout = resolveCardLayout(undefined, null).map((element) =>
+    element.type === 'actions'
+      ? {
+          id: element.id,
+          type: 'button_row' as const,
+          label: element.label,
+          visible: element.visible,
+          buttonIds: [legacyConnectId, legacyMapRulesId],
+        }
+      : element,
+  );
+  const editorLayout = savedLayout.map((element) =>
+    element.type === 'actions' && layoutButtons.length > 0
+      ? {
+          id: element.id,
+          type: 'button_row' as const,
+          label: element.label,
+          visible: element.visible,
+          buttonIds: [
+            ...(profile.buttons.connect ? [legacyConnectId] : []),
+            ...(profile.buttons.mapRules ? [legacyMapRulesId] : []),
+          ],
+        }
+      : element.type === 'actions'
+        ? { ...element, visible: false }
+        : element,
+  );
   const legacyUpdatesWarning = savedLayout.some((element) => element.type === 'updates')
     ? '<div class="notice warning">This saved Community Updates layout exceeds the automatic migration size. Its settings are preserved in compatibility mode. Reduce the number of card elements, then save to convert it to independent text rows.</div>'
     : '';
   const layoutJsonValue =
     typeof model.submitted?.layoutJson === 'string'
       ? model.submitted.layoutJson
-      : JSON.stringify({ version: 3, elements: savedLayout });
+      : JSON.stringify({ version: 3, buttons: layoutButtons, elements: editorLayout });
   const requestedOrder =
     typeof model.submitted?.lineOrder === 'string'
       ? model.submitted.lineOrder.split(',')
@@ -462,8 +539,8 @@ ${input('Display name', 'displayName', value('displayName', model.server.display
 <fieldset id="card-text-settings" class="game-server-config-group"><legend>Card Layout Builder</legend>
 <input type="hidden" name="linesVersion" value="1"><input type="hidden" name="lineOrder" id="card-line-order" value="${escapeHtml(editorLines.map((line) => line.id).join(','))}"><input type="hidden" name="layoutVersion" value="3"><input type="hidden" name="layoutJson" id="card-layout-json" value="${escapeHtml(layoutJsonValue)}">
 <input type="hidden" name="fieldOrder" value="${escapeHtml(profile.fieldOrder.join(','))}">
-<p class="hint">Manage text and layout elements below. Reorder with Up/Down. Hidden or empty elements do not appear.</p><details class="inline-help"><summary>Text and Discord layout help</summary><p>Text styles use Discord Markdown, and Small text uses <code>-#</code>. Sections keep thumbnails attached as Discord requires. Discord controls final spacing and limits total card text to 4,000 characters.</p></details>
-${legacyUpdatesWarning}<details class="layout-add-menu"><summary>Add element</summary><div class="layout-add-actions" aria-label="Add card layout element"><button type="button" class="secondary" data-add-layout="text">Add Text Line</button><button type="button" class="secondary" data-add-layout="gallery">Add Image Gallery</button><button type="button" class="secondary" data-add-layout="separator">Add Separator</button><button type="button" class="secondary" data-add-layout="section">Add Text + Thumbnail Section</button><button type="button" class="secondary" data-add-layout="actions">Add Action Buttons</button><button type="button" class="secondary" data-add-layout="updates">Community Updates preset</button></div></details><div id="card-layout-workspace"><section id="card-layout-list" aria-label="Card elements"><h3>Elements</h3><p class="hint">Select a block to edit its properties.</p><div id="card-layout-editors"></div><p class="hint" id="card-layout-status" role="status" aria-live="polite"></p><div id="card-layout-undo" role="status" aria-live="polite"></div></section><section id="card-layout-properties" aria-label="Element properties"><p class="hint">Choose an element to begin editing.</p></section></div>
+<p class="hint">Manage text and layout elements below. Reorder with Up/Down. Hidden or empty elements do not appear.</p><fieldset class="card-button-library"><legend>Button Library</legend><p class="hint">Create reusable buttons, then place them in a Button Row or as the right-side accessory on text. A Section has one accessory, so choosing a button replaces its thumbnail.</p><div data-button-library></div><button type="button" class="secondary" data-button-add>Add Button</button></fieldset><details class="inline-help"><summary>Text and Discord layout help</summary><p>Text styles use Discord Markdown, and Small text uses <code>-#</code>. Sections keep thumbnails attached as Discord requires. Discord controls final spacing and limits total card text to 4,000 characters.</p></details>
+${legacyUpdatesWarning}<details class="layout-add-menu"><summary>Add element</summary><div class="layout-add-actions" aria-label="Add card layout element"><button type="button" class="secondary" data-add-layout="text">Add Text Line</button><button type="button" class="secondary" data-add-layout="gallery">Add Image Gallery</button><button type="button" class="secondary" data-add-layout="separator">Add Separator</button><button type="button" class="secondary" data-add-layout="section">Add Text + Thumbnail Section</button><button type="button" class="secondary" data-add-layout="button_row">Add Button Row</button><button type="button" class="secondary" data-add-layout="actions">Legacy Action Buttons</button><button type="button" class="secondary" data-add-layout="updates">Community Updates preset</button></div></details><div id="card-layout-workspace"><section id="card-layout-list" aria-label="Card elements"><h3>Elements</h3><p class="hint">Select a block to edit its properties.</p><div id="card-layout-editors"></div><p class="hint" id="card-layout-status" role="status" aria-live="polite"></p><div id="card-layout-undo" role="status" aria-live="polite"></div></section><section id="card-layout-properties" aria-label="Element properties"><p class="hint">Choose an element to begin editing.</p></section></div>
 <div id="card-line-editors" hidden>${editorLines.map(lineEditor).join('')}</div>
 </fieldset>
 <details class="card-settings-group"><summary>Appearance</summary><div class="card-settings-content"><label class="checkbox" hidden><input type="checkbox" name="showMapArtwork" value="1"${(model.submitted === undefined ? (profile.mapArtwork ?? profile.visibleFields.currentMap) : model.submitted.showMapArtwork === '1') ? ' checked' : ''}> Show map artwork</label><p class="hint">Control each gallery’s artwork and visibility in its element properties.</p>
@@ -473,9 +550,7 @@ ${input('Thumbnail HTTPS URL', 'thumbnailImageUrl', value('thumbnailImageUrl', p
 <p class="hint">Blank thumbnail uses the default server icon.</p>
 ${input('Map artwork fallback HTTPS URL', 'imageUrl', value('imageUrl', model.server.imageUrl), 'url', 'maxlength="500" placeholder="https://..."', model.fieldErrors?.imageUrl)}
 <p class="hint">Known local map artwork takes priority; this URL is used when map artwork is unavailable.</p>
-</div></details><details class="card-settings-group" id="card-button-settings"><summary>Action Buttons</summary><div class="card-settings-content"><label class="checkbox"><input type="checkbox" name="showConnectButton" value="1"${buttonChecked('connect') ? ' checked' : ''}> Show Connect button</label>${input('Connect button label', 'connectButtonLabel', typeof model.submitted?.connectButtonLabel === 'string' ? model.submitted.connectButtonLabel : profile.buttons.connectLabel, 'text', 'maxlength="80" required')}
-<label class="checkbox"><input type="checkbox" name="showMapRulesButton" value="1"${buttonChecked('mapRules') ? ' checked' : ''}> Show Map & Rules button</label>${input('Map & Rules button label', 'mapRulesButtonLabel', typeof model.submitted?.mapRulesButtonLabel === 'string' ? model.submitted.mapRulesButtonLabel : profile.buttons.mapRulesLabel, 'text', 'maxlength="80" required')}
-</div></details><details class="card-settings-group"><summary>Status Presentation</summary><div class="card-settings-content">${input('Online status label', 'onlineStatusLabel', typeof model.submitted?.onlineStatusLabel === 'string' ? model.submitted.onlineStatusLabel : profile.statusLabels.online, 'text', 'maxlength="80" required')}
+</div></details><input type="hidden" name="showConnectButton" value="${buttonChecked('connect') ? '1' : ''}"><input type="hidden" name="connectButtonLabel" value="${escapeHtml(profile.buttons.connectLabel)}"><input type="hidden" name="showMapRulesButton" value="${buttonChecked('mapRules') ? '1' : ''}"><input type="hidden" name="mapRulesButtonLabel" value="${escapeHtml(profile.buttons.mapRulesLabel)}"><details class="card-settings-group"><summary>Status Presentation</summary><div class="card-settings-content">${input('Online status label', 'onlineStatusLabel', typeof model.submitted?.onlineStatusLabel === 'string' ? model.submitted.onlineStatusLabel : profile.statusLabels.online, 'text', 'maxlength="80" required')}
 ${input('Offline status label', 'offlineStatusLabel', typeof model.submitted?.offlineStatusLabel === 'string' ? model.submitted.offlineStatusLabel : profile.statusLabels.offline, 'text', 'maxlength="80" required')}
 ${input('Starting status label', 'startingStatusLabel', typeof model.submitted?.startingStatusLabel === 'string' ? model.submitted.startingStatusLabel : profile.statusLabels.starting, 'text', 'maxlength="80" required')}
 ${input('Stale status label', 'staleStatusLabel', typeof model.submitted?.staleStatusLabel === 'string' ? model.submitted.staleStatusLabel : profile.statusLabels.stale, 'text', 'maxlength="80" required')}
@@ -500,7 +575,7 @@ ${input('Connect domain', 'connectDomain', value('connectDomain', model.server.c
 ${input('HTTPS join URL', 'joinUrl', value('joinUrl', model.server.joinUrl), 'url', 'maxlength="500" placeholder="https://..."', model.fieldErrors?.joinUrl)}
 <p class="hint">The join URL appears in the server detail response. The card Connect button provides the server address.</p>
 </div></details>
-<div class="card-default-actions"><button type="button" class="secondary" data-reset-card-profile data-default-layout="${escapeHtml(JSON.stringify({ version: 3, elements: resolveCardLayout(undefined, null) }))}" data-defaults="${escapeHtml(JSON.stringify({ titleTemplate: DEFAULT_CARD_TEMPLATES.title, subtitleTemplate: '{statusicon} {status} · {location}', descriptionTemplate: DEFAULT_CARD_TEMPLATES.description, playerCountTemplate: DEFAULT_CARD_TEMPLATES.playerCount, currentMapTemplate: DEFAULT_CARD_TEMPLATES.currentMap, serverAddressTemplate: DEFAULT_CARD_TEMPLATES.serverAddress, showTitle: true, showSubtitle: true, showDescription: true, showPlayerCount: true, showCurrentMap: true, showServerAddress: true, showUpdates: true, fieldOrder: 'description,currentMap,serverAddress', lineOrder: CARD_LINE_IDS.join(','), showMapArtwork: true, ...Object.fromEntries(CARD_LINE_IDS.map((id) => [`${id}Style`, DEFAULT_CARD_LINE_STYLES[id]])), showConnectButton: true, showMapRulesButton: true, connectButtonLabel: 'Connect', mapRulesButtonLabel: 'Map & Rules', onlineStatusLabel: DEFAULT_STATUS_LABELS.online, offlineStatusLabel: DEFAULT_STATUS_LABELS.offline, startingStatusLabel: DEFAULT_STATUS_LABELS.starting, staleStatusLabel: DEFAULT_STATUS_LABELS.stale, pendingStatusLabel: DEFAULT_STATUS_LABELS.pending, unavailableStatusLabel: DEFAULT_STATUS_LABELS.unavailable, accentColor: '#2b8aef', thumbnailImageUrl: '', imageUrl: '', onlineEmojiId: '', offlineEmojiId: '', warningEmojiId: '', pendingEmojiId: '' }))}">Restore card defaults</button><p class="hint">Restore the card layout and appearance to their defaults.</p></div></fieldset>
+<div class="card-default-actions"><button type="button" class="secondary" data-reset-card-profile data-default-layout="${escapeHtml(JSON.stringify({ version: 3, buttons: defaultLayoutButtons, elements: defaultLayout }))}" data-defaults="${escapeHtml(JSON.stringify({ titleTemplate: DEFAULT_CARD_TEMPLATES.title, subtitleTemplate: '{statusicon} {status} · {location}', descriptionTemplate: DEFAULT_CARD_TEMPLATES.description, playerCountTemplate: DEFAULT_CARD_TEMPLATES.playerCount, currentMapTemplate: DEFAULT_CARD_TEMPLATES.currentMap, serverAddressTemplate: DEFAULT_CARD_TEMPLATES.serverAddress, showTitle: true, showSubtitle: true, showDescription: true, showPlayerCount: true, showCurrentMap: true, showServerAddress: true, showUpdates: true, fieldOrder: 'description,currentMap,serverAddress', lineOrder: CARD_LINE_IDS.join(','), showMapArtwork: true, ...Object.fromEntries(CARD_LINE_IDS.map((id) => [`${id}Style`, DEFAULT_CARD_LINE_STYLES[id]])), showConnectButton: true, showMapRulesButton: true, connectButtonLabel: 'Connect', mapRulesButtonLabel: 'Map & Rules', onlineStatusLabel: DEFAULT_STATUS_LABELS.online, offlineStatusLabel: DEFAULT_STATUS_LABELS.offline, startingStatusLabel: DEFAULT_STATUS_LABELS.starting, staleStatusLabel: DEFAULT_STATUS_LABELS.stale, pendingStatusLabel: DEFAULT_STATUS_LABELS.pending, unavailableStatusLabel: DEFAULT_STATUS_LABELS.unavailable, accentColor: '#2b8aef', thumbnailImageUrl: '', imageUrl: '', onlineEmojiId: '', offlineEmojiId: '', warningEmojiId: '', pendingEmojiId: '' }))}">Restore card defaults</button><p class="hint">Restore the card layout and appearance to their defaults.</p></div></fieldset>
 ${preview}
 <div class="notice warning">This webpanel changes only the bot's local registration. It does not mutate the DatHost server.</div>
 <div class="game-server-savebar"><p class="hint" id="card-config-dirty-status" role="status" aria-live="polite">All changes saved.</p><button type="button" class="secondary" data-discard-server-changes>Discard changes</button><button type="submit">Save changes</button></div>`,

@@ -69,11 +69,23 @@ const updateCardPreview = () => {
   const accent = inputValue('accentColor');
   output.style.borderLeftColor = /^#[0-9a-fA-F]{6}$/.test(accent) ? accent : '#2b8aef';
   let elements;
-  try { const parsed = JSON.parse(layoutJson?.value ?? '{}'); elements = Array.isArray(parsed) ? parsed : parsed.elements; } catch {}
+  let buttonDefinitions=[];
+  try { const parsed = JSON.parse(layoutJson?.value ?? '{}'); elements = Array.isArray(parsed) ? parsed : parsed.elements; buttonDefinitions=Array.isArray(parsed.buttons)?parsed.buttons:[]; } catch {}
   if (!Array.isArray(elements)) {
     const error = document.createElement('p'); error.className = 'warning'; error.textContent = 'Layout data cannot be previewed. Your draft is preserved; discard or correct it before saving.';output.append(error);return;
   }
   let threads=[];try{threads=JSON.parse(previewRoot.dataset.updateThreads ?? '[]')}catch{}
+  const buttonById=new Map(buttonDefinitions.map((button)=>[button.id,button]));
+  const previewConfiguredButton=(button)=>{
+    if(!button||button.visible===false)return null;
+    const isThread=button.action==='announcements-thread'||button.action==='changelog-thread';
+    const kind=button.action==='announcements-thread'?'ANNOUNCEMENTS':'CHANGELOG';
+    const thread=isThread&&Array.isArray(threads)?threads.find((item)=>item.type===kind):undefined;
+    const missing=(isThread&&(!thread||!/^[0-9]{17,20}$/.test(thread.threadId)||!/^[0-9]{17,20}$/.test(previewRoot.dataset.guildId||'')));
+    if(missing&&mode==='current')return {label:(button.label||'Button')+' · destination unavailable',missing:true};
+    return {label:(button.emoji?button.emoji+' ':'')+(button.label||'Button'),missing:false};
+  };
+  const previewButtonNode=(button)=>{const item=previewConfiguredButton(button);if(!item)return null;const span=document.createElement('span');span.className='preview-action'+(button.style==='primary'?'':' secondary')+(item.missing?' preview-button-missing':'');span.textContent=item.label;span.dataset.discordAccessory='Button';return span;};
   const escapeUpdatePreview=(value)=>value.replace(/@/g,'@\u200b').replace(/([\\\x60*_{}<>\x5b\x5d()#+\-.!|>~])/g,'\\$1');
   const updateValueMap=(element)=>{
     const result={...values};
@@ -106,13 +118,15 @@ const updateCardPreview = () => {
     const text = resolveLineTemplate(element.template ?? '', textValues);
     if (element.type === 'text') {
       if (!text.trim()) return;
-      const accessory=element.accessory;const thread=accessory?.destination&&Array.isArray(threads)?threads.find((item)=>item.type===accessory.destination):undefined;const safeThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');const hasMessage=Boolean(thread?.latestMessageText?.trim());const showAccessory=accessory?.enabled&&safeThread&&accessory.visibility!=='never'&&(accessory.visibility!=='message_exists'||hasMessage);
-      if(showAccessory){const section=document.createElement('div');section.className='preview-section';section.dataset.previewElement=element.id;section.dataset.discordComponent='Section';const body=document.createElement('div');body.className='preview-text-display';body.dataset.discordComponent='TextDisplay';appendText(body,styleLineText(text,element.style??'normal'));section.append(body);const button=document.createElement('span');button.className='preview-action secondary';button.dataset.discordAccessory='Button';button.textContent=accessory.label||'Open';section.append(button);output.append(section);}
+      const accessory=element.accessory;const thread=accessory?.destination&&Array.isArray(threads)?threads.find((item)=>item.type===accessory.destination):undefined;const safeThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');const hasMessage=Boolean(thread?.latestMessageText?.trim());const showAccessory=!element.accessoryButtonId&&accessory?.enabled&&safeThread&&accessory.visibility!=='never'&&(accessory.visibility!=='message_exists'||hasMessage);
+      const configuredAccessory=previewButtonNode(buttonById.get(element.accessoryButtonId));
+      if(configuredAccessory){const section=document.createElement('div');section.className='preview-section';section.dataset.previewElement=element.id;section.dataset.discordComponent='Section';const body=document.createElement('div');body.className='preview-text-display';body.dataset.discordComponent='TextDisplay';appendText(body,styleLineText(text,element.style??'normal'));section.append(body,configuredAccessory);output.append(section);}
+      else if(showAccessory){const section=document.createElement('div');section.className='preview-section';section.dataset.previewElement=element.id;section.dataset.discordComponent='Section';const body=document.createElement('div');body.className='preview-text-display';body.dataset.discordComponent='TextDisplay';appendText(body,styleLineText(text,element.style??'normal'));section.append(body);const button=document.createElement('span');button.className='preview-action secondary';button.dataset.discordAccessory='Button';button.textContent=accessory.label||'Open';section.append(button);output.append(section);}
       else {const block = document.createElement('div'); block.dataset.previewElement = element.id;block.dataset.discordComponent='TextDisplay';appendText(block, styleLineText(text, element.style ?? 'normal')); output.append(block);}
     } else if (element.type === 'section') {
       const section = document.createElement('div');section.className = 'preview-section';section.dataset.previewElement = element.id;
       const body = document.createElement('div'); appendText(body, styleLineText(text, element.style ?? 'normal')); section.append(body);
-      section.append(media(element.thumbnailUrl || inputValue('thumbnailImageUrl') || previewRoot.dataset.defaultThumbnail, 'Server thumbnail', true)); output.append(section);
+      const configuredAccessory=previewButtonNode(buttonById.get(element.accessoryButtonId));if(configuredAccessory)section.append(configuredAccessory);else section.append(media(element.thumbnailUrl || inputValue('thumbnailImageUrl') || previewRoot.dataset.defaultThumbnail, 'Server thumbnail', true)); output.append(section);
     } else if (element.type === 'gallery') {
       const gallery = document.createElement('div');gallery.className = 'preview-media-gallery';gallery.dataset.previewElement = element.id;
       (element.items ?? []).forEach((item) => {
@@ -125,6 +139,7 @@ const updateCardPreview = () => {
       const divider = document.createElement(element.divider ? 'hr' : 'div');divider.dataset.previewElement = element.id;
       divider.className = (element.divider ? 'preview-separator' : 'preview-separator-space') + (element.spacing === 2 ? ' preview-separator-large' : ''); output.append(divider);
     } else if (element.type === 'actions') { const row = actions();row.dataset.previewElement = element.id;if(row.children.length) output.append(row); }
+    else if(element.type==='button_row'){const row=document.createElement('div');row.className='preview-action-row';row.dataset.previewElement=element.id;row.dataset.discordComponent='ActionRow';(element.buttonIds||[]).forEach((id)=>{const configured=buttonById.get(id);const button=previewButtonNode(configured);if(button&&configured.visible!==false)row.append(button);});if(row.children.length)output.append(row);}
     else if (element.type === 'updates') {
       const relativeTime=(value)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const seconds=(date.getTime()-Date.now())/1000;const units=[['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60],['second',1]];const [unit,size]=units.find(([,size])=>Math.abs(seconds)>=size)||units[units.length-1];return new Intl.RelativeTimeFormat('en',{numeric:'auto'}).format(Math.round(seconds/size),unit);};
       const entries=previewUpdateRows(element);

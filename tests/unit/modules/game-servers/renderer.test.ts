@@ -965,6 +965,58 @@ describe('Game Server rendering', () => {
     expect(connectButton?.customId).toMatch(/^gs:connect:/);
   });
 
+  it('renders independently configured buttons in row order with distinct signed instances', () => {
+    const firstId = '00000000-0000-4000-8000-000000000021';
+    const secondId = '00000000-0000-4000-8000-000000000022';
+    const rowId = '00000000-0000-4000-8000-000000000023';
+    const view = {
+      ...server,
+      cardProfile: {
+        layout: {
+          version: 3,
+          buttons: [
+            {
+              id: firstId,
+              label: 'Join now',
+              emoji: '▶',
+              style: 'primary',
+              action: 'connect',
+              destination: null,
+              visible: true,
+            },
+            {
+              id: secondId,
+              label: 'Copy server address',
+              emoji: null,
+              style: 'secondary',
+              action: 'copy-address',
+              destination: null,
+              visible: true,
+            },
+          ],
+          elements: [
+            {
+              id: rowId,
+              type: 'button_row',
+              label: 'Quick actions',
+              visible: true,
+              buttonIds: [secondId, firstId],
+            },
+          ],
+        },
+      },
+    };
+    const container = firstContainer(renderGameServerCard(view, secret));
+    const row = containerComponents(container).find((component) => component.type === 1);
+    const rendered = Array.isArray(row?.components)
+      ? (row.components as Record<string, unknown>[])
+      : [];
+    expect(rendered.map((button) => button.label)).toEqual(['Copy server address', 'Join now']);
+    expect(rendered.map((button) => button.customId)).toHaveLength(2);
+    expect(new Set(rendered.map((button) => button.customId)).size).toBe(2);
+    expect(rendered.every((button) => String(button.customId).length <= 100)).toBe(true);
+  });
+
   it('renders an unavailable connect command when no address is configured', () => {
     const view = {
       ...server,

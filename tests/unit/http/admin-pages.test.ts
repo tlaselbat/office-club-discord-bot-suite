@@ -9,6 +9,7 @@ import {
   guildIndex,
   rewardsPage,
 } from '../../../src/http/admin/views.js';
+import { cardLineScript } from '../../../src/http/admin/views/card-lines.js';
 
 describe('admin page views', () => {
   it('guild index renders module summaries safely', () => {
@@ -244,14 +245,19 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-8');
-    expect(html).toContain('panel.js?v=game-server-editor-8');
+    expect(html).toContain('panel.css?v=game-server-editor-9');
+    expect(html).toContain('panel.js?v=game-server-editor-9');
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
     expect(html).toContain('href="#card-designer">Card Designer</a>');
     expect(html).toContain('class="game-server-savebar"');
     expect(html).toContain('data-discard-server-changes');
     expect(html).toContain('id="card-layout-properties"');
     expect(html).toContain('id="card-layout-workspace"');
+    expect(html).toContain('Button Library');
+    expect(html).toContain('data-button-add');
+    expect(html).toContain('data-add-layout="button_row"');
+    expect(cardLineScript).toContain('announcements-thread');
+    expect(cardLineScript).toContain('Copy Address');
     expect(html).toContain('data-default-layout');
     expect(html).toContain('data-map-known');
     expect(html).toContain('Inspect saved configuration');

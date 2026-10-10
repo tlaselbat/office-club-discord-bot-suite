@@ -156,13 +156,21 @@ describe('Game Server configuration routes', () => {
       url,
       payload: {
         ...payload,
+        showConnectButton: '1',
+        showMapRulesButton: '1',
         layoutVersion: '2',
         layoutJson: JSON.stringify({ version: 2, elements }),
       },
     });
     expect(response.statusCode).toBe(303);
     const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
-    expect(command.cardProfile.layout?.elements).toEqual(elements);
+    expect(command.cardProfile.layout?.elements.map((element) => element.type)).toEqual(
+      elements.map((element) => (element.type === 'actions' ? 'button_row' : element.type)),
+    );
+    expect(command.cardProfile.layout?.elements.map((element) => element.id)).toEqual(
+      elements.map((element) => element.id),
+    );
+    expect(command.cardProfile.layout?.buttons.length).toBeGreaterThanOrEqual(2);
   });
   it('persists and hydrates a custom Community Updates nested layout', async () => {
     const { app, url, payload, updateServer, shared } = fixture();

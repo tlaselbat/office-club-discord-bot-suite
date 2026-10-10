@@ -7,6 +7,7 @@ import {
   StringSelectMenuBuilder,
 } from 'discord.js';
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import {
   cardAccentColor,
@@ -15,6 +16,7 @@ import {
   resolveCardProfile,
   resolveCardLayout,
   type CardLayoutElement,
+  type CardButton,
   type CardLineStyle,
 } from './card-profile.js';
 import { createGameServerCustomId } from './custom-id.js';
@@ -222,6 +224,7 @@ function renderLayoutCard(
           : [],
       ]),
   );
+  const buttons = new Map((profile.layout?.buttons ?? []).map((button) => [button.id, button]));
   for (const [index, element] of layout.entries()) {
     if (!element.visible) continue;
     if (element.type === 'text') {
@@ -244,24 +247,33 @@ function renderLayoutCard(
         /^\d{17,20}$/.test(server.guildId);
       const hasMessage = Boolean(thread?.latestMessageText?.trim());
       const showAccessory = Boolean(
-        element.accessory?.enabled &&
+        !element.accessoryButtonId &&
+          element.accessory?.enabled &&
           validThread &&
           element.accessory.visibility !== 'never' &&
           (element.accessory.visibility !== 'message_exists' || hasMessage),
       );
+      const configuredButton = element.accessoryButtonId
+        ? buttons.get(element.accessoryButtonId)
+        : undefined;
+      const accessoryButton = configuredButton?.visible
+        ? renderConfiguredButton(server, secret, configuredButton)
+        : null;
       components.push(
-        showAccessory
-          ? {
-              type: componentType.section,
-              components: [display],
-              accessory: {
-                type: componentType.button,
-                style: buttonStyle.link,
-                label: element.accessory?.label.replace(/@/g, '@\u200b').slice(0, 80) ?? 'Open',
-                url: `https://discord.com/channels/${server.guildId}/${thread?.threadId ?? ''}`,
-              },
-            }
-          : display,
+        accessoryButton !== null
+          ? { type: componentType.section, components: [display], accessory: accessoryButton }
+          : showAccessory
+            ? {
+                type: componentType.section,
+                components: [display],
+                accessory: {
+                  type: componentType.button,
+                  style: buttonStyle.link,
+                  label: element.accessory?.label.replace(/@/g, '@\u200b').slice(0, 80) ?? 'Open',
+                  url: `https://discord.com/channels/${server.guildId}/${thread?.threadId ?? ''}`,
+                },
+              }
+            : display,
       );
     } else if (element.type === 'section') {
       const update = resolveTextRowUpdates(server, element);
@@ -269,10 +281,15 @@ function renderLayoutCard(
         resolveCardTemplate(element.template, { ...values, ...update.values }),
         element.style,
       );
+      const configuredButton = element.accessoryButtonId
+        ? buttons.get(element.accessoryButtonId)
+        : undefined;
       components.push({
         type: componentType.section,
         components: [textDisplay(sectionText)],
-        accessory: {
+        accessory: (configuredButton?.visible
+          ? renderConfiguredButton(server, secret, configuredButton)
+          : null) ?? {
           type: componentType.thumbnail,
           media: { url: element.thumbnailUrl ?? profile.thumbnailImageUrl },
         },
@@ -313,6 +330,14 @@ function renderLayoutCard(
           : []),
       ];
       if (buttons.length) components.push({ type: componentType.actionRow, components: buttons });
+    } else if (element.type === 'button_row') {
+      const rowButtons = element.buttonIds
+        .map((id) => buttons.get(id))
+        .filter((button): button is CardButton => button !== undefined && button.visible)
+        .map((button) => renderConfiguredButton(server, secret, button))
+        .filter((button): button is Record<string, unknown> => button !== null);
+      if (rowButtons.length)
+        components.push({ type: componentType.actionRow, components: rowButtons });
     } else {
       components.push(...(renderedUpdates.get(element.id) ?? []));
     }
@@ -340,6 +365,65 @@ function renderLayoutCard(
     flags: MessageFlags.IsComponentsV2 as number,
     allowedMentions: { parse: [] },
   };
+}
+
+function renderConfiguredButton(
+  server: ServerView,
+  secret: string,
+  button: CardButton,
+): Record<string, unknown> | null {
+  const label = button.label.replace(/@/g, '@\u200b').slice(0, 80);
+  const emoji = button.emoji ? parseButtonEmoji(button.emoji) : undefined;
+  const link =
+    button.action === 'external-https-url'
+      ? button.destination
+      : button.action === 'announcements-thread' || button.action === 'changelog-thread'
+        ? (() => {
+            const kind = button.action === 'announcements-thread' ? 'ANNOUNCEMENTS' : 'CHANGELOG';
+            const thread = (server.updateThreads ?? []).find((item) => item.type === kind);
+            return thread &&
+              /^\d{17,20}$/.test(thread.threadId) &&
+              /^\d{17,20}$/.test(server.guildId)
+              ? `https://discord.com/channels/${server.guildId}/${thread.threadId}`
+              : null;
+          })()
+        : null;
+  if (link)
+    return {
+      type: componentType.button,
+      style: buttonStyle.link,
+      label,
+      ...(emoji ? { emoji } : {}),
+      url: link,
+    };
+  if (
+    button.action === 'external-https-url' ||
+    button.action === 'announcements-thread' ||
+    button.action === 'changelog-thread'
+  )
+    return null;
+  const action = button.action;
+  return {
+    type: componentType.button,
+    style: buttonStyle[button.style],
+    label,
+    ...(emoji ? { emoji } : {}),
+    customId: createGameServerCustomId(
+      {
+        action,
+        value: server.id,
+        name: createHash('sha256').update(button.id).digest('base64url').slice(0, 8),
+      },
+      secret,
+    ),
+  };
+}
+
+function parseButtonEmoji(value: string): Record<string, unknown> | undefined {
+  const custom = value.match(/^<(a?):([A-Za-z0-9_]{2,32}):(\d{17,20})>$/);
+  if (custom) return { animated: custom[1] === 'a', name: custom[2], id: custom[3] };
+  if (value.startsWith('<')) return undefined;
+  return { name: value };
 }
 
 function validateRenderedLayout(container: Record<string, unknown>): void {
