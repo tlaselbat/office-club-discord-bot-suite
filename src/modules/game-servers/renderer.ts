@@ -532,7 +532,7 @@ function renderUpdatesSection(
           divider: block.divider,
           spacing: block.spacing,
         });
-      } else { // gallery is the only remaining validated update block
+      } else {
         const items = block.items.map((item) => ({
           media: {
             url:
