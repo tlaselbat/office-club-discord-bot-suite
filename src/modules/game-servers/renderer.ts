@@ -509,7 +509,7 @@ function renderUpdatesSection(
       if (block.type === 'heading') {
         if (element.showHeading)
           components.push(updateTextDisplay(styleCardLine(
-            element.title.replace(/@/g, '@\\u200b'), updateLineStyle(element.headingStyle),
+            element.title.replace(/@/g, '@\u200b'), updateLineStyle(element.headingStyle),
           )));
       } else if (block.type === 'feed') {
         components.push(...(feedsByType.get(block.feed) ?? []));
