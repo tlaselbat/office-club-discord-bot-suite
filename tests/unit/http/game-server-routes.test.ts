@@ -96,6 +96,73 @@ function fixture() {
 }
 
 describe('Game Server configuration routes', () => {
+  it('accepts empty hidden legacy button fields and preserves independent button toggles', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const layoutJson = JSON.stringify({ version: 3, buttons: [], elements: resolveCardLayout({}) });
+    for (const [connect, mapRules, expected] of [
+      ['', '1', { connect: false, mapRules: true }],
+      ['1', '', { connect: true, mapRules: false }],
+    ]) {
+      const response = await app.inject({
+        method: 'POST',
+        url,
+        payload: {
+          ...payload,
+          layoutVersion: '3',
+          layoutJson,
+          showConnectButton: connect,
+          showMapRulesButton: mapRules,
+        },
+      });
+      expect(response.statusCode).toBe(303);
+      expect(response.headers.location).toContain('?saved=1#card-designer');
+      expect(updateServer).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          cardProfile: expect.objectContaining({ buttons: expect.objectContaining(expected) }),
+        }),
+      );
+    }
+  });
+
+  it('returns layout field errors and preserves the invalid submitted draft', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const invalidLayout = JSON.stringify({
+      version: 3,
+      buttons: [],
+      elements: [{ id: 'invalid-id', type: 'text', visible: true, template: 'Keep this draft' }],
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        layoutVersion: '3',
+        layoutJson: invalidLayout,
+        showConnectButton: '',
+        showMapRulesButton: '',
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('Card Layout needs correction');
+    expect(response.body).toContain('Card Layout elements.0.id');
+    expect(response.body).toContain('Keep this draft');
+    expect(response.body).toContain('id="layoutJson-error"');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it('identifies strict-schema fields and preserves the submitted values', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, displayName: 'Keep this name', unknownControl: 'unexpected' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('Unexpected form field: unknownControl');
+    expect(response.body).toContain('value="Keep this name"');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
   it('keeps an invalid saved layout intact and offers an explicit recovery path', async () => {
     const { app, url, shared } = fixture();
     const saved = await shared.deps.prisma.gameServer.findFirst();

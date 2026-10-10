@@ -652,4 +652,8 @@ if(layoutEditors&&layoutJson){
   catch(error){console.error('Card Designer layout initialization failed',error);invalidLayout=true;layoutJson.dataset.layoutValid='false';const savedInvalid=layoutJson.dataset.savedLayoutInvalid==='true'&&!submitted;layoutProperties.textContent=savedInvalid?'The saved card layout is invalid and is preserved. Restore card defaults to recover; saving replaces the entire card layout.':'The submitted layout is invalid and is preserved. Discard changes to reload the saved configuration.';announce(savedInvalid?'Saved layout is invalid. Restore card defaults to recover.':'Invalid submitted draft preserved. Discard changes to reload the saved configuration.');}
   initial=serializeForm();updateDirtyState();clearDraftHistory();
 }
+const serverInvalidField=cardForm?.querySelector('[aria-invalid="true"]');
+const serverLayoutError=document.getElementById('layoutJson-error');
+const serverErrorTarget=serverInvalidField||serverLayoutError;
+if(serverErrorTarget){let parent=serverErrorTarget.parentElement;while(parent&&parent!==cardForm){if(parent instanceof HTMLDetailsElement)parent.open=true;parent=parent.parentElement;}serverErrorTarget.focus();}
 `;

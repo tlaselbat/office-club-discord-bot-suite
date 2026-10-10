@@ -38,6 +38,11 @@ describe('Game Servers designer browser script', () => {
     expect(cardLineScript).toContain("control.value='1';control.checked=value===true");
     expect(cardLineScript).toContain('layoutProperties.textContent=savedInvalid?');
     expect(cardLineScript).toContain('Discard changes to reload the saved configuration.');
+    expect(cardLineScript).toContain(
+      "const serverLayoutError=document.getElementById('layoutJson-error')",
+    );
+    expect(cardLineScript).toContain('serverErrorTarget.focus()');
+    expect(cardLineScript).toContain('parent.open=true');
   });
 
   it('fixes the legacy toolbar selection dispatch and button style preview classes', () => {
