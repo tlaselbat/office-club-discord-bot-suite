@@ -110,13 +110,15 @@ const updateCardPreview = () => {
           const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';appendText(titleText,label);title.append(titleText);
           const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);
         }else appendText(title,label);
-        output.append(title);
         const content=source||config.emptyPlaceholder;
         const formatted=styleLineText(content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
         let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);
         const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';
         summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';
-        appendText(summary,[formatted,time?'-# '+time:''].filter(Boolean).join('\n'));output.append(summary);
+        appendText(summary,[formatted,time?'-# '+time:''].filter(Boolean).join('\n'));
+        if(hasButton)title.append(summary);
+        output.append(title);
+        if(!hasButton)output.append(summary);
       };
       const addSeparator=(divider,spacing)=>{
         const line=document.createElement(divider?'hr':'div');line.className=(divider?'preview-separator':'preview-separator-space')+(spacing===2?' preview-separator-large':'');line.dataset.previewElement=element.id;line.dataset.discordComponent='Separator';output.append(line);
@@ -148,7 +150,28 @@ const updateCardPreview = () => {
         addHeading();
         entries.forEach((entry,index)=>{
           if(index&&element.separator?.enabled)addSeparator(element.separator.divider,element.separator.spacing);
-          addFeed(entry);
+          const {config,thread,source}=entry;
+          const validThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');
+          const hasButton=config.showOpenButton&&(validThread||mode!=='current');
+          const label=config.displayLabel+(mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');
+          const content=source||config.emptyPlaceholder;
+          const formatted=styleLineText(content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
+          let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);
+          const title=document.createElement('div');
+          title.className=(hasButton?'preview-section preview-update-section':'preview-text-display')+' preview-updates preview-update-title';
+          title.dataset.previewElement=element.id;title.dataset.discordComponent=hasButton?'Section':'TextDisplay';
+          if(hasButton){
+            const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';appendText(titleText,label);title.append(titleText);
+          }else appendText(title,label);
+          const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';
+          summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';
+          appendText(summary,[formatted,time?'-# '+time:''].filter(Boolean).join('\n'));
+          if(hasButton){
+            title.append(summary);
+            const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);
+          }
+          output.append(title);
+          if(!hasButton)output.append(summary);
         });
       }
     }
