@@ -33,6 +33,7 @@ import {
   DEFAULT_CARD_TEMPLATES,
   DEFAULT_STATUS_LABELS,
   normalizeCardProfile,
+  stableLayoutId,
   resolveCardProfile,
   cardLayoutSchema,
 } from '../../../../modules/game-servers/card-profile.js';
@@ -320,8 +321,8 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
       : undefined;
   const savedLayoutInvalid =
     rawSavedLayout !== undefined && !cardLayoutSchema.safeParse(rawSavedLayout).success;
-  const legacyConnectId = '00000000-0000-4000-8000-000000000301';
-  const legacyMapRulesId = '00000000-0000-4000-8000-000000000302';
+  const legacyConnectId = stableLayoutId('legacy-button:connect');
+  const legacyMapRulesId = stableLayoutId('legacy-button:map-rules');
   const layoutButtons = profile.layout?.buttons ?? [
     ...(profile.buttons.connect
       ? [
@@ -388,10 +389,9 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
           type: 'button_row' as const,
           label: element.label,
           visible: element.visible,
-          buttonIds: [
-            ...(profile.buttons.connect ? [legacyConnectId] : []),
-            ...(profile.buttons.mapRules ? [legacyMapRulesId] : []),
-          ],
+          buttonIds: layoutButtons
+            .filter((button) => button.action === 'connect' || button.action === 'map-rules')
+            .map((button) => button.id),
         }
       : element.type === 'actions'
         ? { ...element, visible: false }

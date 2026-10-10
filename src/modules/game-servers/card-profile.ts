@@ -1067,7 +1067,7 @@ export function resolveCardLayout(
   return migrateLegacyUpdateElements(layout) as CardLayoutElement[];
 }
 
-function stableLayoutId(key: string): string {
+export function stableLayoutId(key: string): string {
   let hash = 2166136261;
   for (const char of key) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
   const hex = (hash >>> 0).toString(16).padStart(8, '0');
