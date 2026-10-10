@@ -245,8 +245,8 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-15');
-    expect(html).toContain('panel.js?v=game-server-editor-15');
+    expect(html).toContain('panel.css?v=game-server-editor-16');
+    expect(html).toContain('panel.js?v=game-server-editor-16');
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
     expect(html).toContain('href="#card-designer">Card Designer</a>');
     expect(html).toContain('href="#operations">Live &amp; publishing</a>');
@@ -259,6 +259,8 @@ describe('admin page views', () => {
     expect(html).toContain('class="status-label-grid"');
     expect(html).toContain('class="status-emoji-grid"');
     expect(html).toContain('data-button-add');
+    expect(cardLineScript).not.toContain('data-button-field="emoji"');
+    expect(cardLineScript).toContain('prefix a custom Discord emoji');
     expect(html).toContain('data-add-layout="button_row"');
     expect(cardLineScript).toContain('announcements-thread');
     expect(cardLineScript).toContain("node.dataset.layoutElement==='button_row'");

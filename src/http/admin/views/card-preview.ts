@@ -86,12 +86,14 @@ const updateCardPreview = () => {
   const buttonById=new Map(buttonDefinitions.map((button)=>[button.id,button]));
   const previewConfiguredButton=(button)=>{
     if(!button||button.visible===false)return null;
+    const customEmoji=String(button.label||'').match(/^<a?:([A-Za-z0-9_]{2,32}):\d{17,20}>\s*(.*)$/);
+    const buttonLabel=customEmoji?':'+customEmoji[1]+': '+customEmoji[2]:(button.emoji?button.emoji+' ':'')+(button.label||'Button');
     const isThread=button.action==='announcements-thread'||button.action==='changelog-thread';
     const kind=button.action==='announcements-thread'?'ANNOUNCEMENTS':'CHANGELOG';
     const thread=isThread&&Array.isArray(threads)?threads.find((item)=>item.type===kind):undefined;
     const missing=(isThread&&(!thread||!/^[0-9]{17,20}$/.test(thread.threadId)||!/^[0-9]{17,20}$/.test(previewRoot.dataset.guildId||'')));
-    if(missing&&mode==='current')return {label:(button.label||'Button')+' · destination unavailable',missing:true};
-    return {label:(button.emoji?button.emoji+' ':'')+(button.label||'Button'),missing:false};
+    if(missing&&mode==='current')return {label:buttonLabel+' · destination unavailable',missing:true};
+    return {label:buttonLabel,missing:false};
   };
   const previewButtonNode=(button)=>{const item=previewConfiguredButton(button);if(!item)return null;const span=document.createElement('span');span.className='preview-action preview-button-'+(button.style||'secondary')+(item.missing?' preview-button-missing':'');span.textContent=item.label;span.dataset.discordAccessory='Button';return span;};
   const escapeUpdatePreview=(value)=>value.replace(/@/g,'@\u200b').replace(/([\\\x60*_{}<>\x5b\x5d()#+\-.!|>~])/g,'\\$1');

@@ -977,8 +977,8 @@ describe('Game Server rendering', () => {
           buttons: [
             {
               id: firstId,
-              label: 'Join now',
-              emoji: '▶',
+              label: '<:party:12345678901234567> Join now',
+              emoji: null,
               style: 'primary',
               action: 'connect',
               destination: null,
@@ -1012,6 +1012,11 @@ describe('Game Server rendering', () => {
       ? (row.components as Record<string, unknown>[])
       : [];
     expect(rendered.map((button) => button.label)).toEqual(['Copy server address', 'Join now']);
+    expect(rendered[1]?.emoji).toEqual({
+      animated: false,
+      name: 'party',
+      id: '12345678901234567',
+    });
     expect(rendered.map((button) => button.customId)).toHaveLength(2);
     expect(new Set(rendered.map((button) => button.customId)).size).toBe(2);
     expect(rendered.every((button) => String(button.customId).length <= 100)).toBe(true);

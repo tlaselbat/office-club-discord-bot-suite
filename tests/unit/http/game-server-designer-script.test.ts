@@ -49,4 +49,17 @@ describe('Game Servers designer browser script', () => {
     expect(cardPreviewScript).toContain("preview-button-'+(button.style");
     expect(cardPreviewScript).toContain("layoutJson?.dataset?.layoutValid === 'false'");
   });
+
+  it('uses one button label for Unicode or leading custom emoji and mutually exclusive text accessories', () => {
+    expect(cardLineScript).not.toContain('data-button-field="emoji"');
+    expect(cardLineScript).toContain("button.emoji+' '");
+    expect(cardLineScript).toContain('data-thread-accessory');
+    expect(cardLineScript).toContain('syncTextAccessory(node)');
+    expect(cardLineScript).toContain("if(destination!=='none'&&!buttonAccessory?.value)");
+    expect(cardLineScript).toContain('Enabled everywhere');
+    expect(cardLineScript).toContain(
+      "row.querySelector('[data-button-style-setting]').hidden=isLink",
+    );
+    expect(cardPreviewScript).toContain("const customEmoji=String(button.label||'').match");
+  });
 });

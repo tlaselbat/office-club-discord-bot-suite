@@ -151,7 +151,22 @@ export type CardButtonStyle = (typeof CARD_BUTTON_STYLES)[number];
 const cardButtonSchema = z
   .object({
     id: z.uuid(),
-    label: z.string().trim().min(1).max(80),
+    label: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .superRefine((value, context) => {
+        const customEmoji = value.match(/^<a?:[A-Za-z0-9_]{2,32}:\d{17,20}>\s*/);
+        const text = customEmoji ? value.slice(customEmoji[0].length).trim() : value;
+        if (Array.from(text).length > 80)
+          context.addIssue({
+            code: 'custom',
+            message: 'Button label text must be 80 characters or fewer.',
+          });
+        if (customEmoji && !text)
+          context.addIssue({ code: 'custom', message: 'Add label text after the custom emoji.' });
+      }),
     emoji: z.string().max(100).nullable().default(null),
     style: z.enum(CARD_BUTTON_STYLES).default('secondary'),
     action: z.enum([

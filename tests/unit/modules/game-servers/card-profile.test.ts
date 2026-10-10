@@ -336,6 +336,23 @@ describe('generic card line contract', () => {
     ).toBe(true);
     const firstId = ids[0] ?? '';
     const secondId = ids[1] ?? '';
+    const buttonWithLabel = (label: string) => ({
+      layout: {
+        version: 3,
+        buttons: [{ ...button(firstId), label }],
+        elements: [{ ...row, buttonIds: [firstId] }],
+      },
+    });
+    expect(
+      cardProfileSchema.safeParse({
+        ...buttonWithLabel('<:party:12345678901234567> ' + 'x'.repeat(80)),
+      }).success,
+    ).toBe(true);
+    expect(
+      cardProfileSchema.safeParse({
+        ...buttonWithLabel('<:party:12345678901234567> ' + 'x'.repeat(81)),
+      }).success,
+    ).toBe(false);
     expect(
       cardProfileSchema.safeParse({
         layout: {

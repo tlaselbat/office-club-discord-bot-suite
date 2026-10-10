@@ -372,8 +372,14 @@ function renderConfiguredButton(
   secret: string,
   button: CardButton,
 ): Record<string, unknown> | null {
-  const label = button.label.replace(/@/g, '@\u200b').slice(0, 80);
-  const emoji = button.emoji ? parseButtonEmoji(button.emoji) : undefined;
+  const customEmojiLabel = button.label.match(/^(<a?:[A-Za-z0-9_]{2,32}:\d{17,20}>)\s*(.*)$/);
+  const labelText = customEmojiLabel?.[2] ?? button.label;
+  const label = labelText.replace(/@/g, '@\u200b').slice(0, 80);
+  const emoji = customEmojiLabel
+    ? parseButtonEmoji(customEmojiLabel[1] ?? '')
+    : button.emoji
+      ? parseButtonEmoji(button.emoji)
+      : undefined;
   const link =
     button.action === 'external-https-url'
       ? button.destination
@@ -392,7 +398,7 @@ function renderConfiguredButton(
     return {
       type: componentType.button,
       style: buttonStyle.link,
-      label,
+      ...(label ? { label } : {}),
       ...(emoji ? { emoji } : {}),
       url: link,
     };
@@ -406,7 +412,7 @@ function renderConfiguredButton(
   return {
     type: componentType.button,
     style: buttonStyle[button.style],
-    label,
+    ...(label ? { label } : {}),
     ...(emoji ? { emoji } : {}),
     customId: createGameServerCustomId(
       {
