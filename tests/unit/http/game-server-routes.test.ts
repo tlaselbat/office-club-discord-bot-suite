@@ -3,7 +3,10 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerGameServersRoutes } from '../../../src/http/routes/admin/game-servers.js';
 import type { SharedHelpers } from '../../../src/http/routes/admin/shared.js';
-import { resolveCardLayout } from '../../../src/modules/game-servers/card-profile.js';
+import {
+  defaultUpdatesElement,
+  resolveCardLayout,
+} from '../../../src/modules/game-servers/card-profile.js';
 import type { CardProfile } from '../../../src/modules/game-servers/card-profile.js';
 import { PublicError } from '../../../src/errors/public-error.js';
 
@@ -109,7 +112,7 @@ describe('Game Server configuration routes', () => {
     });
     const page = await app.inject({ method: 'GET', url });
     expect(page.body).toContain('data-update-threads');
-    expect(page.body).toContain('Add Community Updates');
+    expect(page.body).toContain('Community Updates preset');
     expect(page.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(page.body).not.toContain('<script>alert(1)</script>');
     expect(shared.deps.prisma.gameServer.findFirst).toHaveBeenLastCalledWith({
@@ -205,9 +208,9 @@ describe('Game Server configuration routes', () => {
         visible: true,
       },
     ];
-    const elements = layout.map((element) =>
-      element.type === 'updates' ? { ...element, blocks } : element,
-    );
+    const legacyUpdates = defaultUpdatesElement('00000000-0000-4000-8000-000000000100');
+    if (legacyUpdates.type !== 'updates') throw new Error('Expected legacy Updates fixture');
+    const elements = [...layout.slice(0, -3), { ...legacyUpdates, blocks }];
     const result = await app.inject({
       method: 'POST',
       url,
@@ -219,10 +222,21 @@ describe('Game Server configuration routes', () => {
     });
     expect(result.statusCode).toBe(303);
     const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
-    const savedUpdates = command.cardProfile.layout?.elements.find(
-      (element) => element.type === 'updates',
+    expect(command.cardProfile.layout?.version).toBe(3);
+    const savedRows = command.cardProfile.layout?.elements.filter(
+      (element) => element.type === 'text' && element.template.includes('preview'),
     );
-    expect(savedUpdates).toMatchObject({ type: 'updates', blocks });
+    expect(savedRows).toHaveLength(2);
+    expect(savedRows?.map((row) => row.id)).toEqual([
+      '00000000-0000-4000-8000-000000000105',
+      '00000000-0000-4000-8000-000000000106',
+    ]);
+    expect(
+      command.cardProfile.layout?.elements.find((element) => element.id === blocks[0]?.id),
+    ).toMatchObject({
+      type: 'text',
+      template: 'Patch notes for {servername}',
+    });
     shared.deps.prisma.gameServer.findFirst.mockResolvedValue({
       ...original,
       cardProfile: command.cardProfile,

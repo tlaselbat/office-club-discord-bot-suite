@@ -46,6 +46,14 @@ export const CARD_PLACEHOLDERS = [
   ['currentmap', 'Current map from the cached server snapshot'],
   ['servername', 'Configured display name'],
   ['lastupdated', 'Time since the latest successful snapshot'],
+  ['announcements.preview', 'Latest sanitized announcements excerpt'],
+  ['announcements.time', 'Discord relative timestamp of the latest announcement'],
+  ['announcements.new', 'NEW indicator while the announcement is fresh'],
+  ['announcements.url', 'Canonical announcements thread URL'],
+  ['changelog.preview', 'Latest sanitized changelog excerpt'],
+  ['changelog.time', 'Discord relative timestamp of the latest changelog entry'],
+  ['changelog.new', 'NEW indicator while the changelog entry is fresh'],
+  ['changelog.url', 'Canonical changelog thread URL'],
 ] as const;
 
 const templateFieldSchema = z.object({
@@ -137,7 +145,7 @@ const buttonSchema = z.object({
 const httpsUrl = z.url().refine((value) => new URL(value).protocol === 'https:', 'Must use HTTPS');
 const emojiId = z.string().regex(/^\d{17,20}$/, 'Must be a Discord emoji ID');
 
-export const CARD_LAYOUT_VERSION = 2;
+export const CARD_LAYOUT_VERSION = 3;
 const updatesFeedSchema = z.object({
   visible: z.boolean().default(true),
   displayLabel: z.string().trim().min(1).max(80),
@@ -249,6 +257,24 @@ const cardLayoutElementSchema = z.discriminatedUnion('type', [
     template: validatedTemplate(),
     visible: z.boolean(),
     style: z.enum(CARD_LINE_STYLES),
+    accessory: z
+      .object({
+        type: z.literal('thread_link'),
+        destination: z.enum(['ANNOUNCEMENTS', 'CHANGELOG']),
+        enabled: z.boolean(),
+        label: z.string().trim().min(1).max(80),
+        visibility: z.enum(['thread_exists', 'message_exists', 'never']),
+      })
+      .optional(),
+    conditionalVisibility: z
+      .object({
+        mode: z.enum(['always', 'thread_exists', 'message_exists', 'any_update_visible']),
+        source: z.enum(['ANNOUNCEMENTS', 'CHANGELOG']).default('ANNOUNCEMENTS'),
+      })
+      .optional(),
+    emptyBehavior: z.enum(['fallback', 'hide']).optional(),
+    emptyText: z.string().max(240).optional(),
+    previewLength: z.number().int().min(40).max(1000).optional(),
   }),
   z.object({
     id: z.uuid(),
@@ -295,7 +321,7 @@ const cardLayoutElementSchema = z.discriminatedUnion('type', [
 export type CardLayoutElement = z.infer<typeof cardLayoutElementSchema>;
 export const cardLayoutSchema = z
   .object({
-    version: z.union([z.literal(1), z.literal(CARD_LAYOUT_VERSION)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(CARD_LAYOUT_VERSION)]),
     elements: z.array(cardLayoutElementSchema).min(1).max(35),
   })
   .superRefine((layout, context) => {
@@ -315,6 +341,7 @@ export const cardLayoutSchema = z
         if (!element.visible) return total;
         if (element.type === 'section') return total + 3;
         if (element.type === 'actions') return total + 3;
+        if (element.type === 'text') return total + (element.accessory?.enabled ? 3 : 1);
         if (element.type !== 'updates') return total + 1;
         if (element.blocks !== undefined) {
           return (
@@ -383,6 +410,168 @@ export function defaultUpdatesElement(id: string): CardLayoutElement {
       latestMessageLength: 240,
     },
   };
+}
+
+/** Converts the former single-purpose Updates element to ordinary reusable card rows. */
+export function migrateLegacyUpdateElements(elements: unknown[]): unknown[] {
+  const migrated: unknown[] = [];
+  const asObject = (value: unknown): Record<string, unknown> | null =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const feedRow = (
+    id: string,
+    feed: 'ANNOUNCEMENTS' | 'CHANGELOG',
+    config: Record<string, unknown>,
+    visible: boolean,
+    emptyBehavior: unknown,
+  ) => {
+    const token = feed === 'ANNOUNCEMENTS' ? 'announcements' : 'changelog';
+    const label = typeof config.displayLabel === 'string' ? config.displayLabel : '';
+    const timestamp = config.showTimestamp === true ? `\n-# {${token}.time}` : '';
+    const style = config.textStyle === 'heading' ? 'large' : config.textStyle;
+    const accessory =
+      config.showOpenButton === true
+        ? {
+            type: 'thread_link',
+            destination: feed,
+            enabled: true,
+            label: typeof config.openButtonLabel === 'string' ? config.openButtonLabel : 'Open',
+            visibility: 'thread_exists',
+          }
+        : undefined;
+    return {
+      id,
+      type: 'text',
+      label:
+        label.replace(/[*_~`]/g, '').trim() ||
+        (feed === 'ANNOUNCEMENTS' ? 'Announcements' : 'Changelog'),
+      template: `${label}${label ? ' ' : ''}{${token}.preview}{${token}.new}${timestamp}`,
+      visible,
+      style: CARD_LINE_STYLES.includes(style as (typeof CARD_LINE_STYLES)[number])
+        ? style
+        : 'normal',
+      ...(accessory ? { accessory } : {}),
+      conditionalVisibility: { mode: 'always', source: feed },
+      emptyBehavior: emptyBehavior === 'hide_empty_entries' ? 'hide' : 'fallback',
+      emptyText:
+        typeof config.emptyPlaceholder === 'string' ? config.emptyPlaceholder : 'No updates yet.',
+      previewLength:
+        Number.isInteger(config.latestMessageLength) &&
+        Number(config.latestMessageLength) >= 40 &&
+        Number(config.latestMessageLength) <= 1000
+          ? config.latestMessageLength
+          : 140,
+    };
+  };
+
+  for (const value of elements) {
+    const element = asObject(value);
+    if (element?.type !== 'updates') {
+      migrated.push(value);
+      continue;
+    }
+    const id = typeof element.id === 'string' ? element.id : stableLayoutId('community-updates');
+    const active = element.visible !== false;
+    const emptyBehavior = element.emptyBehavior;
+    const announcements = asObject(element.announcements) ?? {};
+    const changelog = asObject(element.changelog) ?? {};
+    const blocks = Array.isArray(element.blocks) ? element.blocks : null;
+    const converted: unknown[] = [];
+    if (blocks) {
+      for (const blockValue of blocks) {
+        const block = asObject(blockValue);
+        if (!block) continue;
+        if (block.type === 'heading') {
+          if (element.showHeading !== false)
+            converted.push({
+              id: block.id,
+              type: 'text',
+              label: 'Latest Updates',
+              template: typeof element.title === 'string' ? element.title : '**Latest Updates**',
+              visible: active && block.visible !== false,
+              style:
+                element.headingStyle === 'heading' ? 'large' : (element.headingStyle ?? 'normal'),
+            });
+        } else if (block.type === 'feed') {
+          const feed = block.feed === 'CHANGELOG' ? 'CHANGELOG' : 'ANNOUNCEMENTS';
+          converted.push(
+            feedRow(
+              typeof block.id === 'string' ? block.id : stableLayoutId(`${id}:${feed}`),
+              feed,
+              feed === 'ANNOUNCEMENTS' ? announcements : changelog,
+              active &&
+                block.visible !== false &&
+                (feed === 'ANNOUNCEMENTS'
+                  ? announcements.visible !== false
+                  : changelog.visible !== false),
+              emptyBehavior,
+            ),
+          );
+        } else if (block.type === 'text') {
+          converted.push({
+            ...block,
+            label: 'Updates text',
+            visible: active && block.visible !== false,
+          });
+        } else if (block.type === 'separator' || block.type === 'gallery') {
+          converted.push({
+            ...block,
+            label: block.type === 'separator' ? 'Separator' : 'Gallery',
+            visible: active && block.visible !== false,
+          });
+        }
+      }
+    } else {
+      if (element.showHeading !== false)
+        converted.push({
+          id: stableLayoutId(`${id}:heading`),
+          type: 'text',
+          label: 'Latest Updates',
+          template: typeof element.title === 'string' ? element.title : '**Latest Updates**',
+          visible: active,
+          style: element.headingStyle === 'heading' ? 'large' : (element.headingStyle ?? 'normal'),
+        });
+      const order: Array<'ANNOUNCEMENTS' | 'CHANGELOG'> = Array.isArray(element.feedOrder)
+        ? element.feedOrder.filter(
+            (feed: unknown): feed is 'ANNOUNCEMENTS' | 'CHANGELOG' =>
+              feed === 'ANNOUNCEMENTS' || feed === 'CHANGELOG',
+          )
+        : ['ANNOUNCEMENTS', 'CHANGELOG'];
+      for (const feed of order) {
+        if (
+          feed === order[1] &&
+          order[0] !== order[1] &&
+          asObject(element.separator)?.enabled === true
+        ) {
+          const separator = asObject(element.separator) ?? {};
+          converted.push({
+            id: stableLayoutId(`${id}:feed-separator`),
+            type: 'separator',
+            label: 'Updates separator',
+            visible: active,
+            divider: separator.divider !== false,
+            spacing: separator.spacing === 2 ? 2 : 1,
+          });
+        }
+        const settings = feed === 'ANNOUNCEMENTS' ? announcements : changelog;
+        converted.push(
+          feedRow(
+            stableLayoutId(`${id}:${feed}`),
+            feed,
+            settings,
+            active && settings.visible !== false,
+            emptyBehavior,
+          ),
+        );
+      }
+    }
+    if (migrated.length + converted.length > 35) {
+      // Keep the complete legacy shape readable if an unusually customized layout cannot fit.
+      migrated.push(value);
+    } else migrated.push(...converted);
+  }
+  return migrated;
 }
 
 /** Persisted card presentation overrides. Null image and emoji values inherit their legacy defaults. */
@@ -471,10 +660,10 @@ export function normalizeCardProfile(value: unknown): CardProfile {
       : (() => {
           const raw = source.layout as { version?: unknown; elements?: unknown };
           const migrated =
-            (raw.version === 1 || raw.version === CARD_LAYOUT_VERSION) &&
+            (raw.version === 1 || raw.version === 2 || raw.version === CARD_LAYOUT_VERSION) &&
             Array.isArray(raw.elements)
               ? (() => {
-                  const elements = raw.elements.map((value: unknown) => {
+                  let elements = raw.elements.map((value: unknown) => {
                     if (value === null || typeof value !== 'object' || Array.isArray(value))
                       return value;
                     const element = value as Record<string, unknown>;
@@ -536,6 +725,9 @@ export function normalizeCardProfile(value: unknown): CardProfile {
                       elements.splice(oldSeparator + 1, 0, updates);
                     else if (oldSeparator >= 0) elements.splice(oldSeparator, 1, updates);
                     else if (elements.length < 35) elements.push(updates);
+                  }
+                  if (raw.version < CARD_LAYOUT_VERSION) {
+                    elements = migrateLegacyUpdateElements(elements);
                   }
                   return { version: CARD_LAYOUT_VERSION, elements };
                 })()
@@ -648,7 +840,7 @@ export function resolveCardLayout(
     layout.push(
       element('community-updates', defaultUpdatesElement(stableLayoutId('community-updates'))),
     );
-  return layout;
+  return migrateLegacyUpdateElements(layout) as CardLayoutElement[];
 }
 
 function stableLayoutId(key: string): string {

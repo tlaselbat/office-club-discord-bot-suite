@@ -40,6 +40,12 @@ const serializeElement = (node) => {
   const base = { id: node.dataset.layoutId, type: node.dataset.layoutElement, label: read(node,'label').value, visible: read(node,'visible').checked };
   if (base.type === 'text' || base.type === 'section') {
     Object.assign(base,{template:read(node,'template').value,style:read(node,'style').value});
+    if(base.type==='text') {
+      const destination=read(node,'accessoryDestination').value;
+      if(destination!=='none') base.accessory={type:'thread_link',destination,enabled:read(node,'accessoryEnabled').checked,label:read(node,'accessoryLabel').value,visibility:read(node,'accessoryVisibility').value};
+      base.conditionalVisibility={mode:read(node,'visibilityMode').value,source:read(node,'visibilitySource').value};
+      base.emptyBehavior=read(node,'emptyBehavior').value;base.emptyText=read(node,'emptyText').value;base.previewLength=Number(read(node,'previewLength').value);
+    }
     if(base.type === 'section') base.thumbnailUrl=read(node,'thumbnailUrl').value || null;
   } else if(base.type === 'gallery') base.items=Array.from(node._content.querySelectorAll('[data-gallery-item]')).map((item)=>({id:item.dataset.itemId,source:item.querySelector('[data-layout-field="source"]').value,url:item.querySelector('[data-layout-field="url"]').value||null,description:item.querySelector('[data-layout-field="description"]').value}));
   else if(base.type === 'separator') Object.assign(base,{divider:read(node,'divider').checked,spacing:Number(read(node,'spacing').value)});
@@ -57,6 +63,7 @@ const saveLayout = () => {
   elements.forEach((element)=>{
     if(!element.visible)return;
     if(element.type==='section'||element.type==='actions'){count+=3;return;}
+    if(element.type==='text'){count+=element.accessory?.enabled?3:1;return;}
     if(element.type!=='updates'){count++;return;}
     (element.blocks||[]).forEach((block)=>{
       if(!block.visible)return;
@@ -66,7 +73,7 @@ const saveLayout = () => {
     });
   });
   overComponentBudget=count>40;
-  layoutJson.value=JSON.stringify({version:2,elements});
+  layoutJson.value=JSON.stringify({version:3,elements});
 };
 const announce = (text) => { const status=document.getElementById('card-layout-status');if(status) status.textContent=text; };
 const refreshRows = () => {
@@ -129,7 +136,7 @@ const refreshRows = () => {
       }
     }
   });
-  cardForm?.querySelectorAll('[data-add-layout]').forEach((button)=>{button.disabled=invalidLayout||layoutNodes().length>=35||((button.dataset.addLayout==='actions'||button.dataset.addLayout==='updates')&&layoutNodes().some((node)=>node.dataset.layoutElement===button.dataset.addLayout));});
+  cardForm?.querySelectorAll('[data-add-layout]').forEach((button)=>{button.disabled=invalidLayout||layoutNodes().length>=(button.dataset.addLayout==='updates'?33:35)||(button.dataset.addLayout==='actions'&&layoutNodes().some((node)=>node.dataset.layoutElement==='actions'));});
 };
 const updateDirtyState = () => {
   if(!cardForm||!initial)return;
@@ -153,7 +160,7 @@ const selectElement = (id, focus=false) => {
 };
 const newElement = (type) => {
   const base={id:crypto.randomUUID(),type,label:{text:'Text',section:'Text and thumbnail',gallery:'Image gallery',separator:'Separator',actions:'Action buttons',updates:'Community Updates'}[type],visible:true};
-  if(type==='text'||type==='section')Object.assign(base,{template:'{servername}',style:'normal'});
+  if(type==='text'||type==='section')Object.assign(base,{template:'{servername}',style:'normal',...(type==='text'?{conditionalVisibility:{mode:'always',source:'ANNOUNCEMENTS'},emptyBehavior:'fallback',emptyText:'No updates yet.',previewLength:140}: {})});
   if(type==='section')base.thumbnailUrl=null;
   if(type==='gallery')base.items=[{id:crypto.randomUUID(),source:'map',url:null,description:'{currentmap} map artwork'}];
   if(type==='separator')Object.assign(base,{divider:true,spacing:1});
@@ -251,6 +258,7 @@ const renderLayoutElement = (element) => {
   content.innerHTML='<label>Friendly label<input data-layout-field="label" maxlength="80" required></label><label class="checkbox"><input type="checkbox" data-layout-field="visible"> Visible in Discord</label>';
   if(element.type==='text'||element.type==='section') {
     content.innerHTML+='<div class="description-toolbar" role="group" aria-label="Text formatting">'+[['Bold','**'],['Italic','*'],['Underline','__'],['Strikethrough','~~'],['Inline code',String.fromCharCode(96)]].map(([label,marker])=>'<button type="button" class="secondary" data-layout-markdown="'+escapeText(marker)+'">'+label+'</button>').join('')+'</div><label>Text template<textarea data-layout-field="template" rows="6" maxlength="500"></textarea></label><label>Text style<select data-layout-field="style"><option value="large">Large heading</option><option value="medium">Medium heading</option><option value="small">Small heading</option><option value="normal">Normal text</option><option value="subtext">Subtext</option></select></label><label>Insert placeholder<select data-layout-placeholder>'+placeholders.map(([name,description])=>'<option value="{'+name+'}">{'+name+'} — '+escapeText(description)+'</option>').join('')+'</select></label><button type="button" class="secondary" data-layout-insert>Insert placeholder</button>';
+    if(element.type==='text') content.innerHTML+='<fieldset><legend>Right-side accessory</legend><label>Accessory<select data-layout-field="accessoryDestination"><option value="none">None</option><option value="ANNOUNCEMENTS">Announcements thread</option><option value="CHANGELOG">Changelog thread</option></select></label><label class="checkbox"><input type="checkbox" data-layout-field="accessoryEnabled"> Show Open button</label><label>Button label<input data-layout-field="accessoryLabel" maxlength="80"></label><label>Button visibility<select data-layout-field="accessoryVisibility"><option value="thread_exists">When thread exists</option><option value="message_exists">Only when a message exists</option><option value="never">Never</option></select></label></fieldset><fieldset><legend>Conditional visibility</legend><label>Show row<select data-layout-field="visibilityMode"><option value="always">Always</option><option value="thread_exists">When source thread exists</option><option value="message_exists">When source has a message</option><option value="any_update_visible">When any update message exists</option></select></label><label>Source<select data-layout-field="visibilitySource"><option value="ANNOUNCEMENTS">Announcements</option><option value="CHANGELOG">Changelog</option></select></label></fieldset><fieldset><legend>Empty messages</legend><label>When source is empty<select data-layout-field="emptyBehavior"><option value="fallback">Show fallback text</option><option value="hide">Hide row</option></select></label><label>Fallback text<input data-layout-field="emptyText" maxlength="240"></label><label>Maximum preview length<input data-layout-field="previewLength" type="number" min="40" max="1000" step="1"></label></fieldset>';
   }
   if(element.type==='section')content.innerHTML+='<label>Thumbnail HTTPS URL<input data-layout-field="thumbnailUrl" type="url" maxlength="500" placeholder="Use default server thumbnail"></label><p class="hint">Blank uses the thumbnail in Appearance. Convert to a text block to remove the thumbnail.</p><button type="button" class="secondary" data-layout-convert-text>Remove thumbnail / use text block</button>';
   if(element.type==='gallery')content.innerHTML+='<div data-gallery-items></div><button type="button" class="secondary" data-gallery-add>Add image</button><p class="hint">Automatic artwork follows the current map’s canonical asset, then your configured fallback in Appearance. Each gallery supports up to 10 images.</p>';
@@ -260,6 +268,10 @@ const renderLayoutElement = (element) => {
   content.innerHTML+='<div class="card-layout-property-actions"><button type="button" class="secondary" data-layout-restore>Restore element</button><button type="button" class="danger" data-layout-remove>Remove element</button></div>';
   for(const key of ['label','template','style','thumbnailUrl','spacing']){const control=read(node,key);if(control)control.value=element[key]??'';}
   for(const key of ['visible','divider']){const control=read(node,key);if(control)control.checked=element[key]===true;}
+  if(element.type==='text'){
+    const accessory=element.accessory||{};const set=(key,value)=>{const control=read(node,key);if(!control)return;if(control.type==='checkbox')control.checked=value===true;else control.value=String(value??'');};
+    set('accessoryDestination',accessory.destination||'none');set('accessoryEnabled',accessory.enabled===true);set('accessoryLabel',accessory.label||'Open');set('accessoryVisibility',accessory.visibility||'thread_exists');set('visibilityMode',element.conditionalVisibility?.mode||'always');set('visibilitySource',element.conditionalVisibility?.source||'ANNOUNCEMENTS');set('emptyBehavior',element.emptyBehavior||'fallback');set('emptyText',element.emptyText||'No updates yet.');set('previewLength',element.previewLength||140);
+  }
   if(element.type==='gallery')(element.items??[]).forEach((item)=>addGalleryItem(node,item));
   if(element.type==='updates'){const set=(key,value)=>{const control=read(node,key);if(control){if(control.type==='checkbox')control.checked=value===true;else control.value=String(value??'');}};set('updatesShowHeading',element.showHeading);set('updatesTitle',element.title);set('headingStyle',element.headingStyle);set('emptyBehavior',element.emptyBehavior);set('updatesSeparatorEnabled',element.separator?.enabled);set('updatesSeparatorDivider',element.separator?.divider);set('updatesSeparatorSpacing',element.separator?.spacing??1);for(const [feed,key] of [['announcements','announcements'],['changelog','changelog']]){const config=element[key];for(const [suffix,property] of [['Visible','visible'],['Label','displayLabel'],['Style','textStyle'],['Empty','emptyPlaceholder'],['Timestamp','showTimestamp'],['Open','showOpenButton'],['Button','openButtonLabel'],['Length','latestMessageLength']])set(feed+suffix,config[property]);}for(const feed of element.feedOrder??['ANNOUNCEMENTS','CHANGELOG']){const row=node._content.querySelector('[data-feed-order-item="'+feed+'"]');if(row)node._content.querySelector('.updates-feed-order').append(row);}syncFeedSeparator(node);resolveUpdateBlocks(element).forEach((block)=>renderUpdateBlock(node,block));}
   node.append(content);layoutEditors.append(node);return node;
@@ -318,7 +330,7 @@ cardForm?.addEventListener('click',(event)=>{
   }
   else if(button.hasAttribute('data-update-gallery-add')&&node){const block=button.closest('[data-update-block]');const holder=block?.querySelector('[data-gallery-items]');if(holder&&holder.children.length<10)addGalleryItem(node,makeUpdateBlock('gallery').items[0],holder);}
   else if(button.hasAttribute('data-select-layout')){selectElement(node.dataset.layoutId);if(window.innerWidth<=760)layoutProperties.scrollIntoView({block:'start'});return;}
-  if(button.dataset.addLayout){const type=button.dataset.addLayout;if(layoutNodes().length>=35||invalidLayout||(type==='actions'&&layoutNodes().some((n)=>n.dataset.layoutElement==='actions')))return;const menu=button.closest('.layout-add-menu');if(menu)menu.open=false;const added=renderLayoutElement(newElement(type));selectElement(added.dataset.layoutId,true);announce('Element added.');}
+  if(button.dataset.addLayout){const type=button.dataset.addLayout;const preset=type==='updates';if(layoutNodes().length>=(preset?33:35)||invalidLayout||(type==='actions'&&layoutNodes().some((n)=>n.dataset.layoutElement==='actions')))return;const menu=button.closest('.layout-add-menu');if(menu)menu.open=false;if(preset){const rows=[{label:'Latest Updates',template:'**Latest Updates**'},{label:'Announcement preview',template:'📢 {announcements.preview} {announcements.new}',feed:'ANNOUNCEMENTS',fallback:'No announcements yet.'},{label:'Changelog preview',template:'🛠️ {changelog.preview} {changelog.new}',feed:'CHANGELOG',fallback:'No changelog entries yet.'}];let added;for(const row of rows){const element=newElement('text');element.label=row.label;element.template=row.template;if(row.feed){element.accessory={type:'thread_link',destination:row.feed,enabled:true,label:'Open',visibility:'thread_exists'};element.emptyText=row.fallback;element.conditionalVisibility={mode:'always',source:row.feed};}added=renderLayoutElement(element);}selectElement(added.dataset.layoutId,true);announce('Community Updates text rows added. Each row can be moved and edited independently.');}else{const added=renderLayoutElement(newElement(type));selectElement(added.dataset.layoutId,true);announce('Element added.');}}
   else if(button.dataset.layoutMove&&node){const next=button.dataset.layoutMove==='up'?node.previousElementSibling:node.nextElementSibling;if(next){if(button.dataset.layoutMove==='up')layoutEditors.insertBefore(node,next);else layoutEditors.insertBefore(next,node);announce('Element moved.');}node.querySelector('[data-layout-move="'+button.dataset.layoutMove+'"]').focus();}
   else if(button.hasAttribute('data-reset-heading')&&node){const defaults=newElement('updates');read(node,'updatesShowHeading').checked=defaults.showHeading;read(node,'updatesTitle').value=defaults.title;read(node,'headingStyle').value=defaults.headingStyle;refreshRows();announce('Heading defaults restored.');}
   else if(button.hasAttribute('data-add-updates-separator')&&node){read(node,'updatesSeparatorEnabled').checked=true;refreshRows();announce('Separator added between Community Updates feeds.');}
@@ -357,7 +369,7 @@ window.addEventListener('hashchange',updateActiveSection);updateActiveSection();
 const fitPreview=()=>{if(previewRoot)previewRoot.dataset.tall=String(previewRoot.getBoundingClientRect().height>window.innerHeight-220);};
 if(previewRoot){new ResizeObserver(fitPreview).observe(previewRoot);window.addEventListener('resize',fitPreview);fitPreview();}
 if(layoutEditors&&layoutJson){
-  try{const persisted=JSON.parse(layoutJson.value);const elements=Array.isArray(persisted)?persisted:persisted.elements;if(!Array.isArray(elements)||!elements.length||elements.length>35)throw new Error('Invalid layout');initialLayout={version:2,elements};elements.forEach((element)=>originalElements.set(element.id,structuredClone(element)));let selected;try{selected=sessionStorage.getItem(selectionKey);}catch{}rebuild(initialLayout,selected);}
+  try{const persisted=JSON.parse(layoutJson.value);const elements=Array.isArray(persisted)?persisted:persisted.elements;if(!Array.isArray(elements)||!elements.length||elements.length>35)throw new Error('Invalid layout');initialLayout={version:3,elements};elements.forEach((element)=>originalElements.set(element.id,structuredClone(element)));let selected;try{selected=sessionStorage.getItem(selectionKey);}catch{}rebuild(initialLayout,selected);}
   catch{invalidLayout=true;layoutProperties.textContent='The draft layout could not be loaded. It is preserved for validation; discard it to reload the saved configuration.';announce('Invalid layout draft preserved.');}
   initial=new URLSearchParams(new FormData(cardForm)).toString();updateDirtyState();
 }

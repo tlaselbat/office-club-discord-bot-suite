@@ -66,15 +66,40 @@ const updateCardPreview = () => {
     const error = document.createElement('p'); error.className = 'warning'; error.textContent = 'Layout data cannot be previewed. Your draft is preserved; discard or correct it before saving.';output.append(error);return;
   }
   let threads=[];try{threads=JSON.parse(previewRoot.dataset.updateThreads ?? '[]')}catch{}
+  const updateValueMap=(element)=>{
+    const result={...values};
+    const byType=new Map(Array.isArray(threads)?threads.map((thread)=>[thread.type,thread]):[]);
+    const selectedSource=element.conditionalVisibility?.source||'ANNOUNCEMENTS';
+    for(const type of ['ANNOUNCEMENTS','CHANGELOG']){
+      const key=type.toLowerCase(),thread=byType.get(type);
+      const example='Example '+(type==='ANNOUNCEMENTS'?'announcement.':'changelog entry.');
+      const raw=(mode==='current'?(thread?.latestMessageText??''):example).replace(/\r\n?/g,'\n').replace(/\s+/g,' ').trim();
+      const max=Math.max(40,Math.min(1000,Number(element.previewLength)||140));
+      const shortened=raw.length>max?raw.slice(0,max-1)+'…':raw;
+      const excerpt=shortened.replace(/@/g,'@\u200b').replace(/([\\\x60*_{}\x5b\x5d()#+\-.!|>~])/g,'\\$1');
+      const fallback=(element.emptyText||'No updates yet.').replace(/@/g,'@\u200b').replace(/([\\\x60*_{}\x5b\x5d()#+\-.!|>~])/g,'\\$1');
+      result[key+'.preview']=excerpt||(element.emptyBehavior==='fallback'&&type===selectedSource?fallback:'');
+      result[key+'.time']=mode==='current'&&thread?.latestMessageAt?relativeTime(thread.latestMessageAt):mode==='current'?'':'2 minutes ago';
+      result[key+'.new']=mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?'🆕':'';
+      result[key+'.url']=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'')?'https://discord.com/channels/'+previewRoot.dataset.guildId+'/'+thread.threadId:'';
+    }
+    return result;
+  };
+  const relativeTime=(value)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const seconds=(date.getTime()-Date.now())/1000;const units=[['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60],['second',1]];const [unit,size]=units.find(([,size])=>Math.abs(seconds)>=size)||units[units.length-1];return new Intl.RelativeTimeFormat(undefined,{numeric:'auto'}).format(Math.round(seconds/size),unit);};
   const previewUpdateRows = (element) => (element.feedOrder||['ANNOUNCEMENTS','CHANGELOG']).map((type)=>{const config=type==='ANNOUNCEMENTS'?element.announcements:element.changelog;if(!config?.visible)return null;const thread=Array.isArray(threads)?threads.find((item)=>item.type===type):undefined;const source=(mode==='current'?(thread?.latestMessageText??''):'Example '+(type==='ANNOUNCEMENTS'?'announcement.':'changelog entry.')).trim();if(!source&&element.emptyBehavior==='hide_empty_entries')return null;return {type,config,thread,source:source.slice(0,config.latestMessageLength)};}).filter(Boolean);
   if (sourceStatus && elements.some((element) => element?.type === 'gallery' && element.items?.some((item) => item.source === 'map'))) sourceStatus.textContent += ' Automatic artwork: ' + (knownMap ? 'canonical map asset.' : https(inputValue('imageUrl')) ? 'configured fallback image.' : 'bundled fallback banner.');
   elements.forEach((element, index) => {
     if (!element || element.visible === false) return;
-    const text = resolveLineTemplate(element.template ?? '', values);
+    const textValues=element.type==='text'?updateValueMap(element):values;
+    const usesUpdateTokens=/\{(?:announcements|changelog)\.(?:preview|time|new|url)\}/i.test(element.template||'');
+    if(element.type==='text'&&usesUpdateTokens&&element.emptyBehavior==='hide'&&mode==='current'){const source=element.conditionalVisibility?.source||'ANNOUNCEMENTS';const thread=Array.isArray(threads)?threads.find((item)=>item.type===source):undefined;if(!thread?.latestMessageText?.trim())return;}
+    if(element.type==='text'&&element.conditionalVisibility){const source=Array.isArray(threads)?threads.find((item)=>item.type===element.conditionalVisibility.source):undefined;const modeRule=element.conditionalVisibility.mode;if((modeRule==='thread_exists'&&!source)||(modeRule==='message_exists'&&!source?.latestMessageText?.trim())||(modeRule==='any_update_visible'&&mode==='current'&&!threads.some((item)=>item.latestMessageText?.trim())))return;}
+    const text = resolveLineTemplate(element.template ?? '', textValues);
     if (element.type === 'text') {
       if (!text.trim()) return;
-      const block = document.createElement('div'); block.dataset.previewElement = element.id;
-      appendText(block, styleLineText(text, element.style ?? 'normal')); output.append(block);
+      const accessory=element.accessory;const thread=accessory?.destination&&Array.isArray(threads)?threads.find((item)=>item.type===accessory.destination):undefined;const safeThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');const hasMessage=Boolean(thread?.latestMessageText?.trim());const showAccessory=accessory?.enabled&&safeThread&&accessory.visibility!=='never'&&(accessory.visibility!=='message_exists'||hasMessage);
+      if(showAccessory){const section=document.createElement('div');section.className='preview-section';section.dataset.previewElement=element.id;section.dataset.discordComponent='Section';const body=document.createElement('div');body.className='preview-text-display';body.dataset.discordComponent='TextDisplay';appendText(body,styleLineText(text,element.style??'normal'));section.append(body);const button=document.createElement('span');button.className='preview-action secondary';button.dataset.discordAccessory='Button';button.textContent=accessory.label||'Open';section.append(button);output.append(section);}
+      else {const block = document.createElement('div'); block.dataset.previewElement = element.id;block.dataset.discordComponent='TextDisplay';appendText(block, styleLineText(text, element.style ?? 'normal')); output.append(block);}
     } else if (element.type === 'section') {
       const section = document.createElement('div');section.className = 'preview-section';section.dataset.previewElement = element.id;
       const body = document.createElement('div'); appendText(body, styleLineText(text, element.style ?? 'normal')); section.append(body);

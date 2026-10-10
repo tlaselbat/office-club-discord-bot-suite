@@ -225,8 +225,44 @@ function renderLayoutCard(
   for (const [index, element] of layout.entries()) {
     if (!element.visible) continue;
     if (element.type === 'text') {
-      const content = styleCardLine(resolveCardTemplate(element.template, values), element.style);
-      if (content.trim()) components.push(textDisplay(content));
+      const update = resolveTextRowUpdates(server, element);
+      if (!update.visible) continue;
+      const rowValues = { ...values, ...update.values };
+      const content = styleCardLine(
+        resolveCardTemplate(element.template, rowValues),
+        element.style,
+      );
+      if (!content.trim()) continue;
+      const isUpdateText = Object.keys(update.values).length > 0;
+      const display = isUpdateText ? updateTextDisplay(content) : textDisplay(content);
+      const thread = element.accessory?.destination
+        ? (server.updateThreads ?? []).find((item) => item.type === element.accessory?.destination)
+        : undefined;
+      const validThread =
+        thread !== undefined &&
+        /^\d{17,20}$/.test(thread.threadId) &&
+        /^\d{17,20}$/.test(server.guildId);
+      const hasMessage = Boolean(thread?.latestMessageText?.trim());
+      const showAccessory = Boolean(
+        element.accessory?.enabled &&
+          validThread &&
+          element.accessory.visibility !== 'never' &&
+          (element.accessory.visibility !== 'message_exists' || hasMessage),
+      );
+      components.push(
+        showAccessory
+          ? {
+              type: componentType.section,
+              components: [display],
+              accessory: {
+                type: componentType.button,
+                style: buttonStyle.link,
+                label: element.accessory?.label.replace(/@/g, '@\u200b').slice(0, 80) ?? 'Open',
+                url: `https://discord.com/channels/${server.guildId}/${thread?.threadId ?? ''}`,
+              },
+            }
+          : display,
+      );
     } else if (element.type === 'section') {
       const sectionText = styleCardLine(
         resolveCardTemplate(element.template, values),
@@ -280,10 +316,21 @@ function renderLayoutCard(
       components.push(...(renderedUpdates.get(element.id) ?? []));
     }
   }
+  const withoutOrphanedSeparators = components.filter((component, index) => {
+    if (component.type !== componentType.separator) return true;
+    const before = components[index - 1];
+    const after = components[index + 1];
+    return (
+      before !== undefined &&
+      after !== undefined &&
+      before.type !== componentType.separator &&
+      after.type !== componentType.separator
+    );
+  });
   const container: Record<string, unknown> = {
     type: componentType.container,
     accentColor: cardAccentColor(profile.accentColor),
-    components,
+    components: withoutOrphanedSeparators,
   };
   validateRenderedLayout(container);
   enforceTextBudget(container);
@@ -424,7 +471,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const displayMap = displayMapName(map);
   const profile = resolveCardProfile(server.cardProfile);
   return {
-    layoutVersion: 19,
+    layoutVersion: 20,
     accentColor: cardAccentColor(profile.accentColor),
     displayName: server.displayName,
     status: configuredStatusLabel(snapshot, profile),
@@ -665,14 +712,79 @@ export function cardPlaceholderValues(
   };
 }
 
+function resolveTextRowUpdates(
+  server: ServerView,
+  element: Extract<CardLayoutElement, { type: 'text' }>,
+): { visible: boolean; values: Record<string, string> } {
+  const threads = new Map((server.updateThreads ?? []).map((thread) => [thread.type, thread]));
+  const source = element.conditionalVisibility?.source ?? 'ANNOUNCEMENTS';
+  const conditionThread = threads.get(source);
+  const conditionHasMessage = Boolean(conditionThread?.latestMessageText?.trim());
+  const mode = element.conditionalVisibility?.mode ?? 'always';
+  if (mode === 'thread_exists' && !conditionThread) return { visible: false, values: {} };
+  if (mode === 'message_exists' && !conditionHasMessage) return { visible: false, values: {} };
+  if (
+    mode === 'any_update_visible' &&
+    ![...threads.values()].some((thread) => thread.latestMessageText?.trim())
+  )
+    return { visible: false, values: {} };
+
+  const usesUpdateTokens = /\{(?:announcements|changelog)\.(?:preview|time|new|url)\}/i.test(
+    element.template,
+  );
+  if (!usesUpdateTokens) return { visible: true, values: {} };
+  const max = element.previewLength ?? 140;
+  const selectedSource = element.conditionalVisibility?.source ?? 'ANNOUNCEMENTS';
+  const selectedThread = threads.get(selectedSource);
+  if (element.emptyBehavior === 'hide' && !selectedThread?.latestMessageText?.trim())
+    return { visible: false, values: {} };
+  const tokenValues: Record<string, string> = {};
+  for (const selectedFeed of ['ANNOUNCEMENTS', 'CHANGELOG'] as const) {
+    const thread = threads.get(selectedFeed);
+    const rawText = thread?.latestMessageText?.trim() ?? '';
+    const excerpt = rawText
+      ? escapeUpdateMarkdown(truncateUpdateExcerpt(rawText, max))
+      : element.emptyBehavior === 'fallback'
+        ? selectedFeed === selectedSource
+          ? escapeUpdateMarkdown(element.emptyText ?? 'No updates yet.')
+          : ''
+        : '';
+    const safeUrl =
+      thread && /^\d{17,20}$/.test(thread.threadId) && /^\d{17,20}$/.test(server.guildId)
+        ? `https://discord.com/channels/${server.guildId}/${thread.threadId}`
+        : '';
+    const prefix = selectedFeed === 'ANNOUNCEMENTS' ? 'announcements' : 'changelog';
+    tokenValues[`${prefix}.preview`] = excerpt;
+    tokenValues[`${prefix}.time`] = thread?.latestMessageAt
+      ? `<t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>`
+      : '';
+    tokenValues[`${prefix}.new`] = thread && hasFreshUpdate(thread) ? '🆕' : '';
+    tokenValues[`${prefix}.url`] = safeUrl;
+  }
+  return { visible: true, values: tokenValues };
+}
+
+function escapeUpdateMarkdown(value: string): string {
+  return value.replace(/@/g, '@\u200b').replace(/([\\\x60*_{}\x5b\x5d()#+\-.!|>~])/g, '\\$1');
+}
+
+function truncateUpdateExcerpt(value: string, max: number): string {
+  const normalized = value.replace(/\r\n?/g, '\n').replace(/\s+/g, ' ').trim();
+  return normalized.length > max ? `${normalized.slice(0, Math.max(0, max - 1))}…` : normalized;
+}
+
 export function resolveCardTemplate(template: string, values: Record<string, string>): string {
   const withoutMissingLocationSeparator = values.location
     ? template
     : template.replace(/\s?[·|]\s*\{location\}/gi, '');
-  return withoutMissingLocationSeparator.replace(/\{([^{}]+)\}/g, (_match, rawName: string) => {
+  const withoutMissingUpdateTimestamp = withoutMissingLocationSeparator.replace(
+    /\r?\n-#\s*\{(announcements|changelog)\.time\}/gi,
+    (match, feed: string) => (values[`${feed.toLowerCase()}.time`] ? match : ''),
+  );
+  return withoutMissingUpdateTimestamp.replace(/\{([^{}]+)\}/g, (_match, rawName: string) => {
     const value = values[rawName.toLowerCase()] ?? '';
     // Telemetry and configured text must never trigger Discord mentions.
-    return value.replace(/@/g, '@\u200b').replace(/`/g, '\\`');
+    return value.replace(/@(?!\u200b)/g, '@\u200b').replace(/`/g, '\\`');
   });
 }
 
