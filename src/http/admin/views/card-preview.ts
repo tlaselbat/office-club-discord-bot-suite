@@ -66,6 +66,7 @@ const updateCardPreview = () => {
     const error = document.createElement('p'); error.className = 'warning'; error.textContent = 'Layout data cannot be previewed. Your draft is preserved; discard or correct it before saving.';output.append(error);return;
   }
   let threads=[];try{threads=JSON.parse(previewRoot.dataset.updateThreads ?? '[]')}catch{}
+  const escapeUpdatePreview=(value)=>value.replace(/@/g,'@\u200b').replace(/([\\\x60*_{}<>\x5b\x5d()#+\-.!|>~])/g,'\\$1');
   const updateValueMap=(element)=>{
     const result={...values};
     const byType=new Map(Array.isArray(threads)?threads.map((thread)=>[thread.type,thread]):[]);
@@ -76,8 +77,8 @@ const updateCardPreview = () => {
       const raw=(mode==='current'?(thread?.latestMessageText??''):example).replace(/\r\n?/g,'\n').replace(/\s+/g,' ').trim();
       const max=Math.max(40,Math.min(1000,Number(element.previewLength)||140));
       const shortened=raw.length>max?raw.slice(0,max-1)+'…':raw;
-      const excerpt=shortened.replace(/@/g,'@\u200b').replace(/([\\\x60*_{}\x5b\x5d()#+\-.!|>~])/g,'\\$1');
-      const fallback=(element.emptyText||'No updates yet.').replace(/@/g,'@\u200b').replace(/([\\\x60*_{}\x5b\x5d()#+\-.!|>~])/g,'\\$1');
+      const excerpt=escapeUpdatePreview(shortened);
+      const fallback=escapeUpdatePreview(element.emptyText||'No updates yet.');
       result[key+'.preview']=excerpt||(element.emptyBehavior==='fallback'&&type===selectedSource?fallback:'');
       result[key+'.time']=mode==='current'&&thread?.latestMessageAt?relativeTime(thread.latestMessageAt):mode==='current'?'':'2 minutes ago';
       result[key+'.new']=mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?'🆕':'';
@@ -85,12 +86,12 @@ const updateCardPreview = () => {
     }
     return result;
   };
-  const relativeTime=(value)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const seconds=(date.getTime()-Date.now())/1000;const units=[['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60],['second',1]];const [unit,size]=units.find(([,size])=>Math.abs(seconds)>=size)||units[units.length-1];return new Intl.RelativeTimeFormat(undefined,{numeric:'auto'}).format(Math.round(seconds/size),unit);};
+  const relativeTime=(value)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const seconds=(date.getTime()-Date.now())/1000;const units=[['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60],['second',1]];const [unit,size]=units.find(([,size])=>Math.abs(seconds)>=size)||units[units.length-1];return new Intl.RelativeTimeFormat('en',{numeric:'auto'}).format(Math.round(seconds/size),unit);};
   const previewUpdateRows = (element) => (element.feedOrder||['ANNOUNCEMENTS','CHANGELOG']).map((type)=>{const config=type==='ANNOUNCEMENTS'?element.announcements:element.changelog;if(!config?.visible)return null;const thread=Array.isArray(threads)?threads.find((item)=>item.type===type):undefined;const source=(mode==='current'?(thread?.latestMessageText??''):'Example '+(type==='ANNOUNCEMENTS'?'announcement.':'changelog entry.')).trim();if(!source&&element.emptyBehavior==='hide_empty_entries')return null;return {type,config,thread,source:source.slice(0,config.latestMessageLength)};}).filter(Boolean);
   if (sourceStatus && elements.some((element) => element?.type === 'gallery' && element.items?.some((item) => item.source === 'map'))) sourceStatus.textContent += ' Automatic artwork: ' + (knownMap ? 'canonical map asset.' : https(inputValue('imageUrl')) ? 'configured fallback image.' : 'bundled fallback banner.');
   elements.forEach((element, index) => {
     if (!element || element.visible === false) return;
-    const textValues=element.type==='text'?updateValueMap(element):values;
+    const textValues=element.type==='text'||element.type==='section'?updateValueMap(element):values;
     const usesUpdateTokens=/\{(?:announcements|changelog)\.(?:preview|time|new|url)\}/i.test(element.template||'');
     if(element.type==='text'&&usesUpdateTokens&&element.emptyBehavior==='hide'&&mode==='current'){const source=element.conditionalVisibility?.source||'ANNOUNCEMENTS';const thread=Array.isArray(threads)?threads.find((item)=>item.type===source):undefined;if(!thread?.latestMessageText?.trim())return;}
     if(element.type==='text'&&element.conditionalVisibility){const source=Array.isArray(threads)?threads.find((item)=>item.type===element.conditionalVisibility.source):undefined;const modeRule=element.conditionalVisibility.mode;if((modeRule==='thread_exists'&&!source)||(modeRule==='message_exists'&&!source?.latestMessageText?.trim())||(modeRule==='any_update_visible'&&mode==='current'&&!threads.some((item)=>item.latestMessageText?.trim())))return;}
@@ -117,7 +118,7 @@ const updateCardPreview = () => {
       divider.className = (element.divider ? 'preview-separator' : 'preview-separator-space') + (element.spacing === 2 ? ' preview-separator-large' : ''); output.append(divider);
     } else if (element.type === 'actions') { const row = actions();row.dataset.previewElement = element.id;if(row.children.length) output.append(row); }
     else if (element.type === 'updates') {
-      const relativeTime=(value)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const seconds=(date.getTime()-Date.now())/1000;const units=[['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60],['second',1]];const [unit,size]=units.find(([,size])=>Math.abs(seconds)>=size)||units[units.length-1];return new Intl.RelativeTimeFormat(undefined,{numeric:'auto'}).format(Math.round(seconds/size),unit);};
+      const relativeTime=(value)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const seconds=(date.getTime()-Date.now())/1000;const units=[['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60],['second',1]];const [unit,size]=units.find(([,size])=>Math.abs(seconds)>=size)||units[units.length-1];return new Intl.RelativeTimeFormat('en',{numeric:'auto'}).format(Math.round(seconds/size),unit);};
       const entries=previewUpdateRows(element);
       const addHeading=()=>{
         if(!element.showHeading)return;
@@ -127,7 +128,7 @@ const updateCardPreview = () => {
       const addFeed=({type,config,thread,source})=>{
         const validThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');
         const hasButton=config.showOpenButton&&(validThread||mode!=='current');
-        const label=config.displayLabel+(mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');
+        const label=config.displayLabel+(config.showNew!==false&&mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');
         const title=document.createElement('div');
         title.className=(hasButton?'preview-section':'preview-text-display')+' preview-updates preview-update-title';
         title.dataset.previewElement=element.id;title.dataset.discordComponent=hasButton?'Section':'TextDisplay';
@@ -136,11 +137,11 @@ const updateCardPreview = () => {
           const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);
         }else appendText(title,label);
         const content=source||config.emptyPlaceholder;
-        const formatted=styleLineText(content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
+        const formatted=styleLineText(source?escapeUpdatePreview(content):content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
         let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);
         const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';
         summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';
-        appendText(summary,[formatted,time?'-# '+time:''].filter(Boolean).join('\n'));
+        appendText(summary,[formatted,time].filter(Boolean).join('\n'));
         if(hasButton)title.append(summary);
         output.append(title);
         if(!hasButton)output.append(summary);
@@ -154,7 +155,7 @@ const updateCardPreview = () => {
           if(block.visible===false)return;
           if(block.type==='heading')addHeading();
           else if(block.type==='feed'){const entry=entries.find((row)=>row.type===block.feed);if(entry)addFeed(entry);}
-          else if(block.type==='text'){const text=resolveLineTemplate(block.template||'',values);if(text.trim()){const display=document.createElement('div');display.dataset.previewElement=block.id;display.dataset.discordComponent='TextDisplay';appendText(display,styleLineText(text,block.style||'normal'));output.append(display);}}
+          else if(block.type==='text'){const text=resolveLineTemplate(block.template||'',updateValueMap({...block,conditionalVisibility:{source:'ANNOUNCEMENTS'}}));if(text.trim()){const display=document.createElement('div');display.dataset.previewElement=block.id;display.dataset.discordComponent='TextDisplay';appendText(display,styleLineText(text,block.style||'normal'));output.append(display);}}
           else if(block.type==='separator')addSeparator(block.divider,block.spacing);
           else if(block.type==='gallery'){
             const gallery=document.createElement('div');gallery.className='preview-media-gallery';gallery.dataset.previewElement=block.id;gallery.dataset.discordComponent='MediaGallery';
@@ -178,9 +179,9 @@ const updateCardPreview = () => {
           const {config,thread,source}=entry;
           const validThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');
           const hasButton=config.showOpenButton&&(validThread||mode!=='current');
-          const label=config.displayLabel+(mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');
+          const label=config.displayLabel+(config.showNew!==false&&mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');
           const content=source||config.emptyPlaceholder;
-          const formatted=styleLineText(content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
+          const formatted=styleLineText(source?escapeUpdatePreview(content):content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
           let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);
           const title=document.createElement('div');
           title.className=(hasButton?'preview-section preview-update-section':'preview-text-display')+' preview-updates preview-update-title';
@@ -190,7 +191,7 @@ const updateCardPreview = () => {
           }else appendText(title,label);
           const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';
           summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';
-          appendText(summary,[formatted,time?'-# '+time:''].filter(Boolean).join('\n'));
+          appendText(summary,[formatted,time].filter(Boolean).join('\n'));
           if(hasButton){
             title.append(summary);
             const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);

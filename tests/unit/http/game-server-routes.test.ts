@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerGameServersRoutes } from '../../../src/http/routes/admin/game-servers.js';
 import type { SharedHelpers } from '../../../src/http/routes/admin/shared.js';
 import {
+  CARD_PLACEHOLDERS,
   defaultUpdatesElement,
   resolveCardLayout,
 } from '../../../src/modules/game-servers/card-profile.js';
@@ -113,6 +114,9 @@ describe('Game Server configuration routes', () => {
     const page = await app.inject({ method: 'GET', url });
     expect(page.body).toContain('data-update-threads');
     expect(page.body).toContain('Community Updates preset');
+    for (const [name] of CARD_PLACEHOLDERS) {
+      expect(page.body).toContain(`value="{${name}}"`);
+    }
     expect(page.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(page.body).not.toContain('<script>alert(1)</script>');
     expect(shared.deps.prisma.gameServer.findFirst).toHaveBeenLastCalledWith({

@@ -5,6 +5,7 @@ import {
   CARD_LINE_IDS,
   CARD_LINE_STYLES,
   DEFAULT_CARD_LINE_STYLES,
+  DEFAULT_CARD_TEMPLATES,
   cardProfileSchema,
   resolveCardLines,
   normalizeCardProfile,
@@ -139,7 +140,6 @@ describe('generic card line contract', () => {
       'separator',
       'text',
       'text',
-      'text',
     ]);
     expect(first.find((element) => element.label === 'Card description')).toMatchObject({
       type: 'text',
@@ -186,9 +186,9 @@ describe('generic card line contract', () => {
     });
     expect(migrated.layout?.version).toBe(3);
     expect(
-      migrated.layout?.elements.filter((element) => element.type === 'text').slice(-3),
-    ).toHaveLength(3);
-    expect(migrated.layout?.elements.slice(-3).every((element) => !element.visible)).toBe(true);
+      migrated.layout?.elements.filter((element) => element.type === 'text').slice(-2),
+    ).toHaveLength(2);
+    expect(migrated.layout?.elements.slice(-2).every((element) => !element.visible)).toBe(true);
 
     const removed = cardProfileSchema.parse({
       layout: {
@@ -204,6 +204,7 @@ describe('generic card line contract', () => {
     if (updates.type !== 'updates') throw new Error('Expected Updates fixture');
     const customized = {
       ...updates,
+      showHeading: true,
       title: 'Community News',
       announcements: { ...updates.announcements, displayLabel: 'News', latestMessageLength: 500 },
     };
@@ -231,6 +232,7 @@ describe('generic card line contract', () => {
     if (updates.type !== 'updates') throw new Error('Expected legacy Updates fixture');
     const customized = {
       ...updates,
+      showHeading: true,
       title: 'Community News',
       feedOrder: ['CHANGELOG', 'ANNOUNCEMENTS'] as const,
       announcements: { ...updates.announcements, displayLabel: 'News', latestMessageLength: 500 },
@@ -248,7 +250,7 @@ describe('generic card line contract', () => {
       template: 'Community News',
     });
     expect(normalized.layout?.elements[1]).toMatchObject({
-      label: '🛠 Changelog',
+      label: 'Changelog',
       template: expect.stringContaining('{changelog.preview}'),
       previewLength: 240,
       accessory: { destination: 'CHANGELOG', label: 'Read notes', enabled: true },
@@ -257,6 +259,31 @@ describe('generic card line contract', () => {
       label: 'News',
       previewLength: 500,
       accessory: { destination: 'ANNOUNCEMENTS', enabled: true },
+    });
+  });
+
+  it('defaults all new card lines and generated Updates rows to plain formatting', () => {
+    expect(DEFAULT_CARD_LINE_STYLES).toEqual({
+      title: 'normal',
+      subtitle: 'normal',
+      playerCount: 'normal',
+      description: 'normal',
+      currentMap: 'normal',
+      serverAddress: 'normal',
+    });
+    expect(Object.values(DEFAULT_CARD_TEMPLATES).join('')).not.toMatch(/[*`]|-#/);
+    const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000001');
+    if (updates.type !== 'updates') throw new Error('Expected Updates fixture');
+    expect(updates).toMatchObject({ showHeading: false, title: 'Latest Updates' });
+    expect(updates.announcements).toMatchObject({
+      timestampMode: 'plain',
+      showNew: false,
+      displayLabel: 'Announcements',
+    });
+    expect(updates.changelog).toMatchObject({
+      timestampMode: 'plain',
+      showNew: false,
+      displayLabel: 'Changelog',
     });
   });
 
@@ -378,12 +405,12 @@ describe('generic card line contract', () => {
     ).toBe(true);
     expect(
       cardProfileSchema.safeParse({
-        layout: { version: 2, elements: [...textElements.slice(0, 31), updates] },
+        layout: { version: 2, elements: [...textElements.slice(0, 32), updates] },
       }).success,
     ).toBe(false);
     const compatible = normalizeCardProfile({
       layout: { version: 2, elements: [...textElements.slice(0, 29), updates] },
     });
-    expect(compatible.layout?.elements).toHaveLength(32);
+    expect(compatible.layout?.elements).toHaveLength(31);
   });
 });

@@ -264,8 +264,9 @@ function renderLayoutCard(
           : display,
       );
     } else if (element.type === 'section') {
+      const update = resolveTextRowUpdates(server, element);
       const sectionText = styleCardLine(
-        resolveCardTemplate(element.template, values),
+        resolveCardTemplate(element.template, { ...values, ...update.values }),
         element.style,
       );
       components.push({
@@ -471,7 +472,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const displayMap = displayMapName(map);
   const profile = resolveCardProfile(server.cardProfile);
   return {
-    layoutVersion: 20,
+    layoutVersion: 21,
     accentColor: cardAccentColor(profile.accentColor),
     displayName: server.displayName,
     status: configuredStatusLabel(snapshot, profile),
@@ -504,6 +505,25 @@ export function hasFreshUpdate(thread: UpdateThreadView, now = new Date()): bool
   );
 }
 
+export function formatRelativeUpdateTimestamp(value: Date, now = new Date()): string {
+  if (Number.isNaN(value.getTime())) return '';
+  const seconds = (value.getTime() - now.getTime()) / 1000;
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['year', 31_536_000],
+    ['month', 2_592_000],
+    ['week', 604_800],
+    ['day', 86_400],
+    ['hour', 3_600],
+    ['minute', 60],
+    ['second', 1],
+  ];
+  const [unit, size] = units.find(([, size]) => Math.abs(seconds) >= size) ?? ['second', 1];
+  return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(
+    Math.round(seconds / size),
+    unit,
+  );
+}
+
 function renderUpdatesSection(
   server: ServerView,
   element: Extract<CardLayoutElement, { type: 'updates' }>,
@@ -520,11 +540,19 @@ function renderUpdatesSection(
     const thread = threads.get(type);
     const source = thread?.latestMessageText?.trim() ?? '';
     if (element.emptyBehavior === 'hide_empty_entries' && !source) return null;
-    const latest = source.slice(0, settings.latestMessageLength).replace(/@/g, '@\u200b');
+    const latest = source
+      ? escapeUpdateMarkdown(source.slice(0, settings.latestMessageLength))
+      : '';
     const safe = (text: string) => text.replace(/@/g, '@\u200b');
-    const title = `${safe(settings.displayLabel)}${thread !== undefined && hasFreshUpdate(thread) ? ' 🆕' : ''}`;
+    const title = `${safe(settings.displayLabel)}${settings.showNew && thread !== undefined && hasFreshUpdate(thread) ? ' 🆕' : ''}`;
+    const timestamp =
+      settings.showTimestamp && thread?.latestMessageAt
+        ? settings.timestampMode === 'discord_native'
+          ? `<t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>`
+          : formatRelativeUpdateTimestamp(thread.latestMessageAt)
+        : '';
     const detail = latest
-      ? `${latest}${settings.showTimestamp && thread?.latestMessageAt ? `\n-# <t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>` : ''}`
+      ? `${latest}${timestamp ? `\n${timestamp}` : ''}`
       : safe(settings.emptyPlaceholder);
     const titleDisplay = updateTextDisplay(
       styleCardLine(title, updateLineStyle(settings.textStyle)),
@@ -570,7 +598,20 @@ function renderUpdatesSection(
       } else if (block.type === 'feed') {
         components.push(...(feedsByType.get(block.feed) ?? []));
       } else if (block.type === 'text') {
-        const content = styleCardLine(resolveCardTemplate(block.template, values), block.style);
+        const updateValues = resolveTextRowUpdates(server, {
+          id: block.id,
+          type: 'section',
+          label: 'Updates text',
+          visible: true,
+          template: block.template,
+          style: block.style,
+          timestampMode: block.timestampMode,
+          thumbnailUrl: null,
+        }).values;
+        const content = styleCardLine(
+          resolveCardTemplate(block.template, { ...values, ...updateValues }),
+          block.style,
+        );
         if (content.trim()) components.push(updateTextDisplay(content));
       } else if (block.type === 'separator') {
         components.push({
@@ -714,13 +755,17 @@ export function cardPlaceholderValues(
 
 function resolveTextRowUpdates(
   server: ServerView,
-  element: Extract<CardLayoutElement, { type: 'text' }>,
+  element: Extract<CardLayoutElement, { type: 'text' | 'section' }>,
 ): { visible: boolean; values: Record<string, string> } {
   const threads = new Map((server.updateThreads ?? []).map((thread) => [thread.type, thread]));
-  const source = element.conditionalVisibility?.source ?? 'ANNOUNCEMENTS';
+  const source =
+    element.type === 'text'
+      ? (element.conditionalVisibility?.source ?? 'ANNOUNCEMENTS')
+      : 'ANNOUNCEMENTS';
   const conditionThread = threads.get(source);
   const conditionHasMessage = Boolean(conditionThread?.latestMessageText?.trim());
-  const mode = element.conditionalVisibility?.mode ?? 'always';
+  const mode =
+    element.type === 'text' ? (element.conditionalVisibility?.mode ?? 'always') : 'always';
   if (mode === 'thread_exists' && !conditionThread) return { visible: false, values: {} };
   if (mode === 'message_exists' && !conditionHasMessage) return { visible: false, values: {} };
   if (
@@ -733,10 +778,14 @@ function resolveTextRowUpdates(
     element.template,
   );
   if (!usesUpdateTokens) return { visible: true, values: {} };
-  const max = element.previewLength ?? 140;
-  const selectedSource = element.conditionalVisibility?.source ?? 'ANNOUNCEMENTS';
+  const max = element.type === 'text' ? (element.previewLength ?? 140) : 140;
+  const selectedSource = source;
   const selectedThread = threads.get(selectedSource);
-  if (element.emptyBehavior === 'hide' && !selectedThread?.latestMessageText?.trim())
+  if (
+    element.type === 'text' &&
+    element.emptyBehavior === 'hide' &&
+    !selectedThread?.latestMessageText?.trim()
+  )
     return { visible: false, values: {} };
   const tokenValues: Record<string, string> = {};
   for (const selectedFeed of ['ANNOUNCEMENTS', 'CHANGELOG'] as const) {
@@ -744,7 +793,7 @@ function resolveTextRowUpdates(
     const rawText = thread?.latestMessageText?.trim() ?? '';
     const excerpt = rawText
       ? escapeUpdateMarkdown(truncateUpdateExcerpt(rawText, max))
-      : element.emptyBehavior === 'fallback'
+      : element.type === 'text' && element.emptyBehavior === 'fallback'
         ? selectedFeed === selectedSource
           ? escapeUpdateMarkdown(element.emptyText ?? 'No updates yet.')
           : ''
@@ -756,7 +805,9 @@ function resolveTextRowUpdates(
     const prefix = selectedFeed === 'ANNOUNCEMENTS' ? 'announcements' : 'changelog';
     tokenValues[`${prefix}.preview`] = excerpt;
     tokenValues[`${prefix}.time`] = thread?.latestMessageAt
-      ? `<t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>`
+      ? element.timestampMode === 'discord_native'
+        ? `<t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>`
+        : formatRelativeUpdateTimestamp(thread.latestMessageAt)
       : '';
     tokenValues[`${prefix}.new`] = thread && hasFreshUpdate(thread) ? '🆕' : '';
     tokenValues[`${prefix}.url`] = safeUrl;
@@ -765,7 +816,7 @@ function resolveTextRowUpdates(
 }
 
 function escapeUpdateMarkdown(value: string): string {
-  return value.replace(/@/g, '@\u200b').replace(/([\\\x60*_{}\x5b\x5d()#+\-.!|>~])/g, '\\$1');
+  return value.replace(/@/g, '@\u200b').replace(/([\\\x60*_{}<>\x5b\x5d()#+\-.!|>~])/g, '\\$1');
 }
 
 function truncateUpdateExcerpt(value: string, max: number): string {
@@ -778,7 +829,7 @@ export function resolveCardTemplate(template: string, values: Record<string, str
     ? template
     : template.replace(/\s?[·|]\s*\{location\}/gi, '');
   const withoutMissingUpdateTimestamp = withoutMissingLocationSeparator.replace(
-    /\r?\n-#\s*\{(announcements|changelog)\.time\}/gi,
+    /\r?\n(?:-#\s*)?\{(announcements|changelog)\.time\}/gi,
     (match, feed: string) => (values[`${feed.toLowerCase()}.time`] ? match : ''),
   );
   return withoutMissingUpdateTimestamp.replace(/\{([^{}]+)\}/g, (_match, rawName: string) => {

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const DEFAULT_CARD_ACCENT_COLOR = '#2b8aef';
 export const DEFAULT_CARD_DESCRIPTION =
-  'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.';
+  'Challenge other players 1v1, warm up, or kill time between matches. Open to all Office Club members.';
 export const DEFAULT_THUMBNAIL_IMAGE_URL =
   'https://raw.githubusercontent.com/tlaselbat/office-club-discord-bot-suite/master/assets/server-info/clickcs-server-thumbnail.png';
 
@@ -21,8 +21,8 @@ export const DEFAULT_CARD_TEMPLATES: Record<CardTemplateField, string> = {
   subtitle: '{statusicon} {status}{location}',
   description: DEFAULT_CARD_DESCRIPTION,
   playerCount: '{playercount} players',
-  currentMap: '**Current map**\n`{currentmap}`',
-  serverAddress: '`{serveraddress}`',
+  currentMap: 'Current map: {currentmap}',
+  serverAddress: '{serveraddress}',
 };
 export const DEFAULT_STATUS_LABELS = {
   online: 'Online',
@@ -96,9 +96,9 @@ export const CARD_LINE_IDS = [
 export const CARD_LINE_STYLES = ['large', 'medium', 'small', 'normal', 'subtext'] as const;
 export type CardLineStyle = (typeof CARD_LINE_STYLES)[number];
 export const DEFAULT_CARD_LINE_STYLES: Record<(typeof CARD_LINE_IDS)[number], CardLineStyle> = {
-  title: 'large',
-  subtitle: 'small',
-  playerCount: 'subtext',
+  title: 'normal',
+  subtitle: 'normal',
+  playerCount: 'normal',
   description: 'normal',
   currentMap: 'normal',
   serverAddress: 'normal',
@@ -152,6 +152,8 @@ const updatesFeedSchema = z.object({
   textStyle: z.enum(['normal', 'heading', 'subtext']),
   emptyPlaceholder: z.string().max(240),
   showTimestamp: z.boolean(),
+  timestampMode: z.enum(['plain', 'discord_native']).default('plain'),
+  showNew: z.boolean().default(true),
   showOpenButton: z.boolean(),
   openButtonLabel: z.string().trim().min(1).max(80),
   latestMessageLength: z.number().int().min(40).max(1000),
@@ -171,6 +173,7 @@ const updateBlockSchema = z.discriminatedUnion('type', [
     visible: z.boolean(),
     template: validatedTemplate(),
     style: z.enum(CARD_LINE_STYLES),
+    timestampMode: z.enum(['plain', 'discord_native']).default('plain'),
   }),
   z.object({
     id: z.uuid(),
@@ -203,7 +206,7 @@ const updatesElementSchema = z
     type: z.literal('updates'),
     label: z.string().trim().min(1).max(80),
     visible: z.boolean(),
-    showHeading: z.boolean().default(true),
+    showHeading: z.boolean().default(false),
     title: z.string().trim().max(80),
     headingStyle: z.enum(['normal', 'heading', 'subtext']),
     blocks: z.array(updateBlockSchema).max(25).optional(),
@@ -257,6 +260,7 @@ const cardLayoutElementSchema = z.discriminatedUnion('type', [
     template: validatedTemplate(),
     visible: z.boolean(),
     style: z.enum(CARD_LINE_STYLES),
+    timestampMode: z.enum(['plain', 'discord_native']).default('plain'),
     accessory: z
       .object({
         type: z.literal('thread_link'),
@@ -308,6 +312,7 @@ const cardLayoutElementSchema = z.discriminatedUnion('type', [
     visible: z.boolean(),
     template: validatedTemplate(),
     style: z.enum(CARD_LINE_STYLES),
+    timestampMode: z.enum(['plain', 'discord_native']).default('plain'),
     thumbnailUrl: httpsUrl.nullable().default(null),
   }),
   z.object({
@@ -383,28 +388,32 @@ export function defaultUpdatesElement(id: string): CardLayoutElement {
     type: 'updates',
     label: 'Community Updates',
     visible: true,
-    title: '**Latest Updates**',
-    showHeading: true,
+    title: 'Latest Updates',
+    showHeading: false,
     headingStyle: 'normal',
     feedOrder: ['ANNOUNCEMENTS', 'CHANGELOG'],
     separator: { enabled: false, divider: true, spacing: 1 },
     emptyBehavior: 'show_placeholders',
     announcements: {
       visible: true,
-      displayLabel: '📢 **Announcements**',
+      displayLabel: 'Announcements',
       textStyle: 'normal',
       emptyPlaceholder: 'No announcements yet.',
       showTimestamp: true,
+      timestampMode: 'plain',
+      showNew: false,
       showOpenButton: true,
       openButtonLabel: 'Open',
       latestMessageLength: 240,
     },
     changelog: {
       visible: true,
-      displayLabel: '🛠 **Changelog**',
+      displayLabel: 'Changelog',
       textStyle: 'normal',
       emptyPlaceholder: 'No changelog entries yet.',
       showTimestamp: true,
+      timestampMode: 'plain',
+      showNew: false,
       showOpenButton: true,
       openButtonLabel: 'Open',
       latestMessageLength: 240,
@@ -428,7 +437,11 @@ export function migrateLegacyUpdateElements(elements: unknown[]): unknown[] {
   ) => {
     const token = feed === 'ANNOUNCEMENTS' ? 'announcements' : 'changelog';
     const label = typeof config.displayLabel === 'string' ? config.displayLabel : '';
-    const timestamp = config.showTimestamp === true ? `\n-# {${token}.time}` : '';
+    const timestamp = config.showTimestamp === true ? `\n{${token}.time}` : '';
+    const defaultLabel = feed === 'ANNOUNCEMENTS' ? '📢 **Announcements**' : '🛠 **Changelog**';
+    const generatedLabel = feed === 'ANNOUNCEMENTS' ? 'Announcements' : 'Changelog';
+    const visibleLabel = label === defaultLabel ? generatedLabel : label;
+    const newToken = config.showNew !== false ? `{${token}.new}` : '';
     const style = config.textStyle === 'heading' ? 'large' : config.textStyle;
     const accessory =
       config.showOpenButton === true
@@ -444,14 +457,15 @@ export function migrateLegacyUpdateElements(elements: unknown[]): unknown[] {
       id,
       type: 'text',
       label:
-        label.replace(/[*_~`]/g, '').trim() ||
+        visibleLabel.replace(/[*_~`]/g, '').trim() ||
         (feed === 'ANNOUNCEMENTS' ? 'Announcements' : 'Changelog'),
-      template: `${label}${label ? ' ' : ''}{${token}.preview}{${token}.new}${timestamp}`,
+      template: `${visibleLabel}${visibleLabel ? ' ' : ''}{${token}.preview}${newToken}${timestamp}`,
       visible,
       style: CARD_LINE_STYLES.includes(style as (typeof CARD_LINE_STYLES)[number])
         ? style
         : 'normal',
       ...(accessory ? { accessory } : {}),
+      timestampMode: config.timestampMode === 'discord_native' ? 'discord_native' : 'plain',
       conditionalVisibility: { mode: 'always', source: feed },
       emptyBehavior: emptyBehavior === 'hide_empty_entries' ? 'hide' : 'fallback',
       emptyText:
@@ -488,10 +502,16 @@ export function migrateLegacyUpdateElements(elements: unknown[]): unknown[] {
               id: block.id,
               type: 'text',
               label: 'Latest Updates',
-              template: typeof element.title === 'string' ? element.title : '**Latest Updates**',
+              template:
+                element.title === '**Latest Updates**'
+                  ? 'Latest Updates'
+                  : typeof element.title === 'string'
+                    ? element.title
+                    : 'Latest Updates',
               visible: active && block.visible !== false,
               style:
                 element.headingStyle === 'heading' ? 'large' : (element.headingStyle ?? 'normal'),
+              timestampMode: 'plain',
             });
         } else if (block.type === 'feed') {
           const feed = block.feed === 'CHANGELOG' ? 'CHANGELOG' : 'ANNOUNCEMENTS';
@@ -528,9 +548,15 @@ export function migrateLegacyUpdateElements(elements: unknown[]): unknown[] {
           id: stableLayoutId(`${id}:heading`),
           type: 'text',
           label: 'Latest Updates',
-          template: typeof element.title === 'string' ? element.title : '**Latest Updates**',
+          template:
+            element.title === '**Latest Updates**'
+              ? 'Latest Updates'
+              : typeof element.title === 'string'
+                ? element.title
+                : 'Latest Updates',
           visible: active,
           style: element.headingStyle === 'heading' ? 'large' : (element.headingStyle ?? 'normal'),
+          timestampMode: 'plain',
         });
       const order: Array<'ANNOUNCEMENTS' | 'CHANGELOG'> = Array.isArray(element.feedOrder)
         ? element.feedOrder.filter(
@@ -674,7 +700,7 @@ export function normalizeCardProfile(value: unknown): CardProfile {
                       ...defaults,
                       ...element,
                       showHeading:
-                        typeof element.showHeading === 'boolean' ? element.showHeading : true,
+                        typeof element.showHeading === 'boolean' ? element.showHeading : false,
                       feedOrder: Array.isArray(element.feedOrder)
                         ? element.feedOrder
                         : defaults.feedOrder,
@@ -688,12 +714,22 @@ export function normalizeCardProfile(value: unknown): CardProfile {
                         element.announcements !== null
                           ? element.announcements
                           : {}),
+                        showNew:
+                          typeof (element.announcements as Record<string, unknown> | undefined)
+                            ?.showNew === 'boolean'
+                            ? (element.announcements as Record<string, unknown>).showNew
+                            : true,
                       },
                       changelog: {
                         ...defaults.changelog,
                         ...(typeof element.changelog === 'object' && element.changelog !== null
                           ? element.changelog
                           : {}),
+                        showNew:
+                          typeof (element.changelog as Record<string, unknown> | undefined)
+                            ?.showNew === 'boolean'
+                            ? (element.changelog as Record<string, unknown>).showNew
+                            : true,
                       },
                     };
                   });
@@ -777,6 +813,7 @@ export function resolveCardLayout(
       visible: true,
       template: headerText,
       style: 'normal',
+      timestampMode: 'plain',
       thumbnailUrl: profile.thumbnailImageUrl,
     }),
   ];
@@ -802,6 +839,7 @@ export function resolveCardLayout(
           visible: true,
           template: line.template,
           style: line.style,
+          timestampMode: 'plain',
         }),
       );
     if (index === 4 && (profile.mapArtwork ?? profile.visibleFields.currentMap))

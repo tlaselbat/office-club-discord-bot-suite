@@ -432,12 +432,14 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
       ['Underline', '__'],
       ['Strikethrough', '~~'],
       ['Inline code', String.fromCharCode(96)],
+      ['Spoiler', '||'],
     ]
       .map(
         ([label, marker]) =>
           `<button class="secondary" type="button" aria-controls="${target}" data-markdown-target="${target}" data-markdown-marker="${escapeHtml(marker)}">${escapeHtml(label ?? '')}</button>`,
       )
       .join('')}</div>
+<button class="secondary" type="button" aria-controls="${target}" data-markdown-clear="${target}">Clear formatting</button>
 <label for="${line.id}Style">${name} heading style</label><select id="${line.id}Style" name="${line.id}Style" data-line-style>${CARD_LINE_STYLES.map((style) => `<option value="${style}"${line.style === style ? ' selected' : ''}>${styleNames[style]}</option>`).join('')}</select>
 ${textarea(`${name} template`, target, line.template, 'maxlength="500" data-card-template', model.fieldErrors?.[target])}
 <p class="hint" id="${target}-format-status" role="status">Select text to apply formatting, or insert a placeholder at the cursor.</p>
