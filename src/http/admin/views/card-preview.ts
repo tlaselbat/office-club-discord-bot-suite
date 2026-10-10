@@ -94,7 +94,56 @@ const updateCardPreview = () => {
     else if (element.type === 'updates') {
       const relativeTime=(value)=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const seconds=(date.getTime()-Date.now())/1000;const units=[['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60],['second',1]];const [unit,size]=units.find(([,size])=>Math.abs(seconds)>=size)||units[units.length-1];return new Intl.RelativeTimeFormat(undefined,{numeric:'auto'}).format(Math.round(seconds/size),unit);};
       const entries=previewUpdateRows(element);
-      if(entries.length){if(element.showHeading){const heading=document.createElement('div');heading.className='preview-update-heading';heading.dataset.discordComponent='TextDisplay';appendText(heading,styleLineText(element.title||'',element.headingStyle==='heading'?'large':element.headingStyle==='subtext'?'subtext':'normal'));heading.dataset.previewElement=element.id;output.append(heading);}entries.forEach(({type,config,thread,source},index)=>{if(index&&element.separator?.enabled){const divider=document.createElement(element.separator.divider?'hr':'div');divider.className=(element.separator.divider?'preview-separator':'preview-separator-space')+(element.separator.spacing===2?' preview-separator-large':'');divider.dataset.previewElement=element.id;divider.dataset.discordComponent='Separator';output.append(divider);}const validThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');const hasButton=config.showOpenButton&&(validThread||mode!=='current');const label=config.displayLabel+(mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');const title=document.createElement('div');title.className=(hasButton?'preview-section':'preview-text-display')+' preview-updates preview-update-title';title.dataset.previewElement=element.id;title.dataset.discordComponent=hasButton?'Section':'TextDisplay';if(hasButton){const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';appendText(titleText,label);title.append(titleText);const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);}else appendText(title,label);output.append(title);const content=source||config.emptyPlaceholder;const formatted=styleLineText(content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';appendText(summary,[formatted,time?'-# '+time:''].filter(Boolean).join('\n'));output.append(summary);});}
+      const addHeading=()=>{
+        if(!element.showHeading)return;
+        const heading=document.createElement('div');heading.className='preview-update-heading';heading.dataset.discordComponent='TextDisplay';heading.dataset.previewElement=element.id;
+        appendText(heading,styleLineText(element.title||'',element.headingStyle==='heading'?'large':element.headingStyle==='subtext'?'subtext':'normal'));output.append(heading);
+      };
+      const addFeed=({type,config,thread,source})=>{
+        const validThread=thread&&/^\d{17,20}$/.test(thread.threadId)&&/^\d{17,20}$/.test(previewRoot.dataset.guildId||'');
+        const hasButton=config.showOpenButton&&(validThread||mode!=='current');
+        const label=config.displayLabel+(mode==='current'&&thread?.notificationExpiresAt&&new Date(thread.notificationExpiresAt)>new Date()?' 🆕':'');
+        const title=document.createElement('div');
+        title.className=(hasButton?'preview-section':'preview-text-display')+' preview-updates preview-update-title';
+        title.dataset.previewElement=element.id;title.dataset.discordComponent=hasButton?'Section':'TextDisplay';
+        if(hasButton){
+          const titleText=document.createElement('div');titleText.dataset.discordComponent='TextDisplay';appendText(titleText,label);title.append(titleText);
+          const button=document.createElement('span');button.className='preview-action secondary';button.textContent=config.openButtonLabel;button.dataset.discordAccessory='Button';title.append(button);
+        }else appendText(title,label);
+        output.append(title);
+        const content=source||config.emptyPlaceholder;
+        const formatted=styleLineText(content,config.textStyle==='heading'?'large':config.textStyle==='subtext'?'subtext':'normal');
+        let time='';if(config.showTimestamp&&source&&mode==='current'&&thread?.latestMessageAt)time=relativeTime(thread.latestMessageAt);
+        const summary=document.createElement('div');summary.className='preview-text-display preview-updates preview-update-summary';
+        summary.dataset.previewElement=element.id;summary.dataset.discordComponent='TextDisplay';
+        appendText(summary,[formatted,time?'-# '+time:''].filter(Boolean).join('\n'));output.append(summary);
+      };
+      const addSeparator=(divider,spacing)=>{
+        const line=document.createElement(divider?'hr':'div');line.className=(divider?'preview-separator':'preview-separator-space')+(spacing===2?' preview-separator-large':'');line.dataset.previewElement=element.id;line.dataset.discordComponent='Separator';output.append(line);
+      };
+      if(Array.isArray(element.blocks)){
+        element.blocks.forEach((block)=>{
+          if(block.visible===false)return;
+          if(block.type==='heading')addHeading();
+          else if(block.type==='feed'){const entry=entries.find((row)=>row.type===block.feed);if(entry)addFeed(entry);}
+          else if(block.type==='text'){const text=resolveLineTemplate(block.template||'',values);if(text.trim()){const display=document.createElement('div');display.dataset.previewElement=block.id;display.dataset.discordComponent='TextDisplay';appendText(display,styleLineText(text,block.style||'normal'));output.append(display);}}
+          else if(block.type==='separator')addSeparator(block.divider,block.spacing);
+          else if(block.type==='gallery'){
+            const gallery=document.createElement('div');gallery.className='preview-media-gallery';gallery.dataset.previewElement=block.id;gallery.dataset.discordComponent='MediaGallery';
+            (block.items||[]).forEach((item)=>{
+              const url=item.source==='map'?mapImage:item.source==='fallback'?fallback:item.url||fallback;
+              gallery.append(media(url,resolveLineTemplate(item.description||values.currentmap+' map artwork',values)));
+            });
+            output.append(gallery);
+          }
+        });
+      }else if(entries.length){
+        addHeading();
+        entries.forEach((entry,index)=>{
+          if(index&&element.separator?.enabled)addSeparator(element.separator.divider,element.separator.spacing);
+          addFeed(entry);
+        });
+      }
     }
   });
   document.getElementById('card-preview-artwork')?.replaceChildren();
