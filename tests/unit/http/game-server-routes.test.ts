@@ -162,23 +162,67 @@ describe('Game Server configuration routes', () => {
     const original = await shared.deps.prisma.gameServer.findFirst();
     const layout = resolveCardLayout(original.cardProfile, original.description);
     const blocks = [
-      { id: '00000000-0000-4000-8000-000000000101', type: 'text', visible: true, template: 'Patch notes for {servername}', style: 'medium' },
-      { id: '00000000-0000-4000-8000-000000000102', type: 'gallery', visible: true,
-        items: [{ id: '00000000-0000-4000-8000-000000000103', source: 'custom', url: 'https://example.com/release.png', description: 'Release image' }] },
-      { id: '00000000-0000-4000-8000-000000000104', type: 'separator', visible: true, divider: true, spacing: 1 },
-      { id: '00000000-0000-4000-8000-000000000105', type: 'feed', feed: 'CHANGELOG', visible: true },
-      { id: '00000000-0000-4000-8000-000000000106', type: 'feed', feed: 'ANNOUNCEMENTS', visible: true },
+      {
+        id: '00000000-0000-4000-8000-000000000101',
+        type: 'text',
+        visible: true,
+        template: 'Patch notes for {servername}',
+        style: 'medium',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000102',
+        type: 'gallery',
+        visible: true,
+        items: [
+          {
+            id: '00000000-0000-4000-8000-000000000103',
+            source: 'custom',
+            url: 'https://example.com/release.png',
+            description: 'Release image',
+          },
+        ],
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000104',
+        type: 'separator',
+        visible: true,
+        divider: true,
+        spacing: 1,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000105',
+        type: 'feed',
+        feed: 'CHANGELOG',
+        visible: true,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000106',
+        type: 'feed',
+        feed: 'ANNOUNCEMENTS',
+        visible: true,
+      },
     ];
-    const elements = layout.map((element) => element.type === 'updates' ? { ...element, blocks } : element);
-    const result = await app.inject({ method: 'POST', url, payload: {
-      ...payload, layoutVersion: '2', layoutJson: JSON.stringify({ version: 2, elements }),
-    } });
+    const elements = layout.map((element) =>
+      element.type === 'updates' ? { ...element, blocks } : element,
+    );
+    const result = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        layoutVersion: '2',
+        layoutJson: JSON.stringify({ version: 2, elements }),
+      },
+    });
     expect(result.statusCode).toBe(303);
     const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
-    const savedUpdates = command.cardProfile.layout?.elements.find((element) => element.type === 'updates');
+    const savedUpdates = command.cardProfile.layout?.elements.find(
+      (element) => element.type === 'updates',
+    );
     expect(savedUpdates).toMatchObject({ type: 'updates', blocks });
     shared.deps.prisma.gameServer.findFirst.mockResolvedValue({
-      ...original, cardProfile: command.cardProfile,
+      ...original,
+      cardProfile: command.cardProfile,
     });
     const reload = await app.inject({ method: 'GET', url });
     expect(reload.statusCode).toBe(200);

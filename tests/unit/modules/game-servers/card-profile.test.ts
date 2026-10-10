@@ -262,35 +262,97 @@ describe('generic card line contract', () => {
     const updates = resolveCardLayout({}).find((element) => element.type === 'updates');
     if (!updates) throw new Error('Expected Community Updates element');
     const blocks = [
-      { id: '00000000-0000-4000-8000-000000000001', type: 'feed', feed: 'CHANGELOG', visible: true },
-      { id: '00000000-0000-4000-8000-000000000002', type: 'separator', divider: true, spacing: 2, visible: true },
-      { id: '00000000-0000-4000-8000-000000000003', type: 'text', template: 'Notice for {servername}', style: 'normal', visible: true },
-      { id: '00000000-0000-4000-8000-000000000004', type: 'gallery', visible: true, items: [
-        { id: '00000000-0000-4000-8000-000000000005', source: 'custom', url: 'https://example.com/image.png', description: 'An update' },
-      ] },
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        type: 'feed',
+        feed: 'CHANGELOG',
+        visible: true,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000002',
+        type: 'separator',
+        divider: true,
+        spacing: 2,
+        visible: true,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000003',
+        type: 'text',
+        template: 'Notice for {servername}',
+        style: 'normal',
+        visible: true,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000004',
+        type: 'gallery',
+        visible: true,
+        items: [
+          {
+            id: '00000000-0000-4000-8000-000000000005',
+            source: 'custom',
+            url: 'https://example.com/image.png',
+            description: 'An update',
+          },
+        ],
+      },
     ] as const;
     const valid = { ...updates, blocks };
-    const parse = (element: unknown) => cardProfileSchema.safeParse({
-      layout: { version: 2, elements: [element] },
-    }).success;
+    const parse = (element: unknown) =>
+      cardProfileSchema.safeParse({
+        layout: { version: 2, elements: [element] },
+      }).success;
     expect(parse(valid)).toBe(true);
     expect(parse({ ...valid, blocks: [...blocks, blocks[0]] })).toBe(false);
-    expect(parse({ ...valid, blocks: [...blocks, { ...blocks[0], id: '00000000-0000-4000-8000-000000000006' }] })).toBe(false);
-    expect(parse({ ...valid, blocks: [...blocks.slice(0, 3), { ...blocks[3], items: [{ ...blocks[3].items[0], url: 'http://example.com/image.png' }] }] })).toBe(false);
-    expect(parse({ ...valid, blocks: [...blocks.slice(0, 3), { ...blocks[3], items: [] }] })).toBe(false);
-    expect(parse({ ...valid, blocks: Array.from({ length: 25 }, (_, i) => ({
-      id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
-      type: 'text', template: 'x', style: 'normal', visible: true,
-    })) })).toBe(true);
-    const textElements = resolveCardLayout({}).filter((element) => element.type === 'text');
-    expect(cardProfileSchema.safeParse({
-      layout: { version: 2, elements: [...textElements, {
-        ...valid, blocks: Array.from({ length: 25 }, (_, i) => ({
-          id: `00000000-0000-4000-8000-${String(i + 11).padStart(12, '0')}`,
-          type: 'feed', feed: i % 2 ? 'ANNOUNCEMENTS' : 'CHANGELOG', visible: true,
+    expect(
+      parse({
+        ...valid,
+        blocks: [...blocks, { ...blocks[0], id: '00000000-0000-4000-8000-000000000006' }],
+      }),
+    ).toBe(false);
+    expect(
+      parse({
+        ...valid,
+        blocks: [
+          ...blocks.slice(0, 3),
+          { ...blocks[3], items: [{ ...blocks[3].items[0], url: 'http://example.com/image.png' }] },
+        ],
+      }),
+    ).toBe(false);
+    expect(parse({ ...valid, blocks: [...blocks.slice(0, 3), { ...blocks[3], items: [] }] })).toBe(
+      false,
+    );
+    expect(
+      parse({
+        ...valid,
+        blocks: Array.from({ length: 25 }, (_, i) => ({
+          id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+          type: 'text',
+          template: 'x',
+          style: 'normal',
+          visible: true,
         })),
-      }] },
-    }).success).toBe(false);
+      }),
+    ).toBe(true);
+    const textElements = resolveCardLayout({}).filter((element) => element.type === 'text');
+    expect(
+      cardProfileSchema.safeParse({
+        layout: {
+          version: 2,
+          elements: [
+            ...textElements,
+            {
+              ...valid,
+              blocks: Array.from({ length: 25 }, (_, i) => ({
+                id: `00000000-0000-4000-8000-${String(i + 11).padStart(12, '0')}`,
+                type: 'feed',
+                feed: i % 2 ? 'ANNOUNCEMENTS' : 'CHANGELOG',
+                visible: true,
+              })),
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it('rejects layouts whose enabled Updates structure would exceed Discord component limits', () => {

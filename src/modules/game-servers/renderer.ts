@@ -215,7 +215,12 @@ function renderLayoutCard(
         (element): element is Extract<CardLayoutElement, { type: 'updates' }> =>
           element.type === 'updates',
       )
-      .map((element) => [element.id, element.visible ? renderUpdatesSection(server, element, values, mapImageUrl, displayMap) : []]),
+      .map((element) => [
+        element.id,
+        element.visible
+          ? renderUpdatesSection(server, element, values, mapImageUrl, displayMap)
+          : [],
+      ]),
   );
   for (const [index, element] of layout.entries()) {
     if (!element.visible) continue;
@@ -508,9 +513,14 @@ function renderUpdatesSection(
       if (!block.visible) continue;
       if (block.type === 'heading') {
         if (element.showHeading)
-          components.push(updateTextDisplay(styleCardLine(
-            element.title.replace(/@/g, '@\u200b'), updateLineStyle(element.headingStyle),
-          )));
+          components.push(
+            updateTextDisplay(
+              styleCardLine(
+                element.title.replace(/@/g, '@\u200b'),
+                updateLineStyle(element.headingStyle),
+              ),
+            ),
+          );
       } else if (block.type === 'feed') {
         components.push(...(feedsByType.get(block.feed) ?? []));
       } else if (block.type === 'text') {
@@ -525,15 +535,14 @@ function renderUpdatesSection(
       } else if (block.type === 'gallery') {
         const items = block.items.map((item) => ({
           media: {
-            url: item.source === 'map'
-              ? mapImageUrl
-              : item.source === 'fallback'
-                ? resolveMapImageUrl(null, null)
-                : (item.url ?? resolveMapImageUrl(null, null)),
+            url:
+              item.source === 'map'
+                ? mapImageUrl
+                : item.source === 'fallback'
+                  ? resolveMapImageUrl(null, null)
+                  : (item.url ?? resolveMapImageUrl(null, null)),
           },
-          description: resolveCardTemplate(
-            item.description || `${displayMap} map artwork`, values,
-          ),
+          description: resolveCardTemplate(item.description || `${displayMap} map artwork`, values),
         }));
         components.push({ type: componentType.mediaGallery, items });
       }
@@ -542,8 +551,12 @@ function renderUpdatesSection(
       if (part.type !== componentType.separator) return true;
       const before = components[index - 1];
       const after = components[index + 1];
-      return before !== undefined && after !== undefined &&
-        before.type !== componentType.separator && after.type !== componentType.separator;
+      return (
+        before !== undefined &&
+        after !== undefined &&
+        before.type !== componentType.separator &&
+        after.type !== componentType.separator
+      );
     });
   }
   const feeds = element.feedOrder

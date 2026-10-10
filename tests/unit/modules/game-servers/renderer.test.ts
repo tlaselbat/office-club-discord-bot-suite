@@ -294,34 +294,76 @@ describe('Game Server rendering', () => {
     const blocks = [
       { id: uuid(1), type: 'feed', feed: 'CHANGELOG', visible: true },
       { id: uuid(2), type: 'separator', divider: false, spacing: 2, visible: true },
-      { id: uuid(3), type: 'text', template: 'Release notes for {servername}', style: 'medium', visible: true },
-      { id: uuid(4), type: 'gallery', visible: true, items: [
-        { id: uuid(5), source: 'custom', url: 'https://example.com/release.png', description: 'Release art' },
-      ] },
+      {
+        id: uuid(3),
+        type: 'text',
+        template: 'Release notes for {servername}',
+        style: 'medium',
+        visible: true,
+      },
+      {
+        id: uuid(4),
+        type: 'gallery',
+        visible: true,
+        items: [
+          {
+            id: uuid(5),
+            source: 'custom',
+            url: 'https://example.com/release.png',
+            description: 'Release art',
+          },
+        ],
+      },
       { id: uuid(6), type: 'heading', visible: true },
       { id: uuid(7), type: 'feed', feed: 'ANNOUNCEMENTS', visible: true },
     ] as const;
     const view = {
       ...server,
-      cardProfile: { layout: { version: 2 as const, elements: layout.map((element) =>
-        element.type === 'updates' ? { ...original, blocks } : element,
-      ) } },
+      cardProfile: {
+        layout: {
+          version: 2 as const,
+          elements: layout.map((element) =>
+            element.type === 'updates' ? { ...original, blocks } : element,
+          ),
+        },
+      },
       updateThreads: [
-        { type: 'ANNOUNCEMENTS' as const, threadId: '100000000000000010', latestMessageText: 'News', latestMessageAt: null, notificationExpiresAt: null },
-        { type: 'CHANGELOG' as const, threadId: '100000000000000011', latestMessageText: 'Patch', latestMessageAt: null, notificationExpiresAt: null },
+        {
+          type: 'ANNOUNCEMENTS' as const,
+          threadId: '100000000000000010',
+          latestMessageText: 'News',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
+        {
+          type: 'CHANGELOG' as const,
+          threadId: '100000000000000011',
+          latestMessageText: 'Patch',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
       ],
     };
     const parts = containerComponents(firstContainer(renderGameServerCard(view, secret))).slice(-8);
     expect(parts.map((part) => part.type)).toEqual([
-      ComponentType.Section, ComponentType.TextDisplay, ComponentType.Separator,
-      ComponentType.TextDisplay, ComponentType.MediaGallery, ComponentType.TextDisplay,
-      ComponentType.Section, ComponentType.TextDisplay,
+      ComponentType.Section,
+      ComponentType.TextDisplay,
+      ComponentType.Separator,
+      ComponentType.TextDisplay,
+      ComponentType.MediaGallery,
+      ComponentType.TextDisplay,
+      ComponentType.Section,
+      ComponentType.TextDisplay,
     ]);
     expect(parts[2]).toEqual({ type: ComponentType.Separator, divider: false, spacing: 2 });
-    expect(parts[3]).toEqual({ type: ComponentType.TextDisplay, content: '## Release notes for 1v1 Arena' });
-    expect(parts[4]).toMatchObject({ type: ComponentType.MediaGallery, items: [
-      { media: { url: 'https://example.com/release.png' }, description: 'Release art' },
-    ] });
+    expect(parts[3]).toEqual({
+      type: ComponentType.TextDisplay,
+      content: '## Release notes for 1v1 Arena',
+    });
+    expect(parts[4]).toMatchObject({
+      type: ComponentType.MediaGallery,
+      items: [{ media: { url: 'https://example.com/release.png' }, description: 'Release art' }],
+    });
     expect((parts[5] as { content: string }).content).toContain('Latest Updates');
     expect((parts[0]?.accessory as { url: string }).url).toContain('/100000000000000011');
     expect((parts[6]?.accessory as { url: string }).url).toContain('/100000000000000010');
