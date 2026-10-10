@@ -18,6 +18,7 @@ const inputValue = (name, fallback = '') => formControl(name)?.value ?? fallback
 const layoutNodes = () => Array.from(layoutEditors?.querySelectorAll('[data-layout-element]') ?? []);
 const read = (node, field) => node._content.querySelector('[data-layout-field="' + field + '"]');
 const feedRows = (node) => Array.from(node._content.querySelectorAll('[data-feed-order-item]'));
+const updateBlockRows = (node) => Array.from(node._content.querySelectorAll('[data-update-block]'));
 const syncFeedSeparator = (node) => {
   const separator=node._content.querySelector('[data-feed-separator]');const rows=feedRows(node);
   if(!separator)return;
@@ -42,6 +43,7 @@ const serializeElement = (node) => {
   } else if(base.type === 'gallery') base.items=Array.from(node._content.querySelectorAll('[data-gallery-item]')).map((item)=>({id:item.dataset.itemId,source:item.querySelector('[data-layout-field="source"]').value,url:item.querySelector('[data-layout-field="url"]').value||null,description:item.querySelector('[data-layout-field="description"]').value}));
   else if(base.type === 'separator') Object.assign(base,{divider:read(node,'divider').checked,spacing:Number(read(node,'spacing').value)});
   else if(base.type === 'updates') { const field=(name)=>read(node,name); Object.assign(base,{showHeading:field('updatesShowHeading').checked,title:field('updatesTitle').value,headingStyle:field('headingStyle').value,feedOrder:feedRows(node).map((row)=>row.dataset.feedOrderItem),separator:{enabled:field('updatesSeparatorEnabled').checked,divider:field('updatesSeparatorDivider').checked,spacing:Number(field('updatesSeparatorSpacing').value)},emptyBehavior:field('emptyBehavior').value,announcements:{visible:field('announcementsVisible').checked,displayLabel:field('announcementsLabel').value,textStyle:field('announcementsStyle').value,emptyPlaceholder:field('announcementsEmpty').value,showTimestamp:field('announcementsTimestamp').checked,showOpenButton:field('announcementsOpen').checked,openButtonLabel:field('announcementsButton').value,latestMessageLength:Number(field('announcementsLength').value)},changelog:{visible:field('changelogVisible').checked,displayLabel:field('changelogLabel').value,textStyle:field('changelogStyle').value,emptyPlaceholder:field('changelogEmpty').value,showTimestamp:field('changelogTimestamp').checked,showOpenButton:field('changelogOpen').checked,openButtonLabel:field('changelogButton').value,latestMessageLength:Number(field('changelogLength').value)}}); }
+  if(base.type==='updates')base.blocks=updateBlockRows(node).map(serializeUpdateBlock);
   return base;
 };
 const saveLayout = () => { if(layoutJson && !invalidLayout) layoutJson.value=JSON.stringify({version:2,elements:layoutNodes().map(serializeElement)}); };
@@ -65,6 +67,27 @@ const refreshRows = () => {
       node._content.querySelector('[data-gallery-add]').disabled=items.length>=10;
     }
     if(type==='updates') {
+      const blocks=updateBlockRows(node);
+      blocks.forEach((block,i)=>{
+        block.querySelector('[data-update-move="up"]').disabled=i===0;
+        block.querySelector('[data-update-move="down"]').disabled=i===blocks.length-1;
+        const duplicate=block.querySelector('[data-update-duplicate]');
+        if(duplicate)duplicate.disabled=blocks.length>=25;
+        const items=Array.from(block.querySelectorAll('[data-gallery-item]'));
+        items.forEach((item,j)=>{
+          item.querySelector('legend').textContent='Image '+(j+1);
+          item.querySelector('[data-gallery-move="up"]').disabled=j===0;
+          item.querySelector('[data-gallery-move="down"]').disabled=j===items.length-1;
+          item.querySelector('[data-gallery-remove]').disabled=items.length===1;
+        });
+        const add=block.querySelector('[data-update-gallery-add]');
+        if(add)add.disabled=items.length>=10;
+      });
+      node._content.querySelectorAll('[data-update-add]').forEach((button)=>{
+        const kind=button.dataset.updateAdd;
+        button.disabled=blocks.length>=25||(kind==='heading'&&blocks.some((b)=>b.dataset.updateBlock==='heading'))||
+          (kind==='ANNOUNCEMENTS'||kind==='CHANGELOG')&&blocks.some((b)=>b.dataset.updateBlock==='feed'&&b.dataset.updateFeed===kind);
+      });
       const rows=feedRows(node);
       rows.forEach((row,i)=>{row.querySelector('[data-feed-move="up"]').disabled=i===0;row.querySelector('[data-feed-move="down"]').disabled=i===rows.length-1;});
       syncFeedSeparator(node);
@@ -113,15 +136,90 @@ const newElement = (type) => {
   if(type==='section')base.thumbnailUrl=null;
   if(type==='gallery')base.items=[{id:crypto.randomUUID(),source:'map',url:null,description:'{currentmap} map artwork'}];
   if(type==='separator')Object.assign(base,{divider:true,spacing:1});
-  if(type==='updates')Object.assign(base,{showHeading:true,title:'**Latest Updates**',headingStyle:'normal',feedOrder:['ANNOUNCEMENTS','CHANGELOG'],separator:{enabled:false,divider:true,spacing:1},emptyBehavior:'show_placeholders',announcements:{visible:true,displayLabel:'📢 **Announcements**',textStyle:'normal',emptyPlaceholder:'No announcements yet.',showTimestamp:true,showOpenButton:true,openButtonLabel:'Open',latestMessageLength:240},changelog:{visible:true,displayLabel:'🛠 **Changelog**',textStyle:'normal',emptyPlaceholder:'No changelog entries yet.',showTimestamp:true,showOpenButton:true,openButtonLabel:'Open',latestMessageLength:240}});
+  if(type==='updates')Object.assign(base,{blocks:[makeUpdateBlock('heading'),makeUpdateBlock('ANNOUNCEMENTS'),makeUpdateBlock('CHANGELOG')],showHeading:true,title:'**Latest Updates**',headingStyle:'normal',feedOrder:['ANNOUNCEMENTS','CHANGELOG'],separator:{enabled:false,divider:true,spacing:1},emptyBehavior:'show_placeholders',announcements:{visible:true,displayLabel:'📢 **Announcements**',textStyle:'normal',emptyPlaceholder:'No announcements yet.',showTimestamp:true,showOpenButton:true,openButtonLabel:'Open',latestMessageLength:240},changelog:{visible:true,displayLabel:'🛠 **Changelog**',textStyle:'normal',emptyPlaceholder:'No changelog entries yet.',showTimestamp:true,showOpenButton:true,openButtonLabel:'Open',latestMessageLength:240}});
   return base;
 };
-const addGalleryItem = (node,item) => {
+const addGalleryItem = (node,item,holder=node._content.querySelector('[data-gallery-items]')) => {
   const fieldset=document.createElement('fieldset');fieldset.dataset.galleryItem='true';fieldset.dataset.itemId=item.id;
   fieldset.innerHTML='<legend>Image</legend><label>Image source<select data-layout-field="source"><option value="map">Automatic current map artwork</option><option value="fallback">Bundled fallback artwork</option><option value="custom">Custom HTTPS URL</option></select></label><label>Custom HTTPS URL<input data-layout-field="url" type="url" maxlength="500" placeholder="https://..."></label><label>Image description<input data-layout-field="description" maxlength="1024"></label><div class="card-layout-property-actions"><button type="button" class="secondary" data-gallery-move="up" aria-label="Move image up">Up</button><button type="button" class="secondary" data-gallery-move="down" aria-label="Move image down">Down</button><button type="button" class="danger" data-gallery-remove>Remove image</button></div>';
   for(const key of ['source','url','description'])fieldset.querySelector('[data-layout-field="'+key+'"]').value=item[key]??'';
-  node._content.querySelector('[data-gallery-items]').append(fieldset);
+  holder.append(fieldset);
 };
+
+/** Ordered child components; feed controls remain live and shared with the existing thread service. */
+const makeUpdateBlock = (kind) => {
+  const base = { id:crypto.randomUUID(), visible:true };
+  if(kind==='heading')return {...base,type:'heading'};
+  if(kind==='ANNOUNCEMENTS'||kind==='CHANGELOG')return {...base,type:'feed',feed:kind};
+  if(kind==='text')return {...base,type:'text',template:'New update text',style:'normal'};
+  if(kind==='separator')return {...base,type:'separator',divider:true,spacing:1};
+  return {...base,type:'gallery',items:[{id:crypto.randomUUID(),source:'map',url:null,description:'{currentmap} map artwork'}]};
+};
+const resolveUpdateBlocks = (element) => {
+  if(Array.isArray(element.blocks))return element.blocks;
+  const blocks=[makeUpdateBlock('heading')];
+  (element.feedOrder||['ANNOUNCEMENTS','CHANGELOG']).forEach((feed,index)=>{
+    if(index&&element.separator?.enabled)blocks.push({...makeUpdateBlock('separator'),divider:element.separator.divider,spacing:element.separator.spacing});
+    blocks.push(makeUpdateBlock(feed));
+  });
+  return blocks;
+};
+const serializeUpdateBlock = (row) => {
+  const type=row.dataset.updateBlock;
+  const base={id:row.dataset.updateBlockId,type,visible:row.querySelector('[data-block-field="visible"]').checked};
+  const field=(name)=>row.querySelector('[data-block-field="'+name+'"]');
+  if(type==='feed')base.feed=row.dataset.updateFeed;
+  if(type==='text')Object.assign(base,{template:field('template').value,style:field('style').value});
+  if(type==='separator')Object.assign(base,{divider:field('divider').checked,spacing:Number(field('spacing').value)});
+  if(type==='gallery')base.items=Array.from(row.querySelectorAll('[data-gallery-item]')).map((item)=>({
+    id:item.dataset.itemId,
+    source:item.querySelector('[data-layout-field="source"]').value,
+    url:item.querySelector('[data-layout-field="url"]').value||null,
+    description:item.querySelector('[data-layout-field="description"]').value,
+  }));
+  return base;
+};
+const renderUpdateBlock = (node,block) => {
+  const row=document.createElement('div');
+  row.className='updates-block-row';
+  row.dataset.updateBlock=block.type;
+  row.dataset.updateBlockId=block.id;
+  if(block.type==='feed')row.dataset.updateFeed=block.feed;
+  const name=block.type==='feed'?(block.feed==='ANNOUNCEMENTS'?'Announcements':'Changelog'):
+    ({heading:'Heading',text:'Text',separator:'Separator',gallery:'Gallery'}[block.type]||'Block');
+  row.innerHTML='<div class="updates-block-row-header"><strong>'+name+'</strong>'+
+    '<label class="checkbox"><input data-block-field="visible" type="checkbox"> Show</label>'+
+    '<div class="updates-block-row-actions"><button type="button" class="secondary" data-update-move="up" aria-label="Move '+name+' up">↑</button>'+
+    '<button type="button" class="secondary" data-update-move="down" aria-label="Move '+name+' down">↓</button>'+
+    (block.type==='text'||block.type==='separator'||block.type==='gallery'?'<button type="button" class="secondary" data-update-duplicate>Duplicate</button>':'')+
+    '<button type="button" class="danger" data-update-remove aria-label="Remove '+name+'">Remove</button></div></div>'+
+    '<div class="updates-block-config"></div>';
+  row.querySelector('[data-block-field="visible"]').checked=block.visible!==false;
+  const config=row.querySelector('.updates-block-config');
+  if(block.type==='heading')config.innerHTML='<p class="hint">Edit the heading text and style in Heading settings below. Drag its position using ↑ and ↓.</p>';
+  if(block.type==='feed')config.innerHTML='<p class="hint">Edit the label, Open button and excerpt in '+name+' settings below.</p>';
+  if(block.type==='text'){
+    config.innerHTML='<label>Text content<textarea data-block-field="template" maxlength="500" rows="3"></textarea></label>'+
+      '<label>Text style<select data-block-field="style"><option value="large">Large heading</option><option value="medium">Medium heading</option><option value="small">Small heading</option><option value="normal">Normal text</option><option value="subtext">Subtext</option></select></label>'+
+      '<p class="hint">Discord Markdown and the same {placeholders} used elsewhere on the card are supported.</p>';
+    config.querySelector('[data-block-field="template"]').value=block.template||'';
+    config.querySelector('[data-block-field="style"]').value=block.style||'normal';
+  }
+  if(block.type==='separator'){
+    config.innerHTML='<label class="checkbox"><input data-block-field="divider" type="checkbox"> Visible divider (uncheck for spacing only)</label>'+
+      '<label>Spacing<select data-block-field="spacing"><option value="1">Small</option><option value="2">Large</option></select></label>';
+    config.querySelector('[data-block-field="divider"]').checked=block.divider===true;
+    config.querySelector('[data-block-field="spacing"]').value=String(block.spacing||1);
+  }
+  if(block.type==='gallery'){
+    config.innerHTML='<div data-gallery-items></div><button type="button" class="secondary" data-update-gallery-add>Add image</button>'+
+      '<p class="hint">1–10 images. Choose automatic map artwork, fallback, or custom HTTPS image links.</p>';
+    (block.items||[]).forEach((item)=>addGalleryItem(node,item,config.querySelector('[data-gallery-items]')));
+  }
+  node._content.querySelector('[data-updates-blocks]').append(row);
+  return row;
+};
+
 const renderLayoutElement = (element) => {
   const node=document.createElement('div');node.className='card-layout-row';node.dataset.layoutElement=element.type;node.dataset.layoutId=element.id;
   const icon={text:'T',section:'▣',gallery:'▧',separator:'─',actions:'▤',updates:'↻'}[element.type]||'•';
@@ -135,12 +233,12 @@ const renderLayoutElement = (element) => {
   if(element.type==='gallery')content.innerHTML+='<div data-gallery-items></div><button type="button" class="secondary" data-gallery-add>Add image</button><p class="hint">Automatic artwork follows the current map’s canonical asset, then your configured fallback in Appearance. Each gallery supports up to 10 images.</p>';
   if(element.type==='separator')content.innerHTML+='<label class="checkbox"><input type="checkbox" data-layout-field="divider"> Visible divider (disable for spacing only)</label><label>Native Discord spacing<select data-layout-field="spacing"><option value="1">Small</option><option value="2">Large</option></select></label>';
   if(element.type==='actions')content.innerHTML+='<p class="hint">Labels and enabled buttons are configured once in Action Buttons.</p><button type="button" class="secondary" data-open-button-settings>Edit button settings</button>';
-  if(element.type==='updates')content.innerHTML+='<label class="checkbox"><input type="checkbox" data-layout-field="updatesShowHeading"> Show heading</label><div data-updates-heading><label>Heading text<input data-layout-field="updatesTitle" maxlength="80"></label><label>Heading style<select data-layout-field="headingStyle"><option value="normal">Normal</option><option value="heading">Heading</option><option value="subtext">Small text</option></select></label><button type="button" class="secondary" data-reset-heading>Restore heading defaults</button></div><label>When entries are empty<select data-layout-field="emptyBehavior"><option value="show_placeholders">Show configured placeholder</option><option value="hide_empty_entries">Hide empty row</option></select></label><fieldset class="updates-feed-order"><legend>Feed order</legend>'+['ANNOUNCEMENTS','CHANGELOG'].map((feed)=>'<div class="updates-feed-order-row" data-feed-order-item="'+feed+'"><strong>'+(feed==='ANNOUNCEMENTS'?'Announcements':'Changelog')+'</strong><label class="checkbox"><input type="checkbox" data-layout-field="'+feed.toLowerCase()+'Visible"> Show</label><div><button type="button" class="secondary" data-feed-move="up" data-feed="'+feed+'" aria-label="Move '+feed+' up">↑</button><button type="button" class="secondary" data-feed-move="down" data-feed="'+feed+'" aria-label="Move '+feed+' down">↓</button></div></div>').join('')+'<div class="updates-feed-separator" data-feed-separator hidden><span aria-hidden="true">─</span><strong>Separator</strong><span>Between feed rows</span></div><button type="button" class="secondary" data-add-updates-separator>Add separator</button><button type="button" class="secondary" data-reset-feed-order>Restore default row order</button></fieldset><fieldset data-updates-separator-settings hidden><legend>Separator</legend><input type="checkbox" data-layout-field="updatesSeparatorEnabled" hidden><label class="checkbox"><input type="checkbox" data-layout-field="updatesSeparatorDivider"> Visible divider</label><label>Native Discord spacing<select data-layout-field="updatesSeparatorSpacing"><option value="1">Small</option><option value="2">Large</option></select></label><button type="button" class="secondary" data-remove-updates-separator>Remove separator</button></fieldset>'+['announcements','changelog'].map((feed)=>'<details class="updates-feed-settings" data-feed="'+feed.toUpperCase()+'"><summary>'+(feed==='announcements'?'Announcements':'Changelog')+' settings</summary><div class="card-layout-content"><label>Display label<input data-layout-field="'+feed+'Label" maxlength="80" required></label><label class="checkbox"><input type="checkbox" data-layout-field="'+feed+'Open"> Show Open button</label><label data-open-label="'+feed+'">Open button label<input data-layout-field="'+feed+'Button" maxlength="80" required></label><details class="updates-advanced"><summary>Advanced formatting</summary><div class="card-layout-content"><label>Message excerpt style<select data-layout-field="'+feed+'Style"><option value="normal">Normal</option><option value="heading">Heading</option><option value="subtext">Small text</option></select></label><label>Empty row text<input data-layout-field="'+feed+'Empty" maxlength="240"></label><label class="checkbox"><input type="checkbox" data-layout-field="'+feed+'Timestamp"> Show relative timestamp</label><label>Maximum excerpt length<input data-layout-field="'+feed+'Length" type="number" min="40" max="1000" step="1"></label></div></details><button type="button" class="secondary" data-reset-feed="'+feed+'">Restore '+(feed==='announcements'?'Announcements':'Changelog')+' defaults</button></div></details>').join('');
+  if(element.type==='updates')content.innerHTML+='<fieldset class="updates-block-builder"><legend>Updates element layout</legend><p class="hint">Arrange the heading, feeds, text, galleries and separators independently. Changes appear in the live preview.</p><div data-updates-blocks></div><div class="layout-add-actions" aria-label="Add Latest Updates element"><button type="button" class="secondary" data-update-add="text">+ Text</button><button type="button" class="secondary" data-update-add="separator">+ Separator</button><button type="button" class="secondary" data-update-add="gallery">+ Gallery</button><button type="button" class="secondary" data-update-add="heading">+ Heading</button><button type="button" class="secondary" data-update-add="ANNOUNCEMENTS">+ Announcements</button><button type="button" class="secondary" data-update-add="CHANGELOG">+ Changelog</button></div></fieldset><label class="checkbox"><input type="checkbox" data-layout-field="updatesShowHeading"> Show heading</label><div data-updates-heading><label>Heading text<input data-layout-field="updatesTitle" maxlength="80"></label><label>Heading style<select data-layout-field="headingStyle"><option value="normal">Normal</option><option value="heading">Heading</option><option value="subtext">Small text</option></select></label><button type="button" class="secondary" data-reset-heading>Restore heading defaults</button></div><label>When entries are empty<select data-layout-field="emptyBehavior"><option value="show_placeholders">Show configured placeholder</option><option value="hide_empty_entries">Hide empty row</option></select></label><fieldset class="updates-feed-order" hidden><legend>Feed order</legend>'+['ANNOUNCEMENTS','CHANGELOG'].map((feed)=>'<div class="updates-feed-order-row" data-feed-order-item="'+feed+'"><strong>'+(feed==='ANNOUNCEMENTS'?'Announcements':'Changelog')+'</strong><label class="checkbox"><input type="checkbox" data-layout-field="'+feed.toLowerCase()+'Visible"> Show</label><div><button type="button" class="secondary" data-feed-move="up" data-feed="'+feed+'" aria-label="Move '+feed+' up">↑</button><button type="button" class="secondary" data-feed-move="down" data-feed="'+feed+'" aria-label="Move '+feed+' down">↓</button></div></div>').join('')+'<div class="updates-feed-separator" data-feed-separator hidden><span aria-hidden="true">─</span><strong>Separator</strong><span>Between feed rows</span></div><button type="button" class="secondary" data-add-updates-separator>Add separator</button><button type="button" class="secondary" data-reset-feed-order>Restore default row order</button></fieldset><fieldset data-updates-separator-settings hidden><legend>Separator</legend><input type="checkbox" data-layout-field="updatesSeparatorEnabled" hidden><label class="checkbox"><input type="checkbox" data-layout-field="updatesSeparatorDivider"> Visible divider</label><label>Native Discord spacing<select data-layout-field="updatesSeparatorSpacing"><option value="1">Small</option><option value="2">Large</option></select></label><button type="button" class="secondary" data-remove-updates-separator>Remove separator</button></fieldset>'+['announcements','changelog'].map((feed)=>'<details class="updates-feed-settings" data-feed="'+feed.toUpperCase()+'"><summary>'+(feed==='announcements'?'Announcements':'Changelog')+' settings</summary><div class="card-layout-content"><label>Display label<input data-layout-field="'+feed+'Label" maxlength="80" required></label><label class="checkbox"><input type="checkbox" data-layout-field="'+feed+'Open"> Show Open button</label><label data-open-label="'+feed+'">Open button label<input data-layout-field="'+feed+'Button" maxlength="80" required></label><details class="updates-advanced"><summary>Advanced formatting</summary><div class="card-layout-content"><label>Message excerpt style<select data-layout-field="'+feed+'Style"><option value="normal">Normal</option><option value="heading">Heading</option><option value="subtext">Small text</option></select></label><label>Empty row text<input data-layout-field="'+feed+'Empty" maxlength="240"></label><label class="checkbox"><input type="checkbox" data-layout-field="'+feed+'Timestamp"> Show relative timestamp</label><label>Maximum excerpt length<input data-layout-field="'+feed+'Length" type="number" min="40" max="1000" step="1"></label></div></details><button type="button" class="secondary" data-reset-feed="'+feed+'">Restore '+(feed==='announcements'?'Announcements':'Changelog')+' defaults</button></div></details>').join('');
   content.innerHTML+='<div class="card-layout-property-actions"><button type="button" class="secondary" data-layout-restore>Restore element</button><button type="button" class="danger" data-layout-remove>Remove element</button></div>';
   for(const key of ['label','template','style','thumbnailUrl','spacing']){const control=read(node,key);if(control)control.value=element[key]??'';}
   for(const key of ['visible','divider']){const control=read(node,key);if(control)control.checked=element[key]===true;}
   if(element.type==='gallery')(element.items??[]).forEach((item)=>addGalleryItem(node,item));
-  if(element.type==='updates'){const set=(key,value)=>{const control=read(node,key);if(control){if(control.type==='checkbox')control.checked=value===true;else control.value=String(value??'');}};set('updatesShowHeading',element.showHeading);set('updatesTitle',element.title);set('headingStyle',element.headingStyle);set('emptyBehavior',element.emptyBehavior);set('updatesSeparatorEnabled',element.separator?.enabled);set('updatesSeparatorDivider',element.separator?.divider);set('updatesSeparatorSpacing',element.separator?.spacing??1);for(const [feed,key] of [['announcements','announcements'],['changelog','changelog']]){const config=element[key];for(const [suffix,property] of [['Visible','visible'],['Label','displayLabel'],['Style','textStyle'],['Empty','emptyPlaceholder'],['Timestamp','showTimestamp'],['Open','showOpenButton'],['Button','openButtonLabel'],['Length','latestMessageLength']])set(feed+suffix,config[property]);}for(const feed of element.feedOrder??['ANNOUNCEMENTS','CHANGELOG']){const row=node._content.querySelector('[data-feed-order-item="'+feed+'"]');if(row)node._content.querySelector('.updates-feed-order').append(row);}syncFeedSeparator(node);}
+  if(element.type==='updates'){const set=(key,value)=>{const control=read(node,key);if(control){if(control.type==='checkbox')control.checked=value===true;else control.value=String(value??'');}};set('updatesShowHeading',element.showHeading);set('updatesTitle',element.title);set('headingStyle',element.headingStyle);set('emptyBehavior',element.emptyBehavior);set('updatesSeparatorEnabled',element.separator?.enabled);set('updatesSeparatorDivider',element.separator?.divider);set('updatesSeparatorSpacing',element.separator?.spacing??1);for(const [feed,key] of [['announcements','announcements'],['changelog','changelog']]){const config=element[key];for(const [suffix,property] of [['Visible','visible'],['Label','displayLabel'],['Style','textStyle'],['Empty','emptyPlaceholder'],['Timestamp','showTimestamp'],['Open','showOpenButton'],['Button','openButtonLabel'],['Length','latestMessageLength']])set(feed+suffix,config[property]);}for(const feed of element.feedOrder??['ANNOUNCEMENTS','CHANGELOG']){const row=node._content.querySelector('[data-feed-order-item="'+feed+'"]');if(row)node._content.querySelector('.updates-feed-order').append(row);}syncFeedSeparator(node);resolveUpdateBlocks(element).forEach((block)=>renderUpdateBlock(node,block));}
   node.append(content);layoutEditors.append(node);return node;
 };
 const rebuild = (layout, selected=selectedLayoutId) => {
@@ -184,7 +282,12 @@ cardForm?.addEventListener('click',(event)=>{
   if(!(event.target instanceof Element))return;
   const button=event.target.closest('button');if(!button)return;
   const node=button.closest('[data-layout-element]')||layoutNodes().find((node)=>node.dataset.layoutId===selectedLayoutId);
-  if(button.hasAttribute('data-select-layout')){selectElement(node.dataset.layoutId);if(window.innerWidth<=760)layoutProperties.scrollIntoView({block:'start'});return;}
+  if(button.dataset.updateAdd&&node){const blocks=updateBlockRows(node);const kind=button.dataset.updateAdd;if(blocks.length>=25||((kind==='heading'||kind==='ANNOUNCEMENTS'||kind==='CHANGELOG')&&blocks.some((b)=>b.dataset.updateBlock===(kind==='heading'?'heading':'feed')&&(kind==='heading'||b.dataset.updateFeed===kind))))return;renderUpdateBlock(node,makeUpdateBlock(kind));announce('Updates element added.');}
+  else if(button.dataset.updateMove&&node){const block=button.closest('[data-update-block]');if(!block)return;const sibling=button.dataset.updateMove==='up'?block.previousElementSibling:block.nextElementSibling;if(sibling){if(button.dataset.updateMove==='up')block.parentElement.insertBefore(block,sibling);else block.parentElement.insertBefore(sibling,block);announce('Updates element moved.');}button.focus();}
+  else if(button.hasAttribute('data-update-remove')&&node){button.closest('[data-update-block]')?.remove();announce('Updates element removed.');}
+  else if(button.hasAttribute('data-update-duplicate')&&node){if(updateBlockRows(node).length>=25)return;const block=button.closest('[data-update-block]');if(!block||!['text','separator','gallery'].includes(block.dataset.updateBlock))return;const clone=serializeUpdateBlock(block);clone.id=crypto.randomUUID();if(clone.items)clone.items=clone.items.map((item)=>({...item,id:crypto.randomUUID()}));const added=renderUpdateBlock(node,clone);block.after(added);announce('Updates element duplicated.');}
+  else if(button.hasAttribute('data-update-gallery-add')&&node){const block=button.closest('[data-update-block]');const holder=block?.querySelector('[data-gallery-items]');if(holder&&holder.children.length<10)addGalleryItem(node,makeUpdateBlock('gallery').items[0],holder);}
+  else if(button.hasAttribute('data-select-layout')){selectElement(node.dataset.layoutId);if(window.innerWidth<=760)layoutProperties.scrollIntoView({block:'start'});return;}
   if(button.dataset.addLayout){const type=button.dataset.addLayout;if(layoutNodes().length>=35||invalidLayout||(type==='actions'&&layoutNodes().some((n)=>n.dataset.layoutElement==='actions')))return;const menu=button.closest('.layout-add-menu');if(menu)menu.open=false;const added=renderLayoutElement(newElement(type));selectElement(added.dataset.layoutId,true);announce('Element added.');}
   else if(button.dataset.layoutMove&&node){const next=button.dataset.layoutMove==='up'?node.previousElementSibling:node.nextElementSibling;if(next){if(button.dataset.layoutMove==='up')layoutEditors.insertBefore(node,next);else layoutEditors.insertBefore(next,node);announce('Element moved.');}node.querySelector('[data-layout-move="'+button.dataset.layoutMove+'"]').focus();}
   else if(button.hasAttribute('data-reset-heading')&&node){const defaults=newElement('updates');read(node,'updatesShowHeading').checked=defaults.showHeading;read(node,'updatesTitle').value=defaults.title;read(node,'headingStyle').value=defaults.headingStyle;refreshRows();announce('Heading defaults restored.');}
