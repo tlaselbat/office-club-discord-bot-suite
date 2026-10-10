@@ -22,7 +22,7 @@ export interface ShellOptions {
 }
 
 export function page(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Office Club</title><link rel="stylesheet" href="/admin/assets/panel.css?v=game-server-editor-11"><script src="/admin/assets/panel.js?v=game-server-editor-11" defer></script></head><body><main>${body}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Office Club</title><link rel="stylesheet" href="/admin/assets/panel.css?v=game-server-editor-12"><script src="/admin/assets/panel.js?v=game-server-editor-12" defer></script></head><body><main>${body}</main></body></html>`;
 }
 
 export function adminShell(options: ShellOptions, body: string): string {

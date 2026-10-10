@@ -245,8 +245,8 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-11');
-    expect(html).toContain('panel.js?v=game-server-editor-11');
+    expect(html).toContain('panel.css?v=game-server-editor-12');
+    expect(html).toContain('panel.js?v=game-server-editor-12');
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
     expect(html).toContain('href="#card-designer">Card Designer</a>');
     expect(html).toContain('class="game-server-savebar"');
