@@ -19,35 +19,10 @@ there is no guild-wide card channel.
 
 Each enabled, public displayed server has one canonical Announcements thread and one
 canonical Changelog thread. Multiple card displays link to those same update threads;
-they do not create per-channel copies. The card remains the index. The
-Community Updates layout can now be rearranged within the card designer.
-
-## Community Updates layout builder
-
-Open **Card Layout Builder → Community Updates** in the Game Servers admin page.
-Use **Updates element layout** to arrange the heading, Announcements, Changelog,
-custom text, separators, and galleries with the Up/Down controls.
-
-- Add, remove, show/hide, or duplicate custom Text, Separator, and Gallery
-  blocks. The heading and each feed may appear at most once.
-- Text uses the same Discord Markdown, heading styles, and server placeholders
-  as the main card editor.
-- Separators support a visible rule or spacing only, in two native sizes.
-  Redundant separators next to hidden or missing blocks are omitted.
-- Galleries support 1–10 images, each with independently reorderable images,
-  automatic current-map artwork, bundled fallback, or a custom HTTPS source.
-- Existing feed properties still control title, timestamp, excerpt length,
-  placeholders, and whether the native Open link button is shown.
-- The browser preview follows the actual nested element order. Discord itself
-  controls final spacing and gallery display.
-
-Old saved layouts without nested blocks keep their previous behavior until
-edited. Saving an edited layout stores ordered nested blocks in the existing
-Card Profile JSON, without a database migration. The editor guards the 40
-total-component budget and the server validates the layout again on save.
+they do not create per-channel copies. The card remains the index: Latest Updates
+appears below Connect and Map & Rules in the same Components V2 message.
 
 ## Discord setup
-
 
 - Use a regular guild text channel for the server cards and their public threads.
 - Enable **Message Content Intent** in the application's Discord Developer Portal
