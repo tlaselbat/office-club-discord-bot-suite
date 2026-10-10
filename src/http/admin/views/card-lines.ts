@@ -110,6 +110,9 @@ const layoutEditors = document.getElementById('card-layout-editors');
 const layoutProperties = document.getElementById('card-layout-properties');
 const layoutJson = document.getElementById('card-layout-json');
 const buttonLibrary = document.querySelector('[data-button-library]');
+const buttonLibraryPanel = buttonLibrary?.closest('.card-button-library');
+const buttonLibraryHome = buttonLibraryPanel?.parentElement;
+const buttonLibraryNext = buttonLibraryPanel?.nextSibling;
 const previewRoot = document.getElementById('card-template-preview');
 const cardForm = layoutEditors?.closest('form');
 const dirtyStatus = document.getElementById('card-config-dirty-status');
@@ -132,6 +135,7 @@ const renderButtonDefinition = (button) => {
 const readButtonDefinitions=()=>Array.from(buttonLibrary?.querySelectorAll('[data-button-definition]')??[]).map((row)=>({id:row.dataset.buttonDefinition,label:row.querySelector('[data-button-field="label"]').value,emoji:row.querySelector('[data-button-field="emoji"]').value||null,style:row.querySelector('[data-button-field="style"]').value,action:row.querySelector('[data-button-field="action"]').value,destination:row.querySelector('[data-button-field="destination"]').value||null,visible:row.querySelector('[data-button-field="visible"]').checked}));
 const addButtonDefinition=(button={})=>renderButtonDefinition({id:crypto.randomUUID(),label:'New button',emoji:null,style:'secondary',action:'copy-address',destination:null,visible:true,...button});
 const restoreButtonLibrary=(buttons)=>{buttonDefinitions=Array.isArray(buttons)?structuredClone(buttons):[];buttonLibrary?.replaceChildren();buttonDefinitions.forEach(renderButtonDefinition);};
+const refreshButtonReferences=()=>layoutNodes().forEach((node)=>{const accessory=read(node,'accessoryButtonId');const refresh=(select,includeNone)=>{const selected=select.value;select.replaceChildren();if(includeNone){const option=document.createElement('option');option.value='';option.textContent='None';select.append(option);}buttonDefinitions.forEach((button)=>{const option=document.createElement('option');option.value=button.id;option.textContent=button.label;select.append(option);});select.value=buttonDefinitions.some((button)=>button.id===selected)?selected:'';};if(accessory)refresh(accessory,true);node._content.querySelectorAll('[data-row-button] select').forEach((select)=>refresh(select,false));});
 const syncFeedSeparator = (node) => {
   const separator=node._content.querySelector('[data-feed-separator]');const rows=feedRows(node);
   if(!separator)return;
@@ -144,6 +148,7 @@ let activeLayoutHost = layoutEditors;
 let selectedLayoutId = null;
 let removed = null;
 let initial = '';
+const serializeForm=()=>{const entries=Array.from(new FormData(cardForm).entries());entries.sort(([left],[right])=>left.localeCompare(right));return new URLSearchParams(entries).toString();};
 let initialLayout = null;
 let invalidLayout = false;
 let overComponentBudget = false;
@@ -267,7 +272,7 @@ const refreshRows = () => {
 const updateDirtyState = () => {
   if(!cardForm||!initial)return;
   saveLayout();
-  const dirty=submitted||new URLSearchParams(new FormData(cardForm)).toString()!==initial;
+  const dirty=submitted||serializeForm()!==initial;
   cardForm.dataset.dirty=String(dirty);
   if(dirtyStatus)dirtyStatus.textContent=invalidLayout?(layoutJson?.dataset.savedLayoutInvalid==='true'&&!submitted?'Saved card layout is invalid. Restore defaults to recover; saving replaces the card layout.':'Submitted layout is invalid. Discard changes to reload saved configuration.'):overComponentBudget?'Discord allows at most 40 nested components. Hide or remove elements to save.':dirty?'Unsaved changes across the full configuration. Save changes to apply them.':'All changes saved.';
   const save=cardForm.querySelector('button[type="submit"]');if(save&&cardForm.dataset.saving!=='true')save.disabled=!dirty||invalidLayout||overComponentBudget||invalidButtonPlacement;
@@ -281,6 +286,15 @@ const selectElement = (id, focus=false) => {
   selectedLayoutId=id;try{sessionStorage.setItem(selectionKey,id);}catch{}
   const heading=document.createElement('div');heading.className='card-layout-property-header';const title=document.createElement('h3');title.textContent='Element Properties';heading.append(title);
   layoutProperties.replaceChildren(heading,node._content);node._content.hidden=false;
+  if(buttonLibraryPanel&&buttonLibraryHome){
+    if(node.dataset.layoutElement==='button_row'){
+      buttonLibraryPanel.hidden=false;
+      node._content.append(buttonLibraryPanel);
+    }else{
+      buttonLibraryPanel.hidden=true;
+      buttonLibraryHome.insertBefore(buttonLibraryPanel,buttonLibraryNext);
+    }
+  }
   refreshRows();
   if(focus)node._content.querySelector('[data-layout-field="label"]')?.focus();
 };
@@ -437,10 +451,10 @@ cardForm?.addEventListener('click',(event)=>{
   if(!(event.target instanceof Element))return;
   const button=event.target.closest('button');if(!button)return;
   const node=button.closest('[data-layout-element]')||layoutNodes().find((item)=>item.dataset.layoutId===selectedLayoutId);
-  if(button.hasAttribute('data-button-add')){const row=addButtonDefinition();buttonDefinitions=readButtonDefinitions();updateDirtyState();row.querySelector('[data-button-field="label"]').focus();return;}
+  if(button.hasAttribute('data-button-add')){const row=addButtonDefinition();buttonDefinitions=readButtonDefinitions();refreshButtonReferences();updateDirtyState();row.querySelector('[data-button-field="label"]').focus();return;}
   const buttonDefinition=button.closest('[data-button-definition]');
-  if(buttonDefinition&&button.hasAttribute('data-button-remove')){const removedId=buttonDefinition.dataset.buttonDefinition;buttonDefinition.remove();layoutNodes().forEach((layoutNode)=>{const accessory=read(layoutNode,'accessoryButtonId');if(accessory?.value===removedId)accessory.value='';layoutNode._content.querySelectorAll('[data-row-button]').forEach((row)=>{if(row.querySelector('select').value===removedId)row.remove();});});buttonDefinitions=readButtonDefinitions();updateDirtyState();updateCardPreview();return;}
-  if(buttonDefinition&&button.hasAttribute('data-button-duplicate')){const copy=readButtonDefinitions().find((item)=>item.id===buttonDefinition.dataset.buttonDefinition);if(copy){copy.id=crypto.randomUUID();copy.label=copy.label+' copy';const added=renderButtonDefinition(copy);buttonDefinition.after(added);buttonDefinitions=readButtonDefinitions();}updateDirtyState();return;}
+  if(buttonDefinition&&button.hasAttribute('data-button-remove')){const removedId=buttonDefinition.dataset.buttonDefinition;buttonDefinition.remove();layoutNodes().forEach((layoutNode)=>{const accessory=read(layoutNode,'accessoryButtonId');if(accessory?.value===removedId)accessory.value='';layoutNode._content.querySelectorAll('[data-row-button]').forEach((row)=>{if(row.querySelector('select').value===removedId)row.remove();});});buttonDefinitions=readButtonDefinitions();refreshButtonReferences();updateDirtyState();updateCardPreview();return;}
+  if(buttonDefinition&&button.hasAttribute('data-button-duplicate')){const copy=readButtonDefinitions().find((item)=>item.id===buttonDefinition.dataset.buttonDefinition);if(copy){copy.id=crypto.randomUUID();copy.label=copy.label+' copy';const added=renderButtonDefinition(copy);buttonDefinition.after(added);buttonDefinitions=readButtonDefinitions();refreshButtonReferences();}updateDirtyState();return;}
   const rowButton=button.closest('[data-row-button]');
   if(rowButton&&button.hasAttribute('data-row-remove')){rowButton.remove();refreshRows();updateDirtyState();return;}
   if(rowButton&&button.dataset.rowMove){const sibling=button.dataset.rowMove==='up'?rowButton.previousElementSibling:rowButton.nextElementSibling;if(sibling){if(button.dataset.rowMove==='up')rowButton.parentElement.insertBefore(rowButton,sibling);else rowButton.parentElement.insertBefore(sibling,rowButton);}refreshRows();updateDirtyState();return;}
@@ -500,6 +514,6 @@ if(previewRoot){new ResizeObserver(fitPreview).observe(previewRoot);window.addEv
 if(layoutEditors&&layoutJson){
   try{if(layoutJson.dataset.layoutValid!=='true')throw new Error('Invalid layout');const persisted=JSON.parse(layoutJson.value);const elements=Array.isArray(persisted)?persisted:persisted.elements;if(!Array.isArray(elements)||!elements.length||elements.length>35)throw new Error('Invalid layout');restoreButtonLibrary(persisted.buttons);initialLayout={version:3,buttons:buttonDefinitions,elements};elements.forEach((element)=>originalElements.set(element.id,structuredClone(element)));let selected;try{selected=sessionStorage.getItem(selectionKey);}catch{}rebuild(initialLayout,selected);}
   catch(error){console.error('Card Designer layout initialization failed',error);invalidLayout=true;layoutJson.dataset.layoutValid='false';const savedInvalid=layoutJson.dataset.savedLayoutInvalid==='true'&&!submitted;layoutProperties.textContent=savedInvalid?'The saved card layout is invalid and is preserved. Restore card defaults to recover; saving replaces the entire card layout.':'The submitted layout is invalid and is preserved. Discard changes to reload the saved configuration.';announce(savedInvalid?'Saved layout is invalid. Restore card defaults to recover.':'Invalid submitted draft preserved. Discard changes to reload the saved configuration.');}
-  initial=new URLSearchParams(new FormData(cardForm)).toString();updateDirtyState();
+  initial=serializeForm();updateDirtyState();
 }
 `;

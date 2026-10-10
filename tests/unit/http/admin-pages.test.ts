@@ -245,18 +245,27 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-13');
-    expect(html).toContain('panel.js?v=game-server-editor-13');
+    expect(html).toContain('panel.css?v=game-server-editor-15');
+    expect(html).toContain('panel.js?v=game-server-editor-15');
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
     expect(html).toContain('href="#card-designer">Card Designer</a>');
+    expect(html).toContain('href="#operations">Live &amp; publishing</a>');
     expect(html).toContain('class="game-server-savebar"');
     expect(html).toContain('data-discard-server-changes');
     expect(html).toContain('id="card-layout-properties"');
     expect(html).toContain('id="card-layout-workspace"');
-    expect(html).toContain('Button Library');
+    expect(html).toContain('class="card-button-library" hidden');
+    expect(html).toContain('Reusable buttons');
+    expect(html).toContain('class="status-label-grid"');
+    expect(html).toContain('class="status-emoji-grid"');
     expect(html).toContain('data-button-add');
     expect(html).toContain('data-add-layout="button_row"');
     expect(cardLineScript).toContain('announcements-thread');
+    expect(cardLineScript).toContain("node.dataset.layoutElement==='button_row'");
+    expect(cardLineScript).toContain(
+      'buttonLibraryHome.insertBefore(buttonLibraryPanel,buttonLibraryNext)',
+    );
+    expect(cardLineScript).toContain('entries.sort(([left],[right])=>left.localeCompare(right))');
     expect(cardLineScript).toContain('Copy Address');
     expect(html).toContain('data-default-layout');
     expect(html).toContain('data-map-known');
