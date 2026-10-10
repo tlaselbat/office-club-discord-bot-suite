@@ -33,7 +33,9 @@ import {
   DEFAULT_CARD_TEMPLATES,
   DEFAULT_STATUS_LABELS,
   normalizeCardProfile,
+  stableLayoutId,
   resolveCardProfile,
+  cardLayoutSchema,
 } from '../../../../modules/game-servers/card-profile.js';
 
 export interface GameServersPageModel {
@@ -313,10 +315,106 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
       : model.submitted[key === 'connect' ? 'showConnectButton' : 'showMapRulesButton'] === '1';
   const savedLines = resolveCardLines(model.server.cardProfile, model.server.description);
   const savedLayout = resolveCardLayout(model.server.cardProfile, model.server.description);
+  const rawSavedLayout =
+    model.server.cardProfile !== null && typeof model.server.cardProfile === 'object'
+      ? (model.server.cardProfile as { layout?: unknown }).layout
+      : undefined;
+  const savedLayoutInvalid =
+    rawSavedLayout !== undefined && !cardLayoutSchema.safeParse(rawSavedLayout).success;
+  const legacyConnectId = stableLayoutId('legacy-button:connect');
+  const legacyMapRulesId = stableLayoutId('legacy-button:map-rules');
+  const layoutButtons =
+    profile.layout?.version === 3
+      ? profile.layout.buttons
+      : [
+          ...(profile.buttons.connect
+            ? [
+                {
+                  id: legacyConnectId,
+                  label: profile.buttons.connectLabel,
+                  emoji: '▶',
+                  style: 'primary' as const,
+                  action: 'connect' as const,
+                  destination: null,
+                  visible: true,
+                },
+              ]
+            : []),
+          ...(profile.buttons.mapRules
+            ? [
+                {
+                  id: legacyMapRulesId,
+                  label: profile.buttons.mapRulesLabel,
+                  emoji: '🗺',
+                  style: 'secondary' as const,
+                  action: 'map-rules' as const,
+                  destination: null,
+                  visible: true,
+                },
+              ]
+            : []),
+        ];
+  const defaultLayoutButtons = [
+    {
+      id: legacyConnectId,
+      label: 'Connect',
+      emoji: '▶',
+      style: 'primary' as const,
+      action: 'connect' as const,
+      destination: null,
+      visible: true,
+    },
+    {
+      id: legacyMapRulesId,
+      label: 'Map & Rules',
+      emoji: '🗺',
+      style: 'secondary' as const,
+      action: 'map-rules' as const,
+      destination: null,
+      visible: true,
+    },
+  ];
+  const defaultLayout = resolveCardLayout(undefined, null).map((element) =>
+    element.type === 'actions'
+      ? {
+          id: element.id,
+          type: 'button_row' as const,
+          label: element.label,
+          visible: element.visible,
+          buttonIds: [legacyConnectId, legacyMapRulesId],
+        }
+      : element,
+  );
+  const editorLayout = savedLayout.map((element) =>
+    element.type === 'actions' && layoutButtons.length > 0
+      ? {
+          id: element.id,
+          type: 'button_row' as const,
+          label: element.label,
+          visible: element.visible,
+          buttonIds: layoutButtons
+            .filter((button) => button.action === 'connect' || button.action === 'map-rules')
+            .map((button) => button.id),
+        }
+      : element.type === 'actions'
+        ? { ...element, visible: false }
+        : element,
+  );
+  const legacyUpdatesWarning = savedLayout.some((element) => element.type === 'updates')
+    ? '<div class="notice warning">This saved Community Updates layout exceeds the automatic migration size. Its settings are preserved in compatibility mode. Reduce the number of card elements, then save to convert it to independent text rows.</div>'
+    : '';
   const layoutJsonValue =
     typeof model.submitted?.layoutJson === 'string'
       ? model.submitted.layoutJson
-      : JSON.stringify({ version: 2, elements: savedLayout });
+      : savedLayoutInvalid
+        ? JSON.stringify(rawSavedLayout)
+        : JSON.stringify({ version: 3, buttons: layoutButtons, elements: editorLayout });
+  let layoutValueValid = false;
+  try {
+    layoutValueValid = cardLayoutSchema.safeParse(JSON.parse(layoutJsonValue) as unknown).success;
+  } catch {
+    layoutValueValid = false;
+  }
   const requestedOrder =
     typeof model.submitted?.lineOrder === 'string'
       ? model.submitted.lineOrder.split(',')
@@ -413,7 +511,7 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
   };
   const fallbackArtwork = resolveMapImageUrl(null, null);
   const currentArtwork = resolveMapImageUrl(model.snapshot?.map ?? null, null);
-  const preview = `<aside id="card-template-preview" class="read-only game-server-preview" data-guild-id="${escapeHtml(model.guildId)}" data-current-values="${escapeHtml(JSON.stringify(currentPreviewValues))}" data-update-threads="${escapeHtml(JSON.stringify(model.updateThreads ?? []))}" data-map-image="${escapeHtml(currentArtwork)}" data-map-known="${String(currentArtwork !== fallbackArtwork)}" data-raw-map="${escapeHtml(model.snapshot?.map ?? '')}" data-fallback-image="${escapeHtml(fallbackArtwork)}" data-example-map-known="${String(resolveMapImageUrl('aim_redline_fp', null) !== fallbackArtwork)}" data-example-map-image="${escapeHtml(resolveMapImageUrl('aim_redline_fp', null))}" data-default-thumbnail="${escapeHtml(inherited.thumbnailImageUrl)}" ${(['online', 'offline', 'warning', 'pending'] as const).map((state) => `data-${state}-emoji="${escapeHtml(inherited[`${state}EmojiId`] === null ? '' : `<:${state}_dot:${String(inherited[`${state}EmojiId`])}>`)}"`).join(' ')} data-raw-host="${escapeHtml(model.snapshot?.rawIp ?? '')}" data-hosting-state="${escapeHtml(model.snapshot?.hostingState ?? 'PENDING')}" data-gameplay-state="${escapeHtml(model.snapshot?.gameplayState ?? '')}" data-stale="${model.snapshot?.stale ? 'true' : 'false'}"><div class="preview-heading"><h2>Discord Preview</h2><button type="button" class="secondary" data-expand-preview aria-expanded="false">Expand preview</button></div><p class="hint">Browser approximation of Discord Components V2. Final spacing and component rendering are controlled by Discord.</p><label for="card-preview-mode">Preview state</label><select id="card-preview-mode"><option value="current">Current cached state</option><option value="online">Online example</option><option value="offline">Offline example</option><option value="pending">Pending example</option><option value="missing">Telemetry unavailable example</option></select><p class="hint" id="card-preview-source" role="status">Current cached telemetry</p><details open class="preview-card-disclosure"><summary>Card preview · collapse / expand</summary><div id="card-preview-lines"></div><div id="card-preview-artwork"></div><div id="card-preview-actions"></div></details></aside>`;
+  const preview = `<aside id="card-template-preview" class="read-only game-server-preview" data-guild-id="${escapeHtml(model.guildId)}" data-current-values="${escapeHtml(JSON.stringify(currentPreviewValues))}" data-update-threads="${escapeHtml(JSON.stringify(model.updateThreads ?? []))}" data-map-image="${escapeHtml(currentArtwork)}" data-map-known="${String(currentArtwork !== fallbackArtwork)}" data-raw-map="${escapeHtml(model.snapshot?.map ?? '')}" data-fallback-image="${escapeHtml(fallbackArtwork)}" data-example-map-known="${String(resolveMapImageUrl('aim_redline_fp', null) !== fallbackArtwork)}" data-example-map-image="${escapeHtml(resolveMapImageUrl('aim_redline_fp', null))}" data-default-thumbnail="${escapeHtml(inherited.thumbnailImageUrl)}" ${(['online', 'offline', 'warning', 'pending'] as const).map((state) => `data-${state}-emoji="${escapeHtml(inherited[`${state}EmojiId`] === null ? '' : `<:${state}_dot:${String(inherited[`${state}EmojiId`])}>`)}"`).join(' ')} data-raw-host="${escapeHtml(model.snapshot?.rawIp ?? '')}" data-hosting-state="${escapeHtml(model.snapshot?.hostingState ?? 'PENDING')}" data-gameplay-state="${escapeHtml(model.snapshot?.gameplayState ?? '')}" data-stale="${model.snapshot?.stale ? 'true' : 'false'}"><div class="preview-heading"><h2>Discord Preview</h2><button type="button" class="secondary" data-expand-preview aria-expanded="false">Widen preview</button></div><p class="hint">Browser approximation of Discord Components V2. Final spacing and component rendering are controlled by Discord.</p><label for="card-preview-mode">Preview state</label><select id="card-preview-mode"><option value="current">Current cached state</option><option value="online">Online example</option><option value="offline">Offline example</option><option value="pending">Pending example</option><option value="starting">Starting example</option><option value="stale">Stale example</option><option value="missing">Telemetry unavailable example</option></select><p class="hint" id="card-preview-source" role="status">Current cached telemetry</p><details open class="preview-card-disclosure"><summary>Show or hide card contents</summary><div id="card-preview-lines"></div><div id="card-preview-artwork"></div><div id="card-preview-actions"></div></details></aside>`;
   const lineEditor = (line: (typeof editorLines)[number]): string => {
     const name = `Card Line ${String(CARD_LINE_IDS.indexOf(line.id) + 1)}`;
     const target = `${line.id}Template`;
@@ -429,12 +527,14 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
       ['Underline', '__'],
       ['Strikethrough', '~~'],
       ['Inline code', String.fromCharCode(96)],
+      ['Spoiler', '||'],
     ]
       .map(
         ([label, marker]) =>
           `<button class="secondary" type="button" aria-controls="${target}" data-markdown-target="${target}" data-markdown-marker="${escapeHtml(marker)}">${escapeHtml(label ?? '')}</button>`,
       )
       .join('')}</div>
+<button class="secondary" type="button" aria-controls="${target}" data-markdown-clear="${target}">Clear formatting</button>
 <label for="${line.id}Style">${name} heading style</label><select id="${line.id}Style" name="${line.id}Style" data-line-style>${CARD_LINE_STYLES.map((style) => `<option value="${style}"${line.style === style ? ' selected' : ''}>${styleNames[style]}</option>`).join('')}</select>
 ${textarea(`${name} template`, target, line.template, 'maxlength="500" data-card-template', model.fieldErrors?.[target])}
 <p class="hint" id="${target}-format-status" role="status">Select text to apply formatting, or insert a placeholder at the cursor.</p>
@@ -445,20 +545,20 @@ ${textarea(`${name} template`, target, line.template, 'maxlength="500" data-card
     model.csrf,
     `<input type="hidden" name="version" value="${escapeHtml(value('version', model.server.version))}">
 ${model.submitted === undefined ? '' : '<input type="hidden" data-submitted-edits>' + notice('These are unsaved edits. Saved values are shown below. Reload before retrying a configuration conflict.', 'warning')}
-<nav class="game-server-section-nav" aria-label="Configuration sections"><a href="#server-settings">Server Settings</a><a href="#card-designer">Card Designer</a><a href="#live-data">Live Data</a><a href="#advanced-settings">Advanced</a><a href="#deployments">Deployments</a><a href="#diagnostics">Diagnostics</a></nav>
+<nav class="game-server-section-nav" aria-label="Configuration sections"><a href="#card-designer">Card Design</a><a href="#server-settings">Server Settings</a><a href="#deployments">Publishing</a><a href="#diagnostics">Diagnostics</a></nav>
 <fieldset id="server-settings" class="game-server-config-group"><legend>Registration and monitoring</legend>
 <div><label class="checkbox"><input type="checkbox" name="enabled" value="1"${checked('enabled') ? ' checked' : ''}> Enable polling</label>
 <p class="hint">Disabling polling preserves existing displays and their last observation.</p></div>
 <div><label class="checkbox"><input type="checkbox" name="public" value="1"${checked('public') ? ' checked' : ''}> Public visibility</label>
 <p class="hint">Making a server private removes its Discord displays. Registration remains saved.</p></div>
 ${input('Sort order', 'sortOrder', value('sortOrder', model.server.sortOrder), 'number', 'min="0"', model.fieldErrors?.sortOrder)}
-</fieldset><fieldset id="card-designer" class="game-server-config-group"><legend>Card Designer</legend>
+</fieldset><fieldset id="card-designer" class="game-server-config-group"><legend>Card Design</legend>
 ${input('Display name', 'displayName', value('displayName', model.server.displayName), 'text', 'maxlength="64" required', model.fieldErrors?.displayName)}
 <fieldset id="card-text-settings" class="game-server-config-group"><legend>Card Layout Builder</legend>
-<input type="hidden" name="linesVersion" value="1"><input type="hidden" name="lineOrder" id="card-line-order" value="${escapeHtml(editorLines.map((line) => line.id).join(','))}"><input type="hidden" name="layoutVersion" value="2"><input type="hidden" name="layoutJson" id="card-layout-json" value="${escapeHtml(layoutJsonValue)}">
+<input type="hidden" name="linesVersion" value="1"><input type="hidden" name="lineOrder" id="card-line-order" value="${escapeHtml(editorLines.map((line) => line.id).join(','))}"><input type="hidden" name="layoutVersion" value="3"><input type="hidden" name="layoutJson" id="card-layout-json" data-layout-valid="${String(layoutValueValid)}" data-saved-layout-invalid="${String(savedLayoutInvalid)}" value="${escapeHtml(layoutJsonValue)}">${model.fieldErrors?.layoutJson?.length ? `<div id="layoutJson-error" class="field-error" role="alert" tabindex="-1"><strong>Card Layout needs correction</strong><ul>${model.fieldErrors.layoutJson.map((error) => `<li>${escapeHtml(error)}</li>`).join('')}</ul></div>` : ''}
 <input type="hidden" name="fieldOrder" value="${escapeHtml(profile.fieldOrder.join(','))}">
-<p class="hint">Manage text and layout elements below. Reorder with Up/Down. Hidden or empty elements do not appear.</p><details class="inline-help"><summary>Text and Discord layout help</summary><p>Text styles use Discord Markdown, and Small text uses <code>-#</code>. Sections keep thumbnails attached as Discord requires. Discord controls final spacing and limits total card text to 4,000 characters.</p></details>
-<details class="layout-add-menu"><summary>Add element</summary><div class="layout-add-actions" aria-label="Add card layout element"><button type="button" class="secondary" data-add-layout="text">Add Text Line</button><button type="button" class="secondary" data-add-layout="gallery">Add Image Gallery</button><button type="button" class="secondary" data-add-layout="separator">Add Separator</button><button type="button" class="secondary" data-add-layout="section">Add Text + Thumbnail Section</button><button type="button" class="secondary" data-add-layout="actions">Add Action Buttons</button><button type="button" class="secondary" data-add-layout="updates">Add Community Updates</button></div></details><div id="card-layout-workspace"><section id="card-layout-list" aria-label="Card elements"><h3>Elements</h3><p class="hint">Select a block to edit its properties.</p><div id="card-layout-editors"></div><p class="hint" id="card-layout-status" role="status" aria-live="polite"></p><div id="card-layout-undo" role="status" aria-live="polite"></div></section><section id="card-layout-properties" aria-label="Element properties"><p class="hint">Choose an element to begin editing.</p></section></div>
+<p class="hint">Select an element to edit it. Reorder with the arrows; hidden elements stay saved but do not appear in Discord.</p><details class="inline-help"><summary>Text and Discord layout help</summary><p>Text uses Discord Markdown. Link buttons need a public HTTPS destination. A Section has one right-side accessory. The browser preview approximates Discord; Discord controls final spacing and rendering.</p></details>
+${legacyUpdatesWarning}<details class="layout-add-menu"><summary>Add element</summary><div class="layout-add-actions" aria-label="Add card layout element"><button type="button" class="secondary" data-add-layout="text">Add Text Line</button><button type="button" class="secondary" data-add-layout="gallery">Add Image Gallery</button><button type="button" class="secondary" data-add-layout="separator">Add Separator</button><button type="button" class="secondary" data-add-layout="section">Add Text + Thumbnail Section</button><button type="button" class="secondary" data-add-layout="button_row">Add Button Row</button><details class="inline-help"><summary>Legacy and troubleshooting elements</summary><button type="button" class="secondary" data-add-layout="actions">Legacy Action Buttons</button><button type="button" class="secondary" data-add-layout="updates">Community Updates preset</button></details></div></details><div id="card-layout-workspace"><section id="card-layout-list" aria-label="Card elements"><h3>Elements</h3><p class="hint">Select a block to edit its properties.</p><div id="card-layout-editors"></div><p class="hint" id="card-layout-status" role="status" aria-live="polite"></p><div id="card-layout-undo" role="status" aria-live="polite"></div></section><section id="card-layout-properties" aria-label="Card Designer properties"><div class="card-property-tabs" role="tablist" aria-label="Card Designer panels"><button id="card-element-properties-tab" type="button" role="tab" aria-selected="true" aria-controls="card-layout-properties-editor" data-properties-tab="elements">Element properties</button><button id="card-button-library-tab" type="button" role="tab" aria-selected="false" aria-controls="card-button-library-panel" data-properties-tab="buttons" tabindex="-1">Button library <span id="card-button-count"></span></button></div><div id="card-layout-properties-editor" role="tabpanel" aria-labelledby="card-element-properties-tab"><p class="hint">Choose an element to edit its properties.</p></div><section id="card-button-library-panel" class="card-button-library" role="tabpanel" aria-labelledby="card-button-library-tab" hidden><header class="card-button-library-header"><div><h3>Reusable button library</h3><p class="hint">Define buttons here independently of card rows. Use a Button Row for a full action row, or choose a button in a Text or Section accessory setting.</p></div><button type="button" class="secondary" data-button-add>Add reusable button</button></header><p class="card-button-library-empty" data-button-library-empty>No reusable buttons yet. Add one, then create a Button Row or select it as a Text or Section accessory.</p><div data-button-library></div></section></section></div>
 <div id="card-line-editors" hidden>${editorLines.map(lineEditor).join('')}</div>
 </fieldset>
 <details class="card-settings-group"><summary>Appearance</summary><div class="card-settings-content"><label class="checkbox" hidden><input type="checkbox" name="showMapArtwork" value="1"${(model.submitted === undefined ? (profile.mapArtwork ?? profile.visibleFields.currentMap) : model.submitted.showMapArtwork === '1') ? ' checked' : ''}> Show map artwork</label><p class="hint">Control each gallery’s artwork and visibility in its element properties.</p>
@@ -468,14 +568,12 @@ ${input('Thumbnail HTTPS URL', 'thumbnailImageUrl', value('thumbnailImageUrl', p
 <p class="hint">Blank thumbnail uses the default server icon.</p>
 ${input('Map artwork fallback HTTPS URL', 'imageUrl', value('imageUrl', model.server.imageUrl), 'url', 'maxlength="500" placeholder="https://..."', model.fieldErrors?.imageUrl)}
 <p class="hint">Known local map artwork takes priority; this URL is used when map artwork is unavailable.</p>
-</div></details><details class="card-settings-group" id="card-button-settings"><summary>Action Buttons</summary><div class="card-settings-content"><label class="checkbox"><input type="checkbox" name="showConnectButton" value="1"${buttonChecked('connect') ? ' checked' : ''}> Show Connect button</label>${input('Connect button label', 'connectButtonLabel', typeof model.submitted?.connectButtonLabel === 'string' ? model.submitted.connectButtonLabel : profile.buttons.connectLabel, 'text', 'maxlength="80" required')}
-<label class="checkbox"><input type="checkbox" name="showMapRulesButton" value="1"${buttonChecked('mapRules') ? ' checked' : ''}> Show Map & Rules button</label>${input('Map & Rules button label', 'mapRulesButtonLabel', typeof model.submitted?.mapRulesButtonLabel === 'string' ? model.submitted.mapRulesButtonLabel : profile.buttons.mapRulesLabel, 'text', 'maxlength="80" required')}
-</div></details><details class="card-settings-group"><summary>Status Presentation</summary><div class="card-settings-content">${input('Online status label', 'onlineStatusLabel', typeof model.submitted?.onlineStatusLabel === 'string' ? model.submitted.onlineStatusLabel : profile.statusLabels.online, 'text', 'maxlength="80" required')}
-${input('Offline status label', 'offlineStatusLabel', typeof model.submitted?.offlineStatusLabel === 'string' ? model.submitted.offlineStatusLabel : profile.statusLabels.offline, 'text', 'maxlength="80" required')}
-${input('Starting status label', 'startingStatusLabel', typeof model.submitted?.startingStatusLabel === 'string' ? model.submitted.startingStatusLabel : profile.statusLabels.starting, 'text', 'maxlength="80" required')}
-${input('Stale status label', 'staleStatusLabel', typeof model.submitted?.staleStatusLabel === 'string' ? model.submitted.staleStatusLabel : profile.statusLabels.stale, 'text', 'maxlength="80" required')}
-${input('Pending status label', 'pendingStatusLabel', typeof model.submitted?.pendingStatusLabel === 'string' ? model.submitted.pendingStatusLabel : profile.statusLabels.pending, 'text', 'maxlength="80" required')}
-${input('Unavailable status label', 'unavailableStatusLabel', typeof model.submitted?.unavailableStatusLabel === 'string' ? model.submitted.unavailableStatusLabel : profile.statusLabels.unavailable, 'text', 'maxlength="80" required')}
+</div></details><input type="hidden" name="showConnectButton" value="${buttonChecked('connect') ? '1' : ''}"><input type="hidden" name="connectButtonLabel" value="${escapeHtml(profile.buttons.connectLabel)}"><input type="hidden" name="showMapRulesButton" value="${buttonChecked('mapRules') ? '1' : ''}"><input type="hidden" name="mapRulesButtonLabel" value="${escapeHtml(profile.buttons.mapRulesLabel)}"><details class="card-settings-group"><summary>Status presentation</summary><div class="status-config-grid"><section><h3>Status labels</h3><div class="status-label-grid">${input('Online', 'onlineStatusLabel', typeof model.submitted?.onlineStatusLabel === 'string' ? model.submitted.onlineStatusLabel : profile.statusLabels.online, 'text', 'maxlength="80" required')}
+${input('Offline', 'offlineStatusLabel', typeof model.submitted?.offlineStatusLabel === 'string' ? model.submitted.offlineStatusLabel : profile.statusLabels.offline, 'text', 'maxlength="80" required')}
+${input('Starting', 'startingStatusLabel', typeof model.submitted?.startingStatusLabel === 'string' ? model.submitted.startingStatusLabel : profile.statusLabels.starting, 'text', 'maxlength="80" required')}
+${input('Stale', 'staleStatusLabel', typeof model.submitted?.staleStatusLabel === 'string' ? model.submitted.staleStatusLabel : profile.statusLabels.stale, 'text', 'maxlength="80" required')}
+${input('Pending', 'pendingStatusLabel', typeof model.submitted?.pendingStatusLabel === 'string' ? model.submitted.pendingStatusLabel : profile.statusLabels.pending, 'text', 'maxlength="80" required')}
+${input('Unavailable', 'unavailableStatusLabel', typeof model.submitted?.unavailableStatusLabel === 'string' ? model.submitted.unavailableStatusLabel : profile.statusLabels.unavailable, 'text', 'maxlength="80" required')}</div></section><section><h3>Custom status emoji IDs</h3><div class="status-emoji-grid">
 ${(['online', 'offline', 'warning', 'pending'] as const)
   .map((state) => {
     const name = `${state}EmojiId` as const;
@@ -488,17 +586,17 @@ ${(['online', 'offline', 'warning', 'pending'] as const)
       model.fieldErrors?.[name],
     );
   })
-  .join('')}
-<p class="hint">Blank emoji IDs inherit the deployment default. Missing or invalid IDs use a plain dot; custom emojis must be available to the bot.</p>
-</div></details><details id="advanced-settings" class="game-server-advanced"><summary>Advanced appearance and connection settings</summary><div class="card-line-content">
+  .join(
+    '',
+  )}</div><p class="hint">Leave blank to inherit deployment defaults. Custom emojis must be available to the bot.</p></section></div></details><details id="advanced-settings" class="game-server-advanced"><summary>Advanced appearance and connection settings</summary><div class="card-line-content">
 ${input('Connect domain', 'connectDomain', value('connectDomain', model.server.connectDomain), 'text', 'maxlength="256" placeholder="e.g. arena.example.com"', model.fieldErrors?.connectDomain)}
 ${input('HTTPS join URL', 'joinUrl', value('joinUrl', model.server.joinUrl), 'url', 'maxlength="500" placeholder="https://..."', model.fieldErrors?.joinUrl)}
 <p class="hint">The join URL appears in the server detail response. The card Connect button provides the server address.</p>
 </div></details>
-<div class="card-default-actions"><button type="button" class="secondary" data-reset-card-profile data-default-layout="${escapeHtml(JSON.stringify({ version: 2, elements: resolveCardLayout(undefined, null) }))}" data-defaults="${escapeHtml(JSON.stringify({ titleTemplate: DEFAULT_CARD_TEMPLATES.title, subtitleTemplate: '{statusicon} {status} · {location}', descriptionTemplate: DEFAULT_CARD_TEMPLATES.description, playerCountTemplate: DEFAULT_CARD_TEMPLATES.playerCount, currentMapTemplate: DEFAULT_CARD_TEMPLATES.currentMap, serverAddressTemplate: DEFAULT_CARD_TEMPLATES.serverAddress, showTitle: true, showSubtitle: true, showDescription: true, showPlayerCount: true, showCurrentMap: true, showServerAddress: true, showUpdates: true, fieldOrder: 'description,currentMap,serverAddress', lineOrder: CARD_LINE_IDS.join(','), showMapArtwork: true, ...Object.fromEntries(CARD_LINE_IDS.map((id) => [`${id}Style`, DEFAULT_CARD_LINE_STYLES[id]])), showConnectButton: true, showMapRulesButton: true, connectButtonLabel: 'Connect', mapRulesButtonLabel: 'Map & Rules', onlineStatusLabel: DEFAULT_STATUS_LABELS.online, offlineStatusLabel: DEFAULT_STATUS_LABELS.offline, startingStatusLabel: DEFAULT_STATUS_LABELS.starting, staleStatusLabel: DEFAULT_STATUS_LABELS.stale, pendingStatusLabel: DEFAULT_STATUS_LABELS.pending, unavailableStatusLabel: DEFAULT_STATUS_LABELS.unavailable, accentColor: '#2b8aef', thumbnailImageUrl: '', imageUrl: '', onlineEmojiId: '', offlineEmojiId: '', warningEmojiId: '', pendingEmojiId: '' }))}">Restore card defaults</button><p class="hint">Restore the card layout and appearance to their defaults.</p></div></fieldset>
+<div class="card-default-actions"><button type="button" class="secondary" data-reset-card-profile data-default-layout="${escapeHtml(JSON.stringify({ version: 3, buttons: defaultLayoutButtons, elements: defaultLayout }))}" data-defaults="${escapeHtml(JSON.stringify({ titleTemplate: DEFAULT_CARD_TEMPLATES.title, subtitleTemplate: '{statusicon} {status} · {location}', descriptionTemplate: DEFAULT_CARD_TEMPLATES.description, playerCountTemplate: DEFAULT_CARD_TEMPLATES.playerCount, currentMapTemplate: DEFAULT_CARD_TEMPLATES.currentMap, serverAddressTemplate: DEFAULT_CARD_TEMPLATES.serverAddress, showTitle: true, showSubtitle: true, showDescription: true, showPlayerCount: true, showCurrentMap: true, showServerAddress: true, showUpdates: true, fieldOrder: 'description,currentMap,serverAddress', lineOrder: CARD_LINE_IDS.join(','), showMapArtwork: true, ...Object.fromEntries(CARD_LINE_IDS.map((id) => [`${id}Style`, DEFAULT_CARD_LINE_STYLES[id]])), showConnectButton: true, showMapRulesButton: true, connectButtonLabel: 'Connect', mapRulesButtonLabel: 'Map & Rules', onlineStatusLabel: DEFAULT_STATUS_LABELS.online, offlineStatusLabel: DEFAULT_STATUS_LABELS.offline, startingStatusLabel: DEFAULT_STATUS_LABELS.starting, staleStatusLabel: DEFAULT_STATUS_LABELS.stale, pendingStatusLabel: DEFAULT_STATUS_LABELS.pending, unavailableStatusLabel: DEFAULT_STATUS_LABELS.unavailable, accentColor: '#2b8aef', thumbnailImageUrl: '', imageUrl: '', onlineEmojiId: '', offlineEmojiId: '', warningEmojiId: '', pendingEmojiId: '' }))}">Restore card defaults</button><p class="hint">${savedLayoutInvalid ? 'The saved card layout is invalid. Restoring defaults replaces the entire card layout and appearance; save to recover.' : 'Restore the card layout and appearance to their defaults.'}</p></div></fieldset>
 ${preview}
 <div class="notice warning">This webpanel changes only the bot's local registration. It does not mutate the DatHost server.</div>
-<div class="game-server-savebar"><p class="hint" id="card-config-dirty-status" role="status" aria-live="polite">All changes saved.</p><button type="button" class="secondary" data-discard-server-changes>Discard changes</button><button type="submit">Save changes</button></div>`,
+<div class="game-server-savebar"><p class="hint" id="card-config-dirty-status" role="status" aria-live="polite">All changes saved.</p><p class="hint">Save and Discard apply to the full form, including polling, visibility, connection settings, and card design.</p><button type="button" class="secondary" data-discard-server-changes>Discard changes</button><button type="submit">Save changes</button></div>`,
   );
   return adminShell(
     {
@@ -512,10 +610,10 @@ ${preview}
       card('Server configuration', form) +
       card(
         'Saved Card Profile',
-        `<p>Saved configuration · Version ${String(model.server.version)} · ${String(savedLayout.length)} elements</p><details class="card-settings-group"><summary>Inspect saved configuration</summary><p>These values reflect saved configuration, before any unsaved edits above.</p><dl class="dl"><dt>Name</dt><dd>${escapeHtml(model.server.displayName)}</dd><dt>Description template</dt><dd>${escapeHtml(savedDescription)}</dd><dt>Online label</dt><dd>${escapeHtml(profile.statusLabels.online)}</dd><dt>Offline label</dt><dd>${escapeHtml(profile.statusLabels.offline)}</dd><dt>Legacy text lines</dt><dd>${savedLines.map((line) => `Card Line ${String(CARD_LINE_IDS.indexOf(line.id) + 1)}: ${escapeHtml(line.template)} (${escapeHtml(line.style)}, ${line.visible ? 'visible' : 'hidden'})`).join('<br>')}</dd><dt>Accent</dt><dd>${escapeHtml(profile.accentColor)}</dd><dt>Thumbnail</dt><dd>${escapeHtml(effective.thumbnailImageUrl)}</dd>${(['online', 'offline', 'warning', 'pending'] as const).map((state) => `<dt>${state} emoji</dt><dd>${escapeHtml(effective[`${state}EmojiId`] ?? 'Plain dot')}</dd>`).join('')}</dl><h3>Saved layout</h3><pre class="saved-layout-json">${escapeHtml(JSON.stringify({ version: 2, elements: savedLayout }, null, 2))}</pre></details>`,
+        `<p id="diagnostics">Saved profile · Version ${String(model.server.version)} · ${String(savedLayout.length)} layout elements</p><details class="card-settings-group"><summary>Inspect saved configuration</summary><p>These values reflect saved configuration, before any unsaved edits above.</p><dl class="dl"><dt>Name</dt><dd>${escapeHtml(model.server.displayName)}</dd><dt>Description template</dt><dd>${escapeHtml(savedDescription)}</dd><dt>Online label</dt><dd>${escapeHtml(profile.statusLabels.online)}</dd><dt>Offline label</dt><dd>${escapeHtml(profile.statusLabels.offline)}</dd><dt>Legacy text lines</dt><dd>${savedLines.map((line) => `Card Line ${String(CARD_LINE_IDS.indexOf(line.id) + 1)}: ${escapeHtml(line.template)} (${escapeHtml(line.style)}, ${line.visible ? 'visible' : 'hidden'})`).join('<br>')}</dd><dt>Accent</dt><dd>${escapeHtml(profile.accentColor)}</dd><dt>Thumbnail</dt><dd>${escapeHtml(effective.thumbnailImageUrl)}</dd>${(['online', 'offline', 'warning', 'pending'] as const).map((state) => `<dt>${state} emoji</dt><dd>${escapeHtml(effective[`${state}EmojiId`] ?? 'Plain dot')}</dd>`).join('')}</dl><h3>Saved layout</h3><pre class="saved-layout-json">${escapeHtml(JSON.stringify({ version: 3, elements: savedLayout }, null, 2))}</pre></details>`,
       ) +
-      `<div id="live-data">${card('Live state', readOnly)}</div>` +
-      `<div id="deployments">${card('Discord displays', cardInfo)}</div>`,
+      `<div id="operations"><div id="live-data">${card('Live state', readOnly)}</div>` +
+      `<div id="deployments">${card('Discord displays', cardInfo)}</div></div>`,
   );
 }
 

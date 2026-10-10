@@ -16,6 +16,7 @@ import {
   DEFAULT_CARD_TEMPLATES,
   DEFAULT_STATUS_LABELS,
   cardProfileSchema,
+  normalizeCardProfile,
   isHttpsUrl,
   validateCardTemplate,
   CARD_LINE_IDS,
@@ -58,6 +59,11 @@ const serverToggleSchema = z
   })
   .strict();
 
+const optionalHiddenCheckbox = z.preprocess(
+  (value: unknown) => (value === '' ? undefined : value),
+  z.literal('1').optional(),
+);
+
 const serverEditSchema = z
   .object({
     csrf: z.string().min(1).max(128),
@@ -83,7 +89,7 @@ const serverEditSchema = z
     currentMapTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.currentMap),
     serverAddressTemplate: z.string().max(500).default(DEFAULT_CARD_TEMPLATES.serverAddress),
     linesVersion: z.literal('1').optional(),
-    layoutVersion: z.literal('2').optional(),
+    layoutVersion: z.enum(['2', '3']).optional(),
     layoutJson: z.string().max(30000).optional(),
     lineOrder: z.string().max(100).optional(),
     titleStyle: z.enum(CARD_LINE_STYLES).default('large'),
@@ -101,8 +107,8 @@ const serverEditSchema = z
     showServerAddress: z.literal('1').optional(),
     showUpdates: z.literal('1').optional(),
     fieldOrder: z.string().max(100).default(CARD_BODY_FIELDS.join(',')),
-    showConnectButton: z.literal('1').optional(),
-    showMapRulesButton: z.literal('1').optional(),
+    showConnectButton: optionalHiddenCheckbox,
+    showMapRulesButton: optionalHiddenCheckbox,
     connectButtonLabel: z.string().trim().min(1).max(80).default('Connect'),
     mapRulesButtonLabel: z.string().trim().min(1).max(80).default('Map & Rules'),
     onlineStatusLabel: z.string().trim().min(1).max(80).optional(),
@@ -593,21 +599,47 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           ? (request.body as Record<string, unknown>)
           : {};
       if (!body.success) {
+        const validationMessages = body.error.issues.map((issue) =>
+          issue.code === 'unrecognized_keys'
+            ? `Unexpected form field${issue.keys.length === 1 ? '' : 's'}: ${issue.keys.join(', ')}`
+            : `${issue.path.join('.') || 'Form'}: ${issue.message}`,
+        );
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
-          errors: ['Review the fields and try again.'],
+          errors:
+            validationMessages.length > 0
+              ? validationMessages
+              : ['Review the fields and try again.'],
           fieldErrors: z.flattenError(body.error).fieldErrors,
           submitted,
         });
         return reply.code(400).type('text/html').send(html);
       }
+      let layoutValidationMessages: string[] = [];
       const profile = cardProfileSchema.safeParse({
-        ...(body.data.layoutVersion === '2'
+        ...(body.data.layoutVersion === '2' || body.data.layoutVersion === '3'
           ? (() => {
               let layout: unknown;
               try {
                 layout = JSON.parse(body.data.layoutJson ?? '');
               } catch {
                 layout = null;
+              }
+              const validLayout = cardLayoutSchema.safeParse(layout);
+              if (validLayout.success) {
+                layout = normalizeCardProfile({
+                  layout,
+                  buttons: {
+                    connect: body.data.showConnectButton === '1',
+                    mapRules: body.data.showMapRulesButton === '1',
+                    connectLabel: body.data.connectButtonLabel,
+                    mapRulesLabel: body.data.mapRulesButtonLabel,
+                  },
+                }).layout;
+              } else {
+                layoutValidationMessages = validLayout.error.issues.map((issue) => {
+                  const path = issue.path.length > 0 ? ` ${issue.path.join('.')}` : '';
+                  return `Card Layout${path}: ${issue.message}`;
+                });
               }
               return { layout };
             })()
@@ -680,7 +712,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
       }
       if (!profile.success) {
         let submittedLayout: unknown = null;
-        if (body.data.layoutVersion === '2') {
+        if (body.data.layoutVersion === '2' || body.data.layoutVersion === '3') {
           try {
             submittedLayout = JSON.parse(body.data.layoutJson ?? '') as unknown;
           } catch {
@@ -688,17 +720,18 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           }
         }
         const layoutInvalid =
-          body.data.layoutVersion === '2' && !cardLayoutSchema.safeParse(submittedLayout).success;
+          (body.data.layoutVersion === '2' || body.data.layoutVersion === '3') &&
+          !cardLayoutSchema.safeParse(submittedLayout).success;
+        const fieldErrors = {
+          ...z.flattenError(profile.error).fieldErrors,
+          ...(layoutInvalid ? { layoutJson: layoutValidationMessages } : {}),
+        };
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {
           errors: [
-            ...(layoutInvalid
-              ? [
-                  'The Card Layout is invalid. Check unique IDs, HTTPS image URLs, and supported element settings.',
-                ]
-              : []),
+            ...(layoutInvalid ? layoutValidationMessages : []),
             'Review the Card Profile fields and try again.',
           ],
-          fieldErrors: z.flattenError(profile.error).fieldErrors,
+          fieldErrors,
           submitted,
         });
         return reply.code(400).type('text/html').send(html);
@@ -750,7 +783,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           joinUrl: body.data.joinUrl,
           imageUrl: body.data.imageUrl,
           sortOrder: body.data.sortOrder,
-          cardProfile: profile.data,
+          cardProfile: normalizeCardProfile(profile.data),
         });
       } catch (error: unknown) {
         const message =

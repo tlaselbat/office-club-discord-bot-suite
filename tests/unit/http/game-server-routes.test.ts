@@ -3,7 +3,11 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerGameServersRoutes } from '../../../src/http/routes/admin/game-servers.js';
 import type { SharedHelpers } from '../../../src/http/routes/admin/shared.js';
-import { resolveCardLayout } from '../../../src/modules/game-servers/card-profile.js';
+import {
+  CARD_PLACEHOLDERS,
+  defaultUpdatesElement,
+  resolveCardLayout,
+} from '../../../src/modules/game-servers/card-profile.js';
 import type { CardProfile } from '../../../src/modules/game-servers/card-profile.js';
 import { PublicError } from '../../../src/errors/public-error.js';
 
@@ -92,6 +96,110 @@ function fixture() {
 }
 
 describe('Game Server configuration routes', () => {
+  it('accepts empty hidden legacy button fields and preserves independent button toggles', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const layoutJson = JSON.stringify({ version: 3, buttons: [], elements: resolveCardLayout({}) });
+    for (const [connect, mapRules, expected] of [
+      ['', '1', { connect: false, mapRules: true }],
+      ['1', '', { connect: true, mapRules: false }],
+    ]) {
+      const response = await app.inject({
+        method: 'POST',
+        url,
+        payload: {
+          ...payload,
+          layoutVersion: '3',
+          layoutJson,
+          showConnectButton: connect,
+          showMapRulesButton: mapRules,
+        },
+      });
+      expect(response.statusCode).toBe(303);
+      expect(response.headers.location).toContain('?saved=1#card-designer');
+      expect(updateServer).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          cardProfile: expect.objectContaining({ buttons: expect.objectContaining(expected) }),
+        }),
+      );
+    }
+  });
+
+  it('returns layout field errors and preserves the invalid submitted draft', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const invalidLayout = JSON.stringify({
+      version: 3,
+      buttons: [],
+      elements: [{ id: 'invalid-id', type: 'text', visible: true, template: 'Keep this draft' }],
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        layoutVersion: '3',
+        layoutJson: invalidLayout,
+        showConnectButton: '',
+        showMapRulesButton: '',
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('Card Layout needs correction');
+    expect(response.body).toContain('Card Layout elements.0.id');
+    expect(response.body).toContain('Keep this draft');
+    expect(response.body).toContain('id="layoutJson-error"');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it('identifies strict-schema fields and preserves the submitted values', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, displayName: 'Keep this name', unknownControl: 'unexpected' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('Unexpected form field: unknownControl');
+    expect(response.body).toContain('value="Keep this name"');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it('keeps an invalid saved layout intact and offers an explicit recovery path', async () => {
+    const { app, url, shared } = fixture();
+    const saved = await shared.deps.prisma.gameServer.findFirst();
+    shared.deps.prisma.gameServer.findFirst.mockResolvedValue({
+      ...saved,
+      cardProfile: { layout: { version: 99, buttons: [], elements: [] } },
+    });
+    const response = await app.inject({ method: 'GET', url });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('data-layout-valid="false"');
+    expect(response.body).toContain('data-saved-layout-invalid="true"');
+    expect(response.body).toContain('&quot;version&quot;:99');
+    expect(response.body).toContain(
+      'Restoring defaults replaces the entire card layout and appearance',
+    );
+  });
+
+  it('preserves an invalid submitted layout so Discard can reload saved configuration', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const invalidDraft = JSON.stringify({
+      version: 3,
+      buttons: [],
+      elements: [{ id: 'bad', type: 'unknown' }],
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, layoutVersion: '3', layoutJson: invalidDraft },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('data-submitted-edits');
+    expect(response.body).toContain('data-layout-valid="false"');
+    expect(response.body).toContain('data-saved-layout-invalid="false"');
+    expect(response.body).toContain('&quot;type&quot;:&quot;unknown&quot;');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
   it('uses cached updates safely in the preview and reports persistence separately', async () => {
     const { app, url, shared, payload, updateServer } = fixture();
     const saved = await shared.deps.prisma.gameServer.findFirst();
@@ -109,7 +217,14 @@ describe('Game Server configuration routes', () => {
     });
     const page = await app.inject({ method: 'GET', url });
     expect(page.body).toContain('data-update-threads');
-    expect(page.body).toContain('Add Community Updates');
+    expect(page.body).toContain('Starting example');
+    expect(page.body).toContain('Stale example');
+    expect(page.body).toContain('Widen preview');
+    expect(page.body).toContain('Show or hide card contents');
+    expect(page.body).toContain('Community Updates preset');
+    for (const [name] of CARD_PLACEHOLDERS) {
+      expect(page.body).toContain(`value="{${name}}"`);
+    }
     expect(page.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(page.body).not.toContain('<script>alert(1)</script>');
     expect(shared.deps.prisma.gameServer.findFirst).toHaveBeenLastCalledWith({
@@ -149,14 +264,136 @@ describe('Game Server configuration routes', () => {
       url,
       payload: {
         ...payload,
+        showConnectButton: '1',
+        showMapRulesButton: '1',
         layoutVersion: '2',
         layoutJson: JSON.stringify({ version: 2, elements }),
       },
     });
     expect(response.statusCode).toBe(303);
     const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
-    expect(command.cardProfile.layout?.elements).toEqual(elements);
+    expect(command.cardProfile.layout?.version).toBe(2);
+    expect(command.cardProfile.layout?.elements.map((element) => element.type)).toEqual(
+      elements.map((element) => element.type),
+    );
+    expect(command.cardProfile.layout?.elements.map((element) => element.id)).toEqual(
+      elements.map((element) => element.id),
+    );
+    expect(command.cardProfile.buttons).toMatchObject({
+      connect: true,
+      mapRules: true,
+      connectLabel: 'Connect',
+      mapRulesLabel: 'Map & Rules',
+    });
   });
+  it('accepts restored default legacy buttons on the first edit submission', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const elements = resolveCardLayout(undefined, null);
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        showConnectButton: '1',
+        showMapRulesButton: '1',
+        layoutVersion: '3',
+        layoutJson: JSON.stringify({ version: 3, buttons: [], elements }),
+      },
+    });
+    expect(response.statusCode).toBe(303);
+    expect(updateServer).toHaveBeenCalledOnce();
+  });
+  it('persists and hydrates a custom Community Updates nested layout', async () => {
+    const { app, url, payload, updateServer, shared } = fixture();
+    const original = (await shared.deps.prisma.gameServer.findFirst()) as {
+      cardProfile: unknown;
+      description: string | null;
+    };
+    const layout = resolveCardLayout(original.cardProfile, original.description);
+    const blocks = [
+      {
+        id: '00000000-0000-4000-8000-000000000101',
+        type: 'text',
+        visible: true,
+        template: 'Patch notes for {servername}',
+        style: 'medium',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000102',
+        type: 'gallery',
+        visible: true,
+        items: [
+          {
+            id: '00000000-0000-4000-8000-000000000103',
+            source: 'custom',
+            url: 'https://example.com/release.png',
+            description: 'Release image',
+          },
+        ],
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000104',
+        type: 'separator',
+        visible: true,
+        divider: true,
+        spacing: 1,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000105',
+        type: 'feed',
+        feed: 'CHANGELOG',
+        visible: true,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000106',
+        type: 'feed',
+        feed: 'ANNOUNCEMENTS',
+        visible: true,
+      },
+    ];
+    const legacyUpdates = defaultUpdatesElement('00000000-0000-4000-8000-000000000100');
+    if (legacyUpdates.type !== 'updates') throw new Error('Expected legacy Updates fixture');
+    const elements = [...layout.slice(0, -3), { ...legacyUpdates, blocks }];
+    const result = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        layoutVersion: '2',
+        layoutJson: JSON.stringify({ version: 2, elements }),
+      },
+    });
+    expect(result.statusCode).toBe(303);
+    const command = updateServer.mock.calls[0]?.[0] as { cardProfile: CardProfile };
+    expect(command.cardProfile.layout?.version).toBe(2);
+    expect(
+      command.cardProfile.layout?.elements.find((element) => element.type === 'updates'),
+    ).toMatchObject({
+      type: 'updates',
+      blocks,
+    });
+    const savedUpdates = command.cardProfile.layout?.elements.find(
+      (element) => element.type === 'updates',
+    );
+    expect(savedUpdates?.type).toBe('updates');
+    expect(
+      savedUpdates?.type === 'updates'
+        ? savedUpdates.blocks?.find((block) => block.id === blocks[0]?.id)
+        : undefined,
+    ).toMatchObject({
+      type: 'text',
+      template: 'Patch notes for {servername}',
+    });
+    shared.deps.prisma.gameServer.findFirst.mockResolvedValue({
+      ...original,
+      cardProfile: command.cardProfile,
+    });
+    const reload = await app.inject({ method: 'GET', url });
+    expect(reload.statusCode).toBe(200);
+    expect(reload.body).toContain('Patch notes for {servername}');
+    expect(reload.body).toContain('release.png');
+  });
+
   it('hydrates saved registration and Card Profile', async () => {
     const { app, url } = fixture();
     const response = await app.inject({ method: 'GET', url });

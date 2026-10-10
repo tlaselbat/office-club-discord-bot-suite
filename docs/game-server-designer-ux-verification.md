@@ -70,3 +70,27 @@ The preview remains an approximation: Discord controls final rendering, custom e
 - `docs/game-server-designer-ux-verification.md`: this report.
 
 One bounded worker and one read-only reviewer were used. Both reached a usage limit; the primary agent completed the final editor integration, review, and verification.
+
+## October 10, 2026 Card Studio follow-up
+
+### Before/after plan
+
+- Before: the server registration section appeared before Card Designer, navigation used the older Settings/Card Designer/Live & Publishing/Advanced labels, the Discord preview was passive, relative insertion was not available, and Undo only restored the last removed element.
+- After: Card Design is the default first editing section. The compact section bar links to Card Design, Server Settings, Publishing, and Diagnostics. The outline, one inspector, and preview remain together on wide screens; they stack at narrower widths.
+- Existing fields are still moved into one inspector, so there is no duplicate writable control. The saved layout format, element IDs, route, Components V2 renderer, Discord publication behavior, and schema were not changed.
+
+### Direct editing and draft history
+
+- Preview blocks carry their existing element IDs and are selectable by mouse, Enter, or Space. Outline selection highlights the matching preview block. When an element is hidden, empty, or suppressed, the editor explains why it is absent.
+- Clicking a reusable Connect or Map & Rules preview button selects its existing row and focuses the corresponding reusable-button editor. Preview clicks do not navigate to a Discord destination or execute an action.
+- The outline and preview header offer Insert Above/Below for the selected block. The insert type uses the existing element factory; existing element-count and exclusive Updates/legacy-action rules still apply. New elements are selected and their primary field receives focus.
+- Draft-only undo/redo now covers layout, named server settings, visibility, reorder, button library, and text/configuration edits. The bounded history keeps 50 snapshots and coalesces continuous typing for 700 ms. Save and Discard clear history. Selection, preview modes, panel changes, and scrolling do not dirty the draft or create history entries.
+- Typing `{` in a supported text template opens a filtered, accessible placeholder list. Arrow Down and Enter can select a suggestion; insertion preserves the cursor and multiline text and enforces the 500-character limit. The existing manual placeholder picker remains available.
+
+### Rendering checks
+
+The local isolated fixture was reviewed at 1920, 1440, 1280, 1024, 768, and 390 CSS pixels. No horizontal document overflow was measured. At 1920/1440/1280 the outline, inspector, and preview fit in the desktop workspace; at 1024/768/390 the editor and preview use normal document flow. At 390, preview selection returned to the inspector without locking page scroll. The preview was expanded and collapsed without covering the save bar or reducing editor width. Screenshots were captured at desktop and mobile sizes during the browser review; no fixture data was persisted.
+
+Behavioral checks covered preview-to-outline and outline-to-preview selection, keyboard selection, clean selection state, Connect preview editing without navigation, relative insertion, stable IDs through undo/redo, text edit undo/redo, Discard, filtered placeholder insertion, the 500-character insertion guard, and hidden-element explanation. The browser console had no errors in the final pass.
+
+The current branch already persists layout version 3 and accepts legacy versions 1 and 2. That current contract was preserved despite the older version-2 reference in the request. The brief/detail Compact and Detailed starter presets are deferred as the optional follow-up called out in the request; the existing explicit Community Updates preset remains available. A separate [Phase 3 architecture proposal](game-server-card-studio-phase-3-proposal.md) records possible schema, renderer, migration, and release work without implementing it.

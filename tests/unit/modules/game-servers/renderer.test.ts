@@ -9,6 +9,7 @@ import {
   resolveMapImageUrl,
   displayMapName,
   cardFingerprint,
+  formatRelativeUpdateTimestamp,
   styleCardLine,
   cardPlaceholderValues,
   resolveCardTemplate,
@@ -19,10 +20,14 @@ import {
 import {
   CARD_PLACEHOLDERS,
   CARD_LINE_IDS,
+  defaultUpdatesElement,
+  normalizeCardProfile,
   resolveCardLines,
   resolveCardLayout,
   resolveCardProfile,
+  type CardLayoutElement,
 } from '../../../../src/modules/game-servers/card-profile.js';
+import { parseGameServerCustomId } from '../../../../src/modules/game-servers/custom-id.js';
 
 const baseSnapshot = {
   hostingState: 'RUNNING',
@@ -122,7 +127,180 @@ function componentCount(component: Record<string, unknown>): number {
   );
 }
 
+function feedTextRow(feed: UpdateThreadView['type'], id: string): Record<string, unknown> {
+  const key = feed === 'ANNOUNCEMENTS' ? 'announcements' : 'changelog';
+  const label = feed === 'ANNOUNCEMENTS' ? '📢 **Announcements**' : '🛠 **Changelog**';
+  return {
+    id,
+    type: 'text',
+    label: feed === 'ANNOUNCEMENTS' ? 'Announcements' : 'Changelog',
+    template: `${label} {${key}.preview}{${key}.new}\n-# {${key}.time}`,
+    style: 'normal',
+    visible: true,
+    accessory: {
+      type: 'thread_link',
+      destination: feed,
+      enabled: true,
+      label: 'Open',
+      visibility: 'thread_exists',
+    },
+    conditionalVisibility: { mode: 'always', source: feed },
+    emptyBehavior: 'fallback',
+    emptyText: feed === 'ANNOUNCEMENTS' ? 'No announcements yet.' : 'No changelog entries yet.',
+    previewLength: 140,
+  };
+}
+
 describe('Game Server rendering', () => {
+  it('resolves update placeholders in ordinary text rows and attaches a native Open accessory', () => {
+    const threadId = '100000000000000010';
+    const row = {
+      id: '00000000-0000-4000-8000-000000000301',
+      type: 'text',
+      label: 'Release preview',
+      template:
+        '{Announcements.Preview} {announcements.time} {announcements.new} {announcements.url}',
+      style: 'normal',
+      timestampMode: 'discord_native',
+      visible: true,
+      accessory: {
+        type: 'thread_link',
+        destination: 'ANNOUNCEMENTS',
+        enabled: true,
+        label: 'Open release',
+        visibility: 'message_exists',
+      },
+      conditionalVisibility: { mode: 'always', source: 'ANNOUNCEMENTS' },
+      emptyBehavior: 'fallback',
+      emptyText: 'No announcement',
+      previewLength: 140,
+    } as const;
+    const view = {
+      ...server,
+      cardProfile: { layout: { version: 3, elements: [row] } },
+      updateThreads: [
+        {
+          type: 'ANNOUNCEMENTS' as const,
+          threadId,
+          latestMessageText: '@everyone **release**\nnow',
+          latestMessageAt: new Date('2026-10-08T00:00:00.000Z'),
+          notificationExpiresAt: new Date('2030-01-01T00:00:00.000Z'),
+        },
+      ],
+    };
+    const container = firstContainer(renderGameServerCard(view, secret));
+    const section = containerComponents(container)[0];
+    expect(section?.type).toBe(ComponentType.Section);
+    expect(section?.components).toHaveLength(1);
+    expect((section?.components as { content: string }[])[0]?.content).toContain('@\u200beveryone');
+    expect((section?.components as { content: string }[])[0]?.content).not.toContain('**release**');
+    expect((section?.components as { content: string }[])[0]?.content).toContain(
+      '<t:1791417600:R>',
+    );
+    expect((section?.components as { content: string }[])[0]?.content).toContain('🆕');
+    expect(section?.accessory).toMatchObject({
+      style: 5,
+      label: 'Open release',
+      url: `https://discord.com/channels/${server.guildId}/${threadId}`,
+    });
+  });
+
+  it('uses plain relative timestamps by default and emits native timestamps only when selected', () => {
+    vi.useFakeTimers();
+    try {
+      const now = new Date('2026-10-10T12:00:00.000Z');
+      const latestMessageAt = new Date(now.getTime() - 48 * 60_000);
+      vi.setSystemTime(now);
+      const row = {
+        id: '00000000-0000-4000-8000-000000000302',
+        type: 'text',
+        label: 'Timestamp',
+        template: 'Posted {announcements.time}; formatted **{announcements.time}**',
+        style: 'normal',
+        visible: true,
+      };
+      const view = {
+        ...server,
+        cardProfile: { layout: { version: 3, elements: [row] } },
+        updateThreads: [
+          {
+            type: 'ANNOUNCEMENTS' as const,
+            threadId: '100000000000000010',
+            latestMessageText: 'Announcement',
+            latestMessageAt,
+            notificationExpiresAt: null,
+          },
+        ],
+      };
+      let text = textContents(firstContainer(renderGameServerCard(view, secret)));
+      expect(text).toContain('Posted 48 minutes ago; formatted **48 minutes ago**');
+      expect(text).not.toContain('<t:');
+      expect(formatRelativeUpdateTimestamp(new Date('invalid'), now)).toBe('');
+
+      text = textContents(
+        firstContainer(
+          renderGameServerCard(
+            {
+              ...view,
+              cardProfile: {
+                layout: {
+                  version: 3,
+                  elements: [{ ...row, timestampMode: 'discord_native' }],
+                },
+              },
+            },
+            secret,
+          ),
+        ),
+      );
+      expect(text).toContain(`<t:${String(latestMessageAt.getTime() / 1000)}:R>`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('hides update-only rows and removes their orphan separators when a feed is empty', () => {
+    const elements = [
+      {
+        id: '00000000-0000-4000-8000-000000000311',
+        type: 'separator',
+        label: 'Before',
+        visible: true,
+        divider: true,
+        spacing: 1,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000312',
+        type: 'text',
+        label: 'Empty feed',
+        template: '{announcements.preview}',
+        style: 'normal',
+        visible: true,
+        emptyBehavior: 'hide',
+        previewLength: 140,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000313',
+        type: 'separator',
+        label: 'After',
+        visible: true,
+        divider: true,
+        spacing: 1,
+      },
+    ];
+    const container = firstContainer(
+      renderGameServerCard(
+        { ...server, cardProfile: { layout: { version: 3, elements } } },
+        secret,
+      ),
+    );
+    expect(
+      containerComponents(container).some(
+        (component) => component.type === ComponentType.Separator,
+      ),
+    ).toBe(false);
+  });
+
   it('applies the selected text style inside a valid thumbnail section', () => {
     const result = renderGameServerCard(
       {
@@ -164,7 +342,7 @@ describe('Game Server rendering', () => {
     [false, true],
     [false, false],
   ])(
-    'renders populated and empty update rows (%s, %s) as native valid components',
+    'renders cached messages and fallback text in reusable feed rows (%s, %s)',
     (announcements, changelog) => {
       const postedAt = new Date('2026-10-04T12:00:00Z');
       const views: UpdateThreadView[] = (['ANNOUNCEMENTS', 'CHANGELOG'] as const).map(
@@ -179,70 +357,53 @@ describe('Game Server rendering', () => {
       const container = firstContainer(
         renderGameServerCard({ ...server, updateThreads: views }, secret),
       );
-      const text = textContents(container);
-      expect(text).toContain('Latest Updates');
-      expect(text).toContain(announcements ? 'ANNOUNCEMENTS update' : 'No announcements yet.');
-      expect(text).toContain(changelog ? 'CHANGELOG update' : 'No changelog entries yet.');
-      if (announcements || changelog)
-        expect(text).toContain(`<t:${String(postedAt.getTime() / 1000)}:R>`);
       const components = containerComponents(container);
-      const heading = components.find(
-        (component) =>
-          component.type === ComponentType.TextDisplay &&
-          String(component.content).includes('Latest Updates'),
-      );
-      expect(heading).toEqual({ type: ComponentType.TextDisplay, content: '**Latest Updates**' });
       const sections = components.filter(
         (component) =>
           component.type === ComponentType.Section &&
           (component.accessory as { label?: string } | undefined)?.label === 'Open',
       );
-      for (const [index, section] of sections.entries()) {
-        const title = (section.components as Record<string, unknown>[])[0];
-        expect(section.type).toBe(ComponentType.Section);
-        expect(title?.content).toBe(index === 0 ? '📢 **Announcements**' : '🛠 **Changelog**');
-        expect(section.accessory).toMatchObject({
-          style: 5,
-          label: 'Open',
-          url: `https://discord.com/channels/${server.guildId}/${views[index]?.threadId ?? ''}`,
-        });
-        const summary = (section.components as Record<string, unknown>[])[1];
-        expect(summary).toMatchObject({
-          type: ComponentType.TextDisplay,
-          content: expect.stringContaining(
-            index === 0
-              ? announcements
-                ? 'ANNOUNCEMENTS update'
-                : 'No announcements yet.'
-              : changelog
-                ? 'CHANGELOG update'
-                : 'No changelog entries yet.',
-          ),
-        });
-      }
+      expect(sections).toHaveLength(2);
+      expect(
+        sections.map((section) => (section.components as { content: string }[])[0]?.content),
+      ).toEqual([
+        expect.stringContaining(announcements ? 'ANNOUNCEMENTS update' : 'No announcements yet'),
+        expect.stringContaining(changelog ? 'CHANGELOG update' : 'No changelog entries yet'),
+      ]);
+      expect(sections.every((section) => (section.components as unknown[]).length === 1)).toBe(
+        true,
+      );
+      expect(
+        components.some(
+          (component) =>
+            component.type === ComponentType.TextDisplay &&
+            String(component.content).includes('Latest Updates'),
+        ),
+      ).toBe(false);
+      if (announcements || changelog)
+        expect(textContents(container)).toMatch(
+          /\d+ (second|minute|hour|day|week|month|year)s? ago/,
+        );
+      expect(textContents(container)).not.toContain('<t:');
       const client = new Client({ intents: [] });
       const api = client.options.jsonTransformer?.(container) as APIContainerComponent;
       expect(() => new ContainerBuilder(api).toJSON()).not.toThrow();
-      expect(api.components.length).toBeLessThanOrEqual(40);
       expect(componentCount(container)).toBeLessThanOrEqual(40);
     },
   );
 
   it('renders reordered feeds with independent heading visibility and matching button association', () => {
     const layout = resolveCardLayout({});
-    const updates = layout.find((element) => element.type === 'updates');
-    if (!updates) throw new Error('Expected Updates layout element');
-    const configured = {
-      ...updates,
-      showHeading: false,
-      feedOrder: ['CHANGELOG', 'ANNOUNCEMENTS'] as const,
-    };
+    const configured = [
+      feedTextRow('CHANGELOG', '00000000-0000-4000-8000-000000000401'),
+      feedTextRow('ANNOUNCEMENTS', '00000000-0000-4000-8000-000000000402'),
+    ];
     const view = {
       ...server,
       cardProfile: {
         layout: {
-          version: 2 as const,
-          elements: layout.map((element) => (element.type === 'updates' ? configured : element)),
+          version: 3 as const,
+          elements: [...layout.slice(0, -2), ...configured],
         },
       },
       updateThreads: [
@@ -272,7 +433,10 @@ describe('Game Server rendering', () => {
       updateParts
         .filter((part) => part.type === ComponentType.Section)
         .map((part) => (part.components as { content: string }[])[0]?.content),
-    ).toEqual(['🛠 **Changelog**', '📢 **Announcements**']);
+    ).toEqual([
+      expect.stringContaining('🛠 **Changelog** Patch'),
+      expect.stringContaining('📢 **Announcements** News'),
+    ]);
     expect(
       updateParts
         .filter((part) => part.type === ComponentType.Section)
@@ -284,20 +448,111 @@ describe('Game Server rendering', () => {
     expect(updateParts.some((part) => JSON.stringify(part).includes('Latest Updates'))).toBe(false);
   });
 
+  it('renders nested Updates feeds, custom text, galleries, heading and separators in configured order', () => {
+    const original = {
+      ...defaultUpdatesElement('00000000-0000-4000-8000-000000000099'),
+      showHeading: true,
+    };
+    if (original.type !== 'updates') throw new Error('Missing legacy Updates fixture');
+    const uuid = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    const blocks = [
+      { id: uuid(1), type: 'feed', feed: 'CHANGELOG', visible: true },
+      { id: uuid(2), type: 'separator', divider: false, spacing: 2, visible: true },
+      {
+        id: uuid(3),
+        type: 'text',
+        template: 'Release notes for {servername}',
+        style: 'medium',
+        visible: true,
+      },
+      {
+        id: uuid(4),
+        type: 'gallery',
+        visible: true,
+        items: [
+          {
+            id: uuid(5),
+            source: 'custom',
+            url: 'https://example.com/release.png',
+            description: 'Release art',
+          },
+        ],
+      },
+      { id: uuid(6), type: 'heading', visible: true },
+      { id: uuid(7), type: 'feed', feed: 'ANNOUNCEMENTS', visible: true },
+    ] as const;
+    const migrated = normalizeCardProfile({
+      layout: { version: 2, elements: [{ ...original, blocks }] },
+    });
+    const view = {
+      ...server,
+      cardProfile: migrated,
+      updateThreads: [
+        {
+          type: 'ANNOUNCEMENTS' as const,
+          threadId: '100000000000000010',
+          latestMessageText: 'News',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
+        {
+          type: 'CHANGELOG' as const,
+          threadId: '100000000000000011',
+          latestMessageText: 'Patch',
+          latestMessageAt: null,
+          notificationExpiresAt: null,
+        },
+      ],
+    };
+    const parts = containerComponents(firstContainer(renderGameServerCard(view, secret))).slice(-6);
+    expect(parts.map((part) => part.type)).toEqual([
+      ComponentType.Section,
+      ComponentType.Separator,
+      ComponentType.TextDisplay,
+      ComponentType.MediaGallery,
+      ComponentType.TextDisplay,
+      ComponentType.Section,
+    ]);
+    expect(parts[1]).toEqual({ type: ComponentType.Separator, divider: false, spacing: 2 });
+    expect(parts[2]).toEqual({
+      type: ComponentType.TextDisplay,
+      content: '## Release notes for 1v1 Arena',
+    });
+    expect(parts[3]).toMatchObject({
+      type: ComponentType.MediaGallery,
+      items: [{ media: { url: 'https://example.com/release.png' }, description: 'Release art' }],
+    });
+    expect((parts[4] as { content: string }).content).toContain('Latest Updates');
+    expect(parts[0]?.components).toHaveLength(2);
+    expect(parts[5]?.components).toHaveLength(2);
+    expect((parts[0]?.accessory as { url: string }).url).toContain('/100000000000000011');
+    expect((parts[5]?.accessory as { url: string }).url).toContain('/100000000000000010');
+  });
+
   it('renders an optional native separator only between two rendered feeds', () => {
-    const layout = resolveCardLayout({}).map((element) =>
-      element.type === 'updates'
-        ? {
-            ...element,
-            showHeading: false,
-            separator: { enabled: true, divider: false, spacing: 2 as const },
-            emptyBehavior: 'hide_empty_entries' as const,
-          }
-        : element,
-    );
+    const baseLayout = resolveCardLayout({});
+    const layout = [
+      ...baseLayout.slice(0, -3),
+      {
+        ...feedTextRow('ANNOUNCEMENTS', '00000000-0000-4000-8000-000000000411'),
+        emptyBehavior: 'hide',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000412',
+        type: 'separator',
+        label: 'Feed separator',
+        visible: true,
+        divider: false,
+        spacing: 2,
+      },
+      {
+        ...feedTextRow('CHANGELOG', '00000000-0000-4000-8000-000000000413'),
+        emptyBehavior: 'hide',
+      },
+    ];
     const populated = {
       ...server,
-      cardProfile: { layout: { version: 2 as const, elements: layout } },
+      cardProfile: { layout: { version: 3 as const, elements: layout } },
       updateThreads: [
         {
           type: 'ANNOUNCEMENTS' as const,
@@ -325,7 +580,7 @@ describe('Game Server rendering', () => {
     ]);
     const openSections = updateParts.filter((part) => part.type === ComponentType.Section);
     for (const section of openSections) {
-      expect(section.components).toHaveLength(2);
+      expect(section.components).toHaveLength(1);
       expect(section.accessory).toMatchObject({
         type: ComponentType.Button,
         style: 5,
@@ -353,20 +608,34 @@ describe('Game Server rendering', () => {
     ).toHaveLength(1);
   });
 
-  it('keeps title and summary as standalone displays when Open buttons are disabled', () => {
-    const layout = resolveCardLayout({}).map((element) =>
-      element.type === 'updates'
-        ? {
-            ...element,
-            showHeading: false,
-            announcements: { ...element.announcements, showOpenButton: false },
-            changelog: { ...element.changelog, showOpenButton: false },
-          }
-        : element,
-    );
+  it('renders each reusable feed text row without a Section when its Open button is disabled', () => {
+    const baseLayout = resolveCardLayout({});
+    const layout = [
+      ...baseLayout.slice(0, -2),
+      {
+        ...feedTextRow('ANNOUNCEMENTS', '00000000-0000-4000-8000-000000000421'),
+        accessory: {
+          type: 'thread_link',
+          destination: 'ANNOUNCEMENTS',
+          enabled: false,
+          label: 'Open',
+          visibility: 'thread_exists',
+        },
+      },
+      {
+        ...feedTextRow('CHANGELOG', '00000000-0000-4000-8000-000000000422'),
+        accessory: {
+          type: 'thread_link',
+          destination: 'CHANGELOG',
+          enabled: false,
+          label: 'Open',
+          visibility: 'thread_exists',
+        },
+      },
+    ];
     const view = {
       ...server,
-      cardProfile: { layout: { version: 2 as const, elements: layout } },
+      cardProfile: { layout: { version: 3 as const, elements: layout } },
       updateThreads: [
         {
           type: 'ANNOUNCEMENTS' as const,
@@ -395,10 +664,12 @@ describe('Game Server rendering', () => {
     const updateText = components
       .filter((component) => component.type === ComponentType.TextDisplay)
       .map((component) => String(component.content));
-    expect(updateText).toContain('📢 **Announcements**');
-    expect(updateText).toContain('News');
-    expect(updateText).toContain('🛠 **Changelog**');
-    expect(updateText).toContain('Patch');
+    expect(updateText).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('📢 **Announcements** News'),
+        expect.stringContaining('🛠 **Changelog** Patch'),
+      ]),
+    );
   });
 
   it('expires NEW independently at the exact boundary and fingerprints all cached update fields', () => {
@@ -419,14 +690,32 @@ describe('Game Server rendering', () => {
         threadId: '100000000000000011',
         notificationExpiresAt: new Date(now.getTime() + 2000),
       };
-      const view = { ...server, updateThreads: [first, second] };
+      const layout = resolveCardLayout({});
+      const announcements = {
+        ...feedTextRow('ANNOUNCEMENTS', '00000000-0000-4000-8000-000000000621'),
+        template: '{announcements.preview}{announcements.new}',
+      };
+      const changelog = {
+        ...feedTextRow('CHANGELOG', '00000000-0000-4000-8000-000000000622'),
+        template: '{changelog.preview}{changelog.new}',
+      };
+      const view = {
+        ...server,
+        cardProfile: {
+          layout: {
+            version: 3 as const,
+            elements: [...layout.slice(0, -2), announcements, changelog],
+          },
+        },
+        updateThreads: [first, second],
+      };
       expect(
         textContents(firstContainer(renderGameServerCard(view, secret))).match(/🆕/g),
       ).toHaveLength(2);
       vi.setSystemTime(new Date(now.getTime() + 1000));
       let text = textContents(firstContainer(renderGameServerCard(view, secret)));
-      expect(text).not.toContain('**Announcements** 🆕');
-      expect(text).toContain('**Changelog** 🆕');
+      expect(text.match(/🆕/g)).toHaveLength(1);
+      expect(text).toContain('News🆕');
       vi.setSystemTime(new Date(now.getTime() + 2000));
       text = textContents(firstContainer(renderGameServerCard(view, secret)));
       expect(text).not.toContain('🆕');
@@ -441,7 +730,7 @@ describe('Game Server rendering', () => {
           cardFingerprint({ ...view, updateThreads: [{ ...first, ...changes }, second] }),
         ).not.toEqual(cardFingerprint(view));
       }
-      expect(cardFingerprint(view).layoutVersion).toBe(19);
+      expect(cardFingerprint(view).layoutVersion).toBe(21);
     } finally {
       vi.useRealTimers();
     }
@@ -449,30 +738,38 @@ describe('Game Server rendering', () => {
 
   it('renders customized Updates in layout order with independent feed visibility and safe links', () => {
     const layout = resolveCardLayout({});
-    const updates = layout.find((element) => element.type === 'updates');
-    if (!updates) throw new Error('Expected Updates layout element');
-    const customized = {
-      ...updates,
-      title: 'Community Brief',
-      emptyBehavior: 'hide_empty_entries' as const,
-      announcements: {
-        ...updates.announcements,
-        visible: false,
-        latestMessageLength: 40,
-      },
-      changelog: {
-        ...updates.changelog,
-        displayLabel: 'Patch notes',
-        textStyle: 'heading' as const,
-        openButtonLabel: 'Read notes',
-        latestMessageLength: 40,
+    const heading = {
+      id: '00000000-0000-4000-8000-000000000430',
+      type: 'text' as const,
+      label: 'Community Brief',
+      template: 'Community Brief',
+      visible: true,
+      style: 'normal' as const,
+    };
+    const announcements = {
+      ...feedTextRow('ANNOUNCEMENTS', '00000000-0000-4000-8000-000000000431'),
+      visible: false,
+      previewLength: 40,
+    };
+    const changelogRow = {
+      ...feedTextRow('CHANGELOG', '00000000-0000-4000-8000-000000000432'),
+      label: 'Patch notes',
+      template: '# Patch notes {changelog.preview}',
+      previewLength: 40,
+      emptyBehavior: 'hide',
+      accessory: {
+        type: 'thread_link',
+        destination: 'CHANGELOG',
+        enabled: true,
+        label: 'Read notes',
+        visibility: 'thread_exists',
       },
     };
-    const ordered = layout.map((element) => (element.type === 'updates' ? customized : element));
+    const ordered = [...layout.slice(0, -2), heading, announcements, changelogRow];
     const result = renderGameServerCard(
       {
         ...server,
-        cardProfile: { layout: { version: 2, elements: ordered } },
+        cardProfile: { layout: { version: 3, elements: ordered } },
         updateThreads: [
           {
             type: 'CHANGELOG',
@@ -498,24 +795,23 @@ describe('Game Server rendering', () => {
     expect(contents.join('\n')).not.toContain('Announcements');
     expect(contents.join('\n')).not.toContain('A'.repeat(41));
     const components = containerComponents(container);
-    const changelog = components.find(
+    const changelogSection = components.find(
       (component) =>
         component.type === ComponentType.Section &&
-        (component.components as Record<string, unknown>[]).some(
-          (child) => child.content === '# Patch notes',
+        (component.components as Record<string, unknown>[]).some((child) =>
+          String(child.content).startsWith('# Patch notes'),
         ),
     );
-    if (!changelog) throw new Error('Expected Changelog title row');
-    expect(changelog.accessory).toMatchObject({
+    if (!changelogSection) throw new Error('Expected Changelog preview row');
+    expect(changelogSection.accessory).toMatchObject({
       style: 5,
       label: 'Read notes',
       url: 'https://discord.com/channels/123456789012345678/100000000000000011',
     });
-    expect((changelog.components as Record<string, unknown>[])[0]?.content).toBe('# Patch notes');
-    expect((changelog.components as Record<string, unknown>[])[1]).toMatchObject({
-      type: ComponentType.TextDisplay,
-      content: expect.stringContaining('A'.repeat(40)),
-    });
+    expect(changelogSection.components).toHaveLength(1);
+    expect((changelogSection.components as Record<string, unknown>[])[0]?.content).toContain(
+      `${'A'.repeat(39)}…`,
+    );
     expect(result.allowedMentions).toEqual({ parse: [] });
   });
 
@@ -587,12 +883,12 @@ describe('Game Server rendering', () => {
     const container = firstContainer(result);
     expect(container.type).toBe(17);
     const text = textContents(container);
-    expect(text).toContain('# 1v1 Arena\n### • Online · Los Angeles\n-# 0/16 players');
+    expect(text).toContain('1v1 Arena\n• Online · Los Angeles\n0/16 players');
     expect(text).toContain(
-      'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.',
+      'Challenge other players 1v1, warm up, or kill time between matches. Open to all Office Club members.',
     );
-    expect(text).toContain('**Current map**\n`aim_map_office`');
-    expect(text).toContain('`arena.example.com:27015`');
+    expect(text).toContain('Current map: aim_map_office');
+    expect(text).toContain('arena.example.com:27015');
     expect(text).not.toContain('Connect Command');
     expect(text).not.toContain('**Host**');
     expect(text).not.toContain('📍');
@@ -610,9 +906,9 @@ describe('Game Server rendering', () => {
     const components = containerComponents(container);
     const section = components[0] as Record<string, unknown>;
     const header = (section.components as Record<string, unknown>[])[0];
-    expect(header?.content).toBe('# 1v1 Arena\n### • Online · Los Angeles\n-# 0/16 players');
+    expect(header?.content).toBe('1v1 Arena\n• Online · Los Angeles\n0/16 players');
     expect(components.map((component) => component.type)).toEqual([
-      9, 10, 14, 10, 12, 10, 1, 14, 10, 10, 10, 10, 10,
+      9, 10, 14, 10, 12, 10, 1, 14, 10, 10,
     ]);
   });
 
@@ -671,6 +967,68 @@ describe('Game Server rendering', () => {
     expect(connectButton?.customId).toMatch(/^gs:connect:/);
   });
 
+  it('renders independently configured buttons in row order with distinct signed instances', () => {
+    const firstId = '00000000-0000-4000-8000-000000000021';
+    const secondId = '00000000-0000-4000-8000-000000000022';
+    const rowId = '00000000-0000-4000-8000-000000000023';
+    const view = {
+      ...server,
+      cardProfile: {
+        layout: {
+          version: 3,
+          buttons: [
+            {
+              id: firstId,
+              label: '<:party:12345678901234567> Join now',
+              emoji: null,
+              style: 'primary',
+              action: 'connect',
+              destination: null,
+              visible: true,
+            },
+            {
+              id: secondId,
+              label: 'Copy server address',
+              emoji: null,
+              style: 'secondary',
+              action: 'copy-address',
+              destination: null,
+              visible: true,
+            },
+          ],
+          elements: [
+            {
+              id: rowId,
+              type: 'button_row',
+              label: 'Quick actions',
+              visible: true,
+              buttonIds: [secondId, firstId, firstId],
+            },
+          ],
+        },
+      },
+    };
+    const container = firstContainer(renderGameServerCard(view, secret));
+    const row = containerComponents(container).find((component) => component.type === 1);
+    const rendered = Array.isArray(row?.components)
+      ? (row.components as Record<string, unknown>[])
+      : [];
+    expect(rendered.map((button) => button.label)).toEqual([
+      'Copy server address',
+      'Join now',
+      'Join now',
+    ]);
+    expect(rendered[1]?.emoji).toEqual({
+      animated: false,
+      name: 'party',
+      id: '12345678901234567',
+    });
+    expect(rendered.map((button) => button.customId)).toHaveLength(3);
+    expect(rendered[2]?.customId).toBe(rendered[1]?.customId);
+    expect(new Set(rendered.map((button) => button.customId)).size).toBe(2);
+    expect(rendered.every((button) => String(button.customId).length <= 100)).toBe(true);
+  });
+
   it('renders an unavailable connect command when no address is configured', () => {
     const view = {
       ...server,
@@ -678,7 +1036,7 @@ describe('Game Server rendering', () => {
       snapshot: { ...baseSnapshot, host: null, port: null },
     };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
-    expect(text).toContain('`Unavailable`');
+    expect(text).toContain('Unavailable');
   });
 
   it('renders distinct online, offline, and starting states', () => {
@@ -726,12 +1084,12 @@ describe('Game Server rendering', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, datacenter: null } };
     const container = firstContainer(renderGameServerCard(view, secret));
     const text = textContents(container);
-    expect(text).toContain('# 1v1 Arena\n### • Online\n-# 0/16 players');
+    expect(text).toContain('1v1 Arena\n• Online\n0/16 players');
     expect(text).not.toContain('📍');
     const section = containerComponents(container)[0] as Record<string, unknown>;
     expect(section.components as Record<string, unknown>[]).toHaveLength(1);
     expect(containerComponents(container).map((component) => component.type)).toEqual([
-      9, 10, 14, 10, 12, 10, 1, 14, 10, 10, 10, 10, 10,
+      9, 10, 14, 10, 12, 10, 1, 14, 10, 10,
     ]);
   });
 
@@ -739,22 +1097,22 @@ describe('Game Server rendering', () => {
     const container = firstContainer(renderGameServerCard(server, secret));
     const components = containerComponents(container);
     expect(components.map((component) => component.type)).toEqual([
-      9, 10, 14, 10, 12, 10, 1, 14, 10, 10, 10, 10, 10,
+      9, 10, 14, 10, 12, 10, 1, 14, 10, 10,
     ]);
     const section = components[0] as Record<string, unknown>;
     expect(section.components as Record<string, unknown>[]).toHaveLength(1);
     expect(components[1]).toEqual({
       type: 10,
       content:
-        'Challenge other players 1v1, warm up, or kill time between matches.\n-# Open to all Office Club members.',
+        'Challenge other players 1v1, warm up, or kill time between matches. Open to all Office Club members.',
     });
     expect(components[2]).toEqual({ type: 14, divider: true, spacing: 1 });
     expect(components[3]).toEqual({
       type: 10,
-      content: '**Current map**\n`aim_map_office`',
+      content: 'Current map: aim_map_office',
     });
     expect(components[4]?.type).toBe(12);
-    expect(components[5]).toEqual({ type: 10, content: '`arena.example.com:27015`' });
+    expect(components[5]).toEqual({ type: 10, content: 'arena.example.com:27015' });
   });
 
   it('serializes the card with separate update rows and keeps all action behaviors', () => {
@@ -763,9 +1121,9 @@ describe('Game Server rendering', () => {
     const transform = client.options.jsonTransformer;
     if (transform === undefined) throw new Error('Expected the default Discord JSON transformer');
     const api = transform(container) as APIContainerComponent;
-    expect(api.components).toHaveLength(13);
+    expect(api.components).toHaveLength(10);
     expect(() => new ContainerBuilder(api).toJSON()).not.toThrow();
-    expect(componentCount(container)).toBe(18);
+    expect(componentCount(container)).toBe(15);
     expect(componentCount(container)).toBeLessThanOrEqual(40);
     expect(
       containerComponents(container).filter(
@@ -803,9 +1161,9 @@ describe('Game Server rendering', () => {
       },
     };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
-    expect(text).toContain('### • Online\n-# 3/5 players');
-    expect(text).toContain('`Unavailable`');
-    expect(text).toContain('**Current map**\n`Unknown`');
+    expect(text).toContain('• Online\n3/5 players');
+    expect(text).toContain('Unavailable');
+    expect(text).toContain('Current map: Unknown');
   });
 
   it('normalizes the location once in the header', () => {
@@ -818,7 +1176,9 @@ describe('Game Server rendering', () => {
   it.each([null, '', '   '])('uses Unknown for an unresolved map: %s', (map) => {
     expect(displayMapName(map)).toBe('Unknown');
     const view = { ...server, snapshot: { ...baseSnapshot, map } };
-    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).toContain('`Unknown`');
+    expect(textContents(firstContainer(renderGameServerCard(view, secret)))).toContain(
+      'Current map: Unknown',
+    );
   });
 
   it('normalizes workshop paths and extensions for both display and artwork', () => {
@@ -846,16 +1206,16 @@ describe('Game Server rendering', () => {
     };
     const text = textContents(firstContainer(renderGameServerCard(view, secret)));
     expect(text).toContain(map);
-    expect(text).toContain(`# ${displayName}\n`);
+    expect(text).toContain(`${displayName}\n`);
     expect(text).toContain(connectDomain);
-    expect(text).toContain('-# 16/16 players');
+    expect(text).toContain('16/16 players');
     expect(text).not.toContain('\u00a0');
   });
 
   it('keeps the fingerprint stable when only observation times change', () => {
     const view = { ...server, snapshot: { ...baseSnapshot, observedAt: new Date() } };
     expect(cardFingerprint(view)).toEqual(cardFingerprint(server));
-    expect(cardFingerprint(view).layoutVersion).toBe(19);
+    expect(cardFingerprint(view).layoutVersion).toBe(21);
   });
 
   it('resolves card-profile overrides and safely falls back from malformed persisted media', () => {
@@ -917,7 +1277,7 @@ describe('Game Server rendering', () => {
 
   it('falls back to a text dot when the configured custom status emoji is unavailable', () => {
     const text = textContents(firstContainer(renderGameServerCard(server, secret)));
-    expect(text).toContain('### • Online · Los Angeles');
+    expect(text).toContain('• Online · Los Angeles');
   });
 
   it('uses a trimmed configured description as the entire description block', () => {
@@ -1141,5 +1501,102 @@ describe('generic card line rendering', () => {
     expect(contents.every((content) => content.trim().length > 0)).toBe(true);
     expect(componentCount(container)).toBeLessThanOrEqual(40);
     expect(contents.join('')).toContain('update');
+  });
+  it('rejects rendered Containers with more than ten direct children before publication', () => {
+    const text = resolveCardLayout({}).find((element) => element.type === 'text');
+    if (!text) throw new Error('Expected text layout fixture');
+    const elements: CardLayoutElement[] = Array.from({ length: 11 }, (_, index) => ({
+      ...text,
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      label: `Line ${String(index + 1)}`,
+      template: `Line ${String(index + 1)}`,
+    }));
+    expect(() =>
+      renderGameServerCard(
+        { ...server, cardProfile: { layout: { version: 3, elements: elements.slice(0, 10) } } },
+        secret,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      renderGameServerCard(
+        { ...server, cardProfile: { layout: { version: 3, elements } } },
+        secret,
+      ),
+    ).toThrow('10 direct Container child limit');
+  });
+  it('renders legacy v2 Updates and signed actions without changing their appearance or behavior', () => {
+    const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000555');
+    if (updates.type !== 'updates') throw new Error('Expected Updates fixture');
+    const legacyUpdates = {
+      ...updates,
+      title: '**Latest Updates**',
+      showHeading: true,
+      announcements: {
+        ...updates.announcements,
+        displayLabel: '📢 **Announcements**',
+        timestampMode: 'discord_native' as const,
+        showNew: true,
+        showTimestamp: true,
+        showOpenButton: true,
+      },
+      changelog: {
+        ...updates.changelog,
+        displayLabel: '🛠 **Changelog**',
+        timestampMode: 'discord_native' as const,
+        showNew: true,
+        showTimestamp: true,
+        showOpenButton: true,
+      },
+    };
+    const legacyLayout = resolveCardLayout({});
+    const actions = legacyLayout.find((element) => element.type === 'actions');
+    if (!actions) throw new Error('Expected legacy action row');
+    const view = {
+      ...server,
+      cardProfile: {
+        buttons: { connect: true, mapRules: true, connectLabel: 'Join', mapRulesLabel: 'Rules' },
+        layout: { version: 2 as const, elements: [actions, legacyUpdates] },
+      },
+      updateThreads: [
+        {
+          type: 'ANNOUNCEMENTS' as const,
+          threadId: '123456789012345670',
+          latestMessageText: 'Announcement excerpt',
+          latestMessageAt: new Date('2026-10-10T00:00:00Z'),
+          notificationExpiresAt: new Date(Date.now() + 60_000),
+        },
+        {
+          type: 'CHANGELOG' as const,
+          threadId: '123456789012345671',
+          latestMessageText: 'Changelog excerpt',
+          latestMessageAt: new Date('2026-10-09T00:00:00Z'),
+          notificationExpiresAt: new Date(Date.now() + 60_000),
+        },
+      ],
+    };
+    const components = containerComponents(firstContainer(renderGameServerCard(view, secret)));
+    const actionRow = components[0] as { components: Array<{ customId: string; label: string }> };
+    expect(actionRow.components.map((button) => button.label)).toEqual(['Join', 'Rules']);
+    expect(
+      actionRow.components.map((button) => parseGameServerCustomId(button.customId, secret)),
+    ).toEqual([
+      { action: 'connect', value: server.id },
+      { action: 'map-rules', value: server.id },
+    ]);
+    expect(components[1]).toMatchObject({
+      type: ComponentType.TextDisplay,
+      content: '**Latest Updates**',
+    });
+    const announcement = components.find(
+      (component) =>
+        component.type === ComponentType.Section &&
+        (component.components as Array<{ content: string }>)[0]?.content.includes('Announcements'),
+    ) as { components: Array<{ content: string }>; accessory: { url: string; label: string } };
+    expect(announcement.components[0]?.content).toContain('📢 **Announcements** 🆕');
+    expect(announcement.components[1]?.content).toContain('<t:1791590400:R>');
+    expect(announcement.accessory).toMatchObject({
+      label: 'Open',
+      url: 'https://discord.com/channels/123456789012345678/123456789012345670',
+    });
   });
 });
