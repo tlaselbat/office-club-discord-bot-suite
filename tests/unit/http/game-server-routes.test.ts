@@ -96,6 +96,43 @@ function fixture() {
 }
 
 describe('Game Server configuration routes', () => {
+  it('keeps an invalid saved layout intact and offers an explicit recovery path', async () => {
+    const { app, url, shared } = fixture();
+    const saved = await shared.deps.prisma.gameServer.findFirst();
+    shared.deps.prisma.gameServer.findFirst.mockResolvedValue({
+      ...saved,
+      cardProfile: { layout: { version: 99, buttons: [], elements: [] } },
+    });
+    const response = await app.inject({ method: 'GET', url });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('data-layout-valid="false"');
+    expect(response.body).toContain('data-saved-layout-invalid="true"');
+    expect(response.body).toContain('&quot;version&quot;:99');
+    expect(response.body).toContain(
+      'Restoring defaults replaces the entire card layout and appearance',
+    );
+  });
+
+  it('preserves an invalid submitted layout so Discard can reload saved configuration', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const invalidDraft = JSON.stringify({
+      version: 3,
+      buttons: [],
+      elements: [{ id: 'bad', type: 'unknown' }],
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, layoutVersion: '3', layoutJson: invalidDraft },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('data-submitted-edits');
+    expect(response.body).toContain('data-layout-valid="false"');
+    expect(response.body).toContain('data-saved-layout-invalid="false"');
+    expect(response.body).toContain('&quot;type&quot;:&quot;unknown&quot;');
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
   it('uses cached updates safely in the preview and reports persistence separately', async () => {
     const { app, url, shared, payload, updateServer } = fixture();
     const saved = await shared.deps.prisma.gameServer.findFirst();
@@ -113,6 +150,10 @@ describe('Game Server configuration routes', () => {
     });
     const page = await app.inject({ method: 'GET', url });
     expect(page.body).toContain('data-update-threads');
+    expect(page.body).toContain('Starting example');
+    expect(page.body).toContain('Stale example');
+    expect(page.body).toContain('Widen preview');
+    expect(page.body).toContain('Show or hide card contents');
     expect(page.body).toContain('Community Updates preset');
     for (const [name] of CARD_PLACEHOLDERS) {
       expect(page.body).toContain(`value="{${name}}"`);
@@ -171,6 +212,23 @@ describe('Game Server configuration routes', () => {
       elements.map((element) => element.id),
     );
     expect(command.cardProfile.layout?.buttons.length).toBeGreaterThanOrEqual(2);
+  });
+  it('accepts restored default legacy buttons on the first edit submission', async () => {
+    const { app, url, payload, updateServer } = fixture();
+    const elements = resolveCardLayout(undefined, null);
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        ...payload,
+        showConnectButton: '1',
+        showMapRulesButton: '1',
+        layoutVersion: '3',
+        layoutJson: JSON.stringify({ version: 3, buttons: [], elements }),
+      },
+    });
+    expect(response.statusCode).toBe(303);
+    expect(updateServer).toHaveBeenCalledOnce();
   });
   it('persists and hydrates a custom Community Updates nested layout', async () => {
     const { app, url, payload, updateServer, shared } = fixture();

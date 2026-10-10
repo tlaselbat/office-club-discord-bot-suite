@@ -2,6 +2,7 @@ import { Script } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { cardLineScript } from '../../../src/http/admin/views/card-lines.js';
 import { panelScript } from '../../../src/http/admin/views/client.js';
+import { cardPreviewScript } from '../../../src/http/admin/views/card-preview.js';
 import { CARD_PLACEHOLDERS } from '../../../src/modules/game-servers/card-profile.js';
 
 describe('Game Servers designer browser script', () => {
@@ -26,5 +27,26 @@ describe('Game Servers designer browser script', () => {
     expect(cardLineScript).toContain('Clear formatting');
     expect(panelScript).toContain('applyTemplateFormatting');
     expect(panelScript).toContain('data-markdown-clear');
+  });
+
+  it('prevents partial editors and previews when layout initialization fails', () => {
+    expect(cardLineScript).toContain(
+      "if(layoutJson.dataset.layoutValid!=='true')throw new Error('Invalid layout')",
+    );
+    expect(cardLineScript).toContain('const staging=document.createElement');
+    expect(cardLineScript).toContain('layoutJson.dataset.savedLayoutInvalid');
+    expect(cardLineScript).toContain("control.value='1';control.checked=value===true");
+    expect(cardLineScript).toContain('layoutProperties.textContent=savedInvalid?');
+    expect(cardLineScript).toContain('Discard changes to reload the saved configuration.');
+  });
+
+  it('fixes the legacy toolbar selection dispatch and button style preview classes', () => {
+    expect(panelScript).toContain('const start = control.selectionStart;');
+    expect(panelScript).toContain(
+      'const selected = control.value.slice(control.selectionStart, control.selectionEnd);',
+    );
+    expect(panelScript).toContain("control.dispatchEvent(new Event('input', { bubbles: true }))");
+    expect(cardPreviewScript).toContain("preview-button-'+(button.style");
+    expect(cardPreviewScript).toContain("layoutJson?.dataset?.layoutValid === 'false'");
   });
 });

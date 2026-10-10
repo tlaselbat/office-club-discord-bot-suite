@@ -5,6 +5,14 @@ const updateCardPreview = () => {
   if (!(previewRoot instanceof HTMLElement)) return;
   const output = document.getElementById('card-preview-lines');
   if (!output) return;
+  if (layoutJson?.dataset?.layoutValid === 'false') {
+    output.replaceChildren();
+    const warning = document.createElement('p');
+    warning.className = 'warning';
+    warning.textContent = 'Preview unavailable because the layout data is invalid. Restore defaults or discard the submitted draft.';
+    output.append(warning);
+    return;
+  }
   let current = {};
   try { current = JSON.parse(previewRoot.dataset.currentValues ?? '{}'); } catch {}
   const mode = document.getElementById('card-preview-mode')?.value ?? 'current';
@@ -85,7 +93,7 @@ const updateCardPreview = () => {
     if(missing&&mode==='current')return {label:(button.label||'Button')+' · destination unavailable',missing:true};
     return {label:(button.emoji?button.emoji+' ':'')+(button.label||'Button'),missing:false};
   };
-  const previewButtonNode=(button)=>{const item=previewConfiguredButton(button);if(!item)return null;const span=document.createElement('span');span.className='preview-action'+(button.style==='primary'?'':' secondary')+(item.missing?' preview-button-missing':'');span.textContent=item.label;span.dataset.discordAccessory='Button';return span;};
+  const previewButtonNode=(button)=>{const item=previewConfiguredButton(button);if(!item)return null;const span=document.createElement('span');span.className='preview-action preview-button-'+(button.style||'secondary')+(item.missing?' preview-button-missing':'');span.textContent=item.label;span.dataset.discordAccessory='Button';return span;};
   const escapeUpdatePreview=(value)=>value.replace(/@/g,'@\u200b').replace(/([\\\x60*_{}<>\x5b\x5d()#+\-.!|>~])/g,'\\$1');
   const updateValueMap=(element)=>{
     const result={...values};

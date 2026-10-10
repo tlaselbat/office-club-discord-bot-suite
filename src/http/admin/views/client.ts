@@ -77,6 +77,8 @@ document.addEventListener('click', (event) => {
   const marker = button.dataset.markdownMarker;
   if (!marker) return;
   const status = document.getElementById(control.id + '-format-status');
+  const start = control.selectionStart;
+  const selected = control.value.slice(control.selectionStart, control.selectionEnd);
   const selectedLength = control.selectionEnd - control.selectionStart;
   const contentLength = selectedLength || 'text'.length;
   const newLength = control.value.length - selectedLength + contentLength + marker.length * 2;
