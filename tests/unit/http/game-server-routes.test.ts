@@ -309,7 +309,6 @@ describe('Game Server configuration routes', () => {
       cardProfile: unknown;
       description: string | null;
     };
-    const layout = resolveCardLayout(original.cardProfile, original.description);
     const blocks = [
       {
         id: '00000000-0000-4000-8000-000000000101',
@@ -353,7 +352,7 @@ describe('Game Server configuration routes', () => {
     ];
     const legacyUpdates = defaultUpdatesElement('00000000-0000-4000-8000-000000000100');
     if (legacyUpdates.type !== 'updates') throw new Error('Expected legacy Updates fixture');
-    const elements = [...layout.slice(0, -3), { ...legacyUpdates, blocks }];
+    const elements = [{ ...legacyUpdates, blocks }];
     const result = await app.inject({
       method: 'POST',
       url,

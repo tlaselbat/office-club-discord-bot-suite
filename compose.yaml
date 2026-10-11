@@ -18,6 +18,8 @@ services:
     build:
       context: .
       target: runtime
+      args:
+        APP_REVISION: ${APP_REVISION:-unknown}
     env_file: ${ENV_FILE:-.env}
     # The host uses systemd-resolved's loopback stub (127.0.0.53), which is
     # unreachable from this container. Use the verified LAN resolver directly

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   adminShell,
   escapeHtml,
@@ -11,6 +11,17 @@ import {
 } from '../../../src/http/admin/views.js';
 
 describe('admin views', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('shows the sanitized backend revision in the authenticated panel', () => {
+    vi.stubEnv('APP_REVISION', '8d8675cc6e2441c8a3f5d5117c920d2458de6774');
+    const html = adminShell(
+      { title: 'Edit server', username: 'owner', csrf: 'csrf', currentPath: '/admin' },
+      '<p>Settings</p>',
+    );
+    expect(html).toContain(
+      'Backend revision: <code>8d8675cc6e2441c8a3f5d5117c920d2458de6774</code>',
+    );
+  });
   it('lets the game server editor use its responsive two-column layout', () => {
     expect(panelCss).toContain(
       'form[action$="/edit"]{width:100%;max-width:none;min-width:0;display:grid',

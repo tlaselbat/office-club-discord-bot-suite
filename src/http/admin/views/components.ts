@@ -26,6 +26,10 @@ export function page(title: string, body: string): string {
 }
 
 export function adminShell(options: ShellOptions, body: string): string {
+  const configuredRevision = process.env.APP_REVISION;
+  const buildRevision = /^[0-9a-f]{40}$/i.test(configuredRevision ?? '')
+    ? (configuredRevision ?? 'unknown')
+    : 'unknown';
   const guildHeading =
     options.currentGuildId === undefined
       ? ''
@@ -36,7 +40,7 @@ export function adminShell(options: ShellOptions, body: string): string {
     options.currentPath === `/admin/guilds/${options.currentGuildId}`
       ? ''
       : `<header class="page-heading"><p>Guild administration</p><h1>${escapeHtml(activeNavLabel(options.currentPath, options.currentGuildId))}</h1></header>`;
-  const header = `<header class="site-header"><div class="brand"><p class="brand-name">Office Club owner panel</p><p>Signed in as ${escapeHtml(options.username)}</p></div><form method="post" action="/admin/logout" class="logout">${hiddenCsrf(options.csrf)}<button class="secondary">Sign out</button></form></header><nav class="module-nav" aria-label="Modules">${nav}</nav>${guildHeading}${pageHeading}`;
+  const header = `<header class="site-header"><div class="brand"><p class="brand-name">Office Club owner panel</p><p>Signed in as ${escapeHtml(options.username)}</p><small>Backend revision: <code>${buildRevision}</code></small></div><form method="post" action="/admin/logout" class="logout">${hiddenCsrf(options.csrf)}<button class="secondary">Sign out</button></form></header><nav class="module-nav" aria-label="Modules">${nav}</nav>${guildHeading}${pageHeading}`;
   return page(options.title, `${header}${body}`);
 }
 

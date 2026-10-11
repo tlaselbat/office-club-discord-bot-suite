@@ -1524,6 +1524,47 @@ describe('generic card line rendering', () => {
       ),
     ).toThrow('10 direct Container child limit');
   });
+  it('keeps saved Updates layouts valid when a thread disappears after save', () => {
+    const text = resolveCardLayout({}).find((element) => element.type === 'text');
+    if (!text) throw new Error('Expected text layout fixture');
+    const ordinaryRows: CardLayoutElement[] = Array.from({ length: 9 }, (_, index) => ({
+      ...text,
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    }));
+    const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000020');
+    if (updates.type !== 'updates') throw new Error('Expected Updates fixture');
+    const elements: CardLayoutElement[] = [
+      ...ordinaryRows,
+      {
+        ...updates,
+        blocks: [
+          {
+            id: '00000000-0000-4000-8000-000000000021',
+            type: 'feed',
+            feed: 'ANNOUNCEMENTS',
+            visible: true,
+          },
+        ],
+      },
+    ];
+    const saved = {
+      ...server,
+      cardProfile: { layout: { version: 3 as const, elements } },
+    };
+    const availableThread = {
+      type: 'ANNOUNCEMENTS' as const,
+      threadId: '123456789012345670',
+      latestMessageText: 'Latest post',
+      latestMessageAt: new Date(),
+      notificationExpiresAt: new Date(Date.now() + 60_000),
+    };
+    expect(() =>
+      renderGameServerCard({ ...saved, updateThreads: [availableThread] }, secret),
+    ).not.toThrow();
+    expect(() => renderGameServerCard({ ...saved, updateThreads: [] }, secret)).toThrow(
+      '10 direct Container child limit',
+    );
+  });
   it('renders legacy v2 Updates and signed actions without changing their appearance or behavior', () => {
     const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000555');
     if (updates.type !== 'updates') throw new Error('Expected Updates fixture');

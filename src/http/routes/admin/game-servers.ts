@@ -22,6 +22,7 @@ import {
   CARD_LINE_IDS,
   CARD_LINE_STYLES,
   cardLayoutSchema,
+  validateCardContainerBudget,
 } from '../../../modules/game-servers/card-profile.js';
 
 const optionalHttpsUrl = z
@@ -626,6 +627,9 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
               }
               const validLayout = cardLayoutSchema.safeParse(layout);
               if (validLayout.success) {
+                const containerBudgetError = validateCardContainerBudget(validLayout.data);
+                if (containerBudgetError !== null)
+                  layoutValidationMessages.push(`Card Layout: ${containerBudgetError}`);
                 layout = normalizeCardProfile({
                   layout,
                   buttons: {
@@ -710,7 +714,7 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
         });
         return reply.code(400).type('text/html').send(html);
       }
-      if (!profile.success) {
+      if (!profile.success || layoutValidationMessages.length > 0) {
         let submittedLayout: unknown = null;
         if (body.data.layoutVersion === '2' || body.data.layoutVersion === '3') {
           try {
@@ -720,10 +724,12 @@ export function registerGameServersRoutes(app: FastifyInstance, shared: SharedHe
           }
         }
         const layoutInvalid =
-          (body.data.layoutVersion === '2' || body.data.layoutVersion === '3') &&
-          !cardLayoutSchema.safeParse(submittedLayout).success;
+          ((body.data.layoutVersion === '2' || body.data.layoutVersion === '3') &&
+            !cardLayoutSchema.safeParse(submittedLayout).success) ||
+          layoutValidationMessages.length > 0;
+        const profileFieldErrors = profile.success ? {} : z.flattenError(profile.error).fieldErrors;
         const fieldErrors = {
-          ...z.flattenError(profile.error).fieldErrors,
+          ...profileFieldErrors,
           ...(layoutInvalid ? { layoutJson: layoutValidationMessages } : {}),
         };
         const html = await loadServerModel(params.data.guildId, params.data.serverId, auth, {

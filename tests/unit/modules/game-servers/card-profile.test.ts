@@ -7,17 +7,52 @@ import {
   DEFAULT_CARD_LINE_STYLES,
   DEFAULT_CARD_TEMPLATES,
   cardProfileSchema,
+  cardLayoutSchema,
   resolveCardLines,
   normalizeCardProfile,
   resolveCardLayout,
   resolveCardProfile,
   type CardLayoutElement,
   validateCardTemplate,
+  validateCardContainerBudget,
 } from '../../../../src/modules/game-servers/card-profile.js';
 
 afterEach(() => vi.unstubAllEnvs());
 
 describe('game-server card profile', () => {
+  it('budgets nested update feeds for the no-thread fallback state', () => {
+    const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000001');
+    const layout = cardLayoutSchema.parse({
+      version: 3,
+      buttons: [],
+      elements: [
+        ...Array.from({ length: 9 }, (_, index) => ({
+          id: '00000000-0000-4000-8000-' + String(index + 2).padStart(12, '0'),
+          type: 'separator',
+          label: 'Separator ' + String(index),
+          visible: true,
+          divider: true,
+          spacing: 1,
+        })),
+        {
+          ...updates,
+          blocks: [
+            {
+              id: '00000000-0000-4000-8000-000000000020',
+              type: 'feed',
+              feed: 'ANNOUNCEMENTS',
+              visible: true,
+            },
+          ],
+        },
+      ],
+    });
+    // A usable thread renders one Section (10 children total); without the
+    // thread, it can render two siblings (11). Saves budget for the maximum.
+    expect(validateCardContainerBudget(layout)).toContain(
+      'can render 11 direct Container children',
+    );
+  });
   it('normalizes legacy and malformed persisted data to safe defaults', () => {
     expect(normalizeCardProfile(undefined)).toMatchObject({
       accentColor: DEFAULT_CARD_ACCENT_COLOR,

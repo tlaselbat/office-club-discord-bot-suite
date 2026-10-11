@@ -413,6 +413,8 @@ export const cardLayoutSchema = z
     elements: z.array(cardLayoutElementSchema).min(1).max(35),
   })
   .superRefine((layout, context) => {
+    // The renderer-specific 10-child worst-case budget is checked on explicit
+    // saves so reading old persisted profiles never rewrites their appearance.
     const ids = layout.elements.map((element) => element.id);
     if (new Set(ids).size !== ids.length)
       context.addIssue({ code: 'custom', message: 'Layout element IDs must be unique.' });
@@ -509,6 +511,51 @@ export const cardLayoutSchema = z
         message: 'Visible card layout exceeds Discord’s 40 component message limit.',
       });
   });
+
+/** Maximum direct Container children across foreseeable update-thread states. */
+export function countMaximumCardContainerChildren(
+  layout: z.infer<typeof cardLayoutSchema>,
+): number {
+  return layout.elements.reduce((total, element) => {
+    if (!element.visible) return total;
+    if (element.type !== 'updates') return total + 1;
+    if (element.blocks === undefined) {
+      const visibleFeeds = [element.announcements, element.changelog].filter(
+        (feed) => feed.visible,
+      );
+      if (!visibleFeeds.length) return total;
+      return (
+        total +
+        (element.showHeading ? 1 : 0) +
+        visibleFeeds.length * 2 +
+        (visibleFeeds.length > 1 && element.separator.enabled ? 1 : 0)
+      );
+    }
+    return (
+      total +
+      element.blocks.reduce((blockCount, block) => {
+        if (!block.visible) return blockCount;
+        if (block.type === 'heading') return blockCount + (element.showHeading ? 1 : 0);
+        if (block.type === 'feed') {
+          const feed = block.feed === 'ANNOUNCEMENTS' ? element.announcements : element.changelog;
+          // A thread without a usable link renders as two siblings; with a link
+          // it renders as one Section. Budget for the larger valid state.
+          return blockCount + (feed.visible ? 2 : 0);
+        }
+        return blockCount + 1;
+      }, 0)
+    );
+  }, 0);
+}
+
+export function validateCardContainerBudget(
+  layout: z.infer<typeof cardLayoutSchema>,
+): string | null {
+  const count = countMaximumCardContainerChildren(layout);
+  return count > 10
+    ? `Card layout can render ${String(count)} direct Container children when update threads are unavailable; Discord allows at most 10.`
+    : null;
+}
 
 export function defaultUpdatesElement(id: string): CardLayoutElement {
   return {

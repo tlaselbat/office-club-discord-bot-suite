@@ -256,13 +256,13 @@ const saveLayout = () => {
       count++;
     });
   });
-  let previewThreads=[];try{previewThreads=JSON.parse(document.getElementById('card-template-preview')?.dataset.updateThreads||'[]')}catch{}
   const directChildren=elements.reduce((total,element)=>{
     if(!element.visible)return total;
-    if(element.type==='updates')return total+(element.blocks||[]).reduce((sum,block)=>{
+    if(element.type==='updates'&&!Array.isArray(element.blocks)){const feeds=[element.announcements,element.changelog].filter((feed)=>feed.visible);return total+(feeds.length?(element.showHeading?1:0)+feeds.length*2+(feeds.length>1&&element.separator.enabled?1:0):0);}
+    if(element.type==='updates')return total+element.blocks.reduce((sum,block)=>{
       if(!block.visible)return sum;
       if(block.type==='heading')return sum+(element.showHeading?1:0);
-      if(block.type==='feed'){const settings=block.feed==='ANNOUNCEMENTS'?element.announcements:element.changelog;const thread=previewThreads.find((item)=>item.type===block.feed);if(!settings.visible||(element.emptyBehavior==='hide_empty_entries'&&!thread?.latestMessageText?.trim()))return sum;const hasOpenSection=settings.showOpenButton&&/^\d{17,20}$/.test(thread?.threadId||'')&&/^\d{17,20}$/.test(document.getElementById('card-template-preview')?.dataset.guildId||'');return sum+(hasOpenSection?1:2);}
+      if(block.type==='feed'){const settings=block.feed==='ANNOUNCEMENTS'?element.announcements:element.changelog;return sum+(settings.visible?2:0);}
       return sum+1;
     },0);
     return total+1;

@@ -89,6 +89,8 @@ describe('Game Servers designer browser script', () => {
     expect(cardLineScript).toContain('const nestedId=element.dataset.previewNestedBlock');
     expect(cardLineScript).toContain('nestedBlock.scrollIntoView({block:');
     expect(cardLineScript).toContain('directChildren>10');
+    expect(cardLineScript).toContain('feeds.length*2');
+    expect(cardLineScript).toContain('settings.visible?2:0');
     expect(cardLineScript).toContain('10 direct Container children');
     expect(cardLineScript).toContain(
       'Copy Address replies privately with the server address for the user to copy.',

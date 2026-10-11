@@ -28,7 +28,9 @@ FROM build AS production-deps
 RUN pnpm prune --prod
 
 FROM node:22.19.0-alpine AS runtime
+ARG APP_REVISION=unknown
 ENV NODE_ENV=production
+ENV APP_REVISION=${APP_REVISION}
 WORKDIR /app
 RUN corepack enable && addgroup -S app && adduser -S app -G app
 COPY --from=build --chown=app:app /app/package.json /app/pnpm-lock.yaml ./
