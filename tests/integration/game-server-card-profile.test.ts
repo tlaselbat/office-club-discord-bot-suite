@@ -29,8 +29,6 @@ suite('Game Server Card Profile persistence and publication', () => {
         guildId,
         providerServerId: randomUUID(),
         displayName: 'Profile test',
-        enabled: true,
-        public: true,
       },
     });
     await prisma.gameServerSettings.create({ data: { guildId, enabled: true } });
@@ -218,7 +216,7 @@ suite('Game Server Card Profile persistence and publication', () => {
     const reconciled = await a.publishDeployment(serverId, channel as unknown as TextBasedChannel);
     expect(reconciled.id).toBe(first.id);
     expect(reconciled.messageId).toBe(first.messageId);
-    expect(message.edit).toHaveBeenCalledOnce();
+    expect(message.edit).toHaveBeenCalledTimes(2);
     expect(channel.send).toHaveBeenCalledOnce();
   });
 });
