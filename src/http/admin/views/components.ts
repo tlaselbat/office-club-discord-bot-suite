@@ -22,10 +22,14 @@ export interface ShellOptions {
 }
 
 export function page(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Office Club</title><link rel="stylesheet" href="/admin/assets/panel.css?v=game-server-editor-8"><script src="/admin/assets/panel.js?v=game-server-editor-8" defer></script></head><body><main>${body}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Office Club</title><link rel="stylesheet" href="/admin/assets/panel.css?v=game-server-editor-17"><script src="/admin/assets/panel.js?v=game-server-editor-17" defer></script></head><body><main>${body}</main></body></html>`;
 }
 
 export function adminShell(options: ShellOptions, body: string): string {
+  const configuredRevision = process.env.APP_REVISION;
+  const buildRevision = /^[0-9a-f]{40}$/i.test(configuredRevision ?? '')
+    ? (configuredRevision ?? 'unknown')
+    : 'unknown';
   const guildHeading =
     options.currentGuildId === undefined
       ? ''
@@ -36,7 +40,7 @@ export function adminShell(options: ShellOptions, body: string): string {
     options.currentPath === `/admin/guilds/${options.currentGuildId}`
       ? ''
       : `<header class="page-heading"><p>Guild administration</p><h1>${escapeHtml(activeNavLabel(options.currentPath, options.currentGuildId))}</h1></header>`;
-  const header = `<header class="site-header"><div class="brand"><p class="brand-name">Office Club owner panel</p><p>Signed in as ${escapeHtml(options.username)}</p></div><form method="post" action="/admin/logout" class="logout">${hiddenCsrf(options.csrf)}<button class="secondary">Sign out</button></form></header><nav class="module-nav" aria-label="Modules">${nav}</nav>${guildHeading}${pageHeading}`;
+  const header = `<header class="site-header"><div class="brand"><p class="brand-name">Office Club owner panel</p><p>Signed in as ${escapeHtml(options.username)}</p><small>Backend revision: <code>${buildRevision}</code></small></div><form method="post" action="/admin/logout" class="logout">${hiddenCsrf(options.csrf)}<button class="secondary">Sign out</button></form></header><nav class="module-nav" aria-label="Modules">${nav}</nav>${guildHeading}${pageHeading}`;
   return page(options.title, `${header}${body}`);
 }
 

@@ -9,6 +9,7 @@ import {
   guildIndex,
   rewardsPage,
 } from '../../../src/http/admin/views.js';
+import { cardLineScript } from '../../../src/http/admin/views/card-lines.js';
 
 describe('admin page views', () => {
   it('guild index renders module summaries safely', () => {
@@ -244,14 +245,33 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-8');
-    expect(html).toContain('panel.js?v=game-server-editor-8');
+    expect(html).toContain('panel.css?v=game-server-editor-17');
+    expect(html).toContain('panel.js?v=game-server-editor-17');
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
-    expect(html).toContain('href="#card-designer">Card Designer</a>');
+    expect(html).toContain('href="#card-designer">Card Design</a>');
+    expect(html).toContain('href="#server-settings">Server Settings</a>');
+    expect(html).toContain('href="#deployments">Publishing</a>');
+    expect(html).toContain('href="#diagnostics">Diagnostics</a>');
     expect(html).toContain('class="game-server-savebar"');
     expect(html).toContain('data-discard-server-changes');
     expect(html).toContain('id="card-layout-properties"');
     expect(html).toContain('id="card-layout-workspace"');
+    expect(html).toContain('id="card-button-library-tab"');
+    expect(html).toContain('id="card-button-library-panel"');
+    expect(html).toContain('Reusable button library');
+    expect(html).toContain('class="status-label-grid"');
+    expect(html).toContain('class="status-emoji-grid"');
+    expect(html).toContain('data-button-add');
+    expect(cardLineScript).not.toContain('data-button-field="emoji"');
+    expect(cardLineScript).toContain('Prefix custom emoji');
+    expect(html).toContain('data-add-layout="button_row"');
+    expect(cardLineScript).toContain('announcements-thread');
+    expect(cardLineScript).toContain("showPropertiesPanel('elements')");
+    expect(cardLineScript).toContain("showPropertiesPanel('buttons')");
+    expect(cardLineScript).toContain('Placed in:');
+    expect(cardLineScript).not.toContain('new Set(placed).size');
+    expect(cardLineScript).toContain('entries.sort(([left],[right])=>left.localeCompare(right))');
+    expect(cardLineScript).toContain('Copy Address');
     expect(html).toContain('data-default-layout');
     expect(html).toContain('data-map-known');
     expect(html).toContain('Inspect saved configuration');

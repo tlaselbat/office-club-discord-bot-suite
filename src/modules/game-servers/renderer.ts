@@ -7,6 +7,7 @@ import {
   StringSelectMenuBuilder,
 } from 'discord.js';
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import {
   cardAccentColor,
@@ -15,6 +16,7 @@ import {
   resolveCardProfile,
   resolveCardLayout,
   type CardLayoutElement,
+  type CardButton,
   type CardLineStyle,
 } from './card-profile.js';
 import { createGameServerCustomId } from './custom-id.js';
@@ -215,22 +217,79 @@ function renderLayoutCard(
         (element): element is Extract<CardLayoutElement, { type: 'updates' }> =>
           element.type === 'updates',
       )
-      .map((element) => [element.id, element.visible ? renderUpdatesSection(server, element) : []]),
+      .map((element) => [
+        element.id,
+        element.visible
+          ? renderUpdatesSection(server, element, values, mapImageUrl, displayMap)
+          : [],
+      ]),
   );
+  const buttons = new Map((profile.layout?.buttons ?? []).map((button) => [button.id, button]));
   for (const [index, element] of layout.entries()) {
     if (!element.visible) continue;
     if (element.type === 'text') {
-      const content = styleCardLine(resolveCardTemplate(element.template, values), element.style);
-      if (content.trim()) components.push(textDisplay(content));
-    } else if (element.type === 'section') {
-      const sectionText = styleCardLine(
-        resolveCardTemplate(element.template, values),
+      const update = resolveTextRowUpdates(server, element);
+      if (!update.visible) continue;
+      const rowValues = { ...values, ...update.values };
+      const content = styleCardLine(
+        resolveCardTemplate(element.template, rowValues),
         element.style,
       );
+      if (!content.trim()) continue;
+      const isUpdateText = Object.keys(update.values).length > 0;
+      const display = isUpdateText ? updateTextDisplay(content) : textDisplay(content);
+      const thread = element.accessory?.destination
+        ? (server.updateThreads ?? []).find((item) => item.type === element.accessory?.destination)
+        : undefined;
+      const validThread =
+        thread !== undefined &&
+        /^\d{17,20}$/.test(thread.threadId) &&
+        /^\d{17,20}$/.test(server.guildId);
+      const hasMessage = Boolean(thread?.latestMessageText?.trim());
+      const showAccessory = Boolean(
+        !element.accessoryButtonId &&
+          element.accessory?.enabled &&
+          validThread &&
+          element.accessory.visibility !== 'never' &&
+          (element.accessory.visibility !== 'message_exists' || hasMessage),
+      );
+      const configuredButton = element.accessoryButtonId
+        ? buttons.get(element.accessoryButtonId)
+        : undefined;
+      const accessoryButton = configuredButton?.visible
+        ? renderConfiguredButton(server, secret, configuredButton)
+        : null;
+      components.push(
+        accessoryButton !== null
+          ? { type: componentType.section, components: [display], accessory: accessoryButton }
+          : showAccessory
+            ? {
+                type: componentType.section,
+                components: [display],
+                accessory: {
+                  type: componentType.button,
+                  style: buttonStyle.link,
+                  label: element.accessory?.label.replace(/@/g, '@\u200b').slice(0, 80) ?? 'Open',
+                  url: `https://discord.com/channels/${server.guildId}/${thread?.threadId ?? ''}`,
+                },
+              }
+            : display,
+      );
+    } else if (element.type === 'section') {
+      const update = resolveTextRowUpdates(server, element);
+      const sectionText = styleCardLine(
+        resolveCardTemplate(element.template, { ...values, ...update.values }),
+        element.style,
+      );
+      const configuredButton = element.accessoryButtonId
+        ? buttons.get(element.accessoryButtonId)
+        : undefined;
       components.push({
         type: componentType.section,
         components: [textDisplay(sectionText)],
-        accessory: {
+        accessory: (configuredButton?.visible
+          ? renderConfiguredButton(server, secret, configuredButton)
+          : null) ?? {
           type: componentType.thumbnail,
           media: { url: element.thumbnailUrl ?? profile.thumbnailImageUrl },
         },
@@ -271,14 +330,33 @@ function renderLayoutCard(
           : []),
       ];
       if (buttons.length) components.push({ type: componentType.actionRow, components: buttons });
+    } else if (element.type === 'button_row') {
+      const rowButtons = element.buttonIds
+        .map((id) => buttons.get(id))
+        .filter((button): button is CardButton => button !== undefined && button.visible)
+        .map((button) => renderConfiguredButton(server, secret, button))
+        .filter((button): button is Record<string, unknown> => button !== null);
+      if (rowButtons.length)
+        components.push({ type: componentType.actionRow, components: rowButtons });
     } else {
       components.push(...(renderedUpdates.get(element.id) ?? []));
     }
   }
+  const withoutOrphanedSeparators = components.filter((component, index) => {
+    if (component.type !== componentType.separator) return true;
+    const before = components[index - 1];
+    const after = components[index + 1];
+    return (
+      before !== undefined &&
+      after !== undefined &&
+      before.type !== componentType.separator &&
+      after.type !== componentType.separator
+    );
+  });
   const container: Record<string, unknown> = {
     type: componentType.container,
     accentColor: cardAccentColor(profile.accentColor),
-    components,
+    components: withoutOrphanedSeparators,
   };
   validateRenderedLayout(container);
   enforceTextBudget(container);
@@ -287,6 +365,71 @@ function renderLayoutCard(
     flags: MessageFlags.IsComponentsV2 as number,
     allowedMentions: { parse: [] },
   };
+}
+
+function renderConfiguredButton(
+  server: ServerView,
+  secret: string,
+  button: CardButton,
+): Record<string, unknown> | null {
+  const customEmojiLabel = button.label.match(/^(<a?:[A-Za-z0-9_]{2,32}:\d{17,20}>)\s*(.*)$/);
+  const labelText = customEmojiLabel?.[2] ?? button.label;
+  const label = labelText.replace(/@/g, '@\u200b').slice(0, 80);
+  const emoji = customEmojiLabel
+    ? parseButtonEmoji(customEmojiLabel[1] ?? '')
+    : button.emoji
+      ? parseButtonEmoji(button.emoji)
+      : undefined;
+  const link =
+    button.action === 'external-https-url'
+      ? button.destination
+      : button.action === 'announcements-thread' || button.action === 'changelog-thread'
+        ? (() => {
+            const kind = button.action === 'announcements-thread' ? 'ANNOUNCEMENTS' : 'CHANGELOG';
+            const thread = (server.updateThreads ?? []).find((item) => item.type === kind);
+            return thread &&
+              /^\d{17,20}$/.test(thread.threadId) &&
+              /^\d{17,20}$/.test(server.guildId)
+              ? `https://discord.com/channels/${server.guildId}/${thread.threadId}`
+              : null;
+          })()
+        : null;
+  if (link)
+    return {
+      type: componentType.button,
+      style: buttonStyle.link,
+      ...(label ? { label } : {}),
+      ...(emoji ? { emoji } : {}),
+      url: link,
+    };
+  if (
+    button.action === 'external-https-url' ||
+    button.action === 'announcements-thread' ||
+    button.action === 'changelog-thread'
+  )
+    return null;
+  const action = button.action;
+  return {
+    type: componentType.button,
+    style: buttonStyle[button.style],
+    ...(label ? { label } : {}),
+    ...(emoji ? { emoji } : {}),
+    customId: createGameServerCustomId(
+      {
+        action,
+        value: server.id,
+        name: createHash('sha256').update(button.id).digest('base64url').slice(0, 8),
+      },
+      secret,
+    ),
+  };
+}
+
+function parseButtonEmoji(value: string): Record<string, unknown> | undefined {
+  const custom = value.match(/^<(a?):([A-Za-z0-9_]{2,32}):(\d{17,20})>$/);
+  if (custom) return { animated: custom[1] === 'a', name: custom[2], id: custom[3] };
+  if (value.startsWith('<')) return undefined;
+  return { name: value };
 }
 
 function validateRenderedLayout(container: Record<string, unknown>): void {
@@ -300,6 +443,8 @@ function validateRenderedLayout(container: Record<string, unknown>): void {
     (node.accessory === undefined ? 0 : count(node.accessory as Record<string, unknown>));
   if (count(container) > 40)
     throw new Error('Card layout exceeds Discord’s 40 component message limit.');
+  if (children.length > 10)
+    throw new Error('Card layout exceeds Discord’s 10 direct Container child limit.');
   for (const child of children) {
     if (child.type === componentType.section) {
       const content = child.components as Record<string, unknown>[];
@@ -419,7 +564,7 @@ export function cardFingerprint(server: ServerView): CardFingerprint {
   const displayMap = displayMapName(map);
   const profile = resolveCardProfile(server.cardProfile);
   return {
-    layoutVersion: 19,
+    layoutVersion: 21,
     accentColor: cardAccentColor(profile.accentColor),
     displayName: server.displayName,
     status: configuredStatusLabel(snapshot, profile),
@@ -452,9 +597,31 @@ export function hasFreshUpdate(thread: UpdateThreadView, now = new Date()): bool
   );
 }
 
+export function formatRelativeUpdateTimestamp(value: Date, now = new Date()): string {
+  if (Number.isNaN(value.getTime())) return '';
+  const seconds = (value.getTime() - now.getTime()) / 1000;
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['year', 31_536_000],
+    ['month', 2_592_000],
+    ['week', 604_800],
+    ['day', 86_400],
+    ['hour', 3_600],
+    ['minute', 60],
+    ['second', 1],
+  ];
+  const [unit, size] = units.find(([, size]) => Math.abs(seconds) >= size) ?? ['second', 1];
+  return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(
+    Math.round(seconds / size),
+    unit,
+  );
+}
+
 function renderUpdatesSection(
   server: ServerView,
   element: Extract<CardLayoutElement, { type: 'updates' }>,
+  values: Record<string, string>,
+  mapImageUrl: string,
+  displayMap: string,
 ): Record<string, unknown>[] {
   const threads = new Map((server.updateThreads ?? []).map((thread) => [thread.type, thread]));
   const renderFeed = (
@@ -465,11 +632,19 @@ function renderUpdatesSection(
     const thread = threads.get(type);
     const source = thread?.latestMessageText?.trim() ?? '';
     if (element.emptyBehavior === 'hide_empty_entries' && !source) return null;
-    const latest = source.slice(0, settings.latestMessageLength).replace(/@/g, '@\u200b');
+    const latest = source
+      ? escapeUpdateMarkdown(source.slice(0, settings.latestMessageLength))
+      : '';
     const safe = (text: string) => text.replace(/@/g, '@\u200b');
-    const title = `${safe(settings.displayLabel)}${thread !== undefined && hasFreshUpdate(thread) ? ' 🆕' : ''}`;
+    const title = `${safe(settings.displayLabel)}${settings.showNew && thread !== undefined && hasFreshUpdate(thread) ? ' 🆕' : ''}`;
+    const timestamp =
+      settings.showTimestamp && thread?.latestMessageAt
+        ? settings.timestampMode === 'discord_native'
+          ? `<t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>`
+          : formatRelativeUpdateTimestamp(thread.latestMessageAt)
+        : '';
     const detail = latest
-      ? `${latest}${settings.showTimestamp && thread?.latestMessageAt ? `\n-# <t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>` : ''}`
+      ? `${latest}${timestamp ? `\n${timestamp}` : ''}`
       : safe(settings.emptyPlaceholder);
     const titleDisplay = updateTextDisplay(
       styleCardLine(title, updateLineStyle(settings.textStyle)),
@@ -494,6 +669,75 @@ function renderUpdatesSection(
         ]
       : [titleDisplay, summaryDisplay];
   };
+  if (element.blocks !== undefined) {
+    const components: Record<string, unknown>[] = [];
+    const feedsByType = new Map([
+      ['ANNOUNCEMENTS', renderFeed('ANNOUNCEMENTS', element.announcements)],
+      ['CHANGELOG', renderFeed('CHANGELOG', element.changelog)],
+    ]);
+    for (const block of element.blocks) {
+      if (!block.visible) continue;
+      if (block.type === 'heading') {
+        if (element.showHeading)
+          components.push(
+            updateTextDisplay(
+              styleCardLine(
+                element.title.replace(/@/g, '@\u200b'),
+                updateLineStyle(element.headingStyle),
+              ),
+            ),
+          );
+      } else if (block.type === 'feed') {
+        components.push(...(feedsByType.get(block.feed) ?? []));
+      } else if (block.type === 'text') {
+        const updateValues = resolveTextRowUpdates(server, {
+          id: block.id,
+          type: 'section',
+          label: 'Updates text',
+          visible: true,
+          template: block.template,
+          style: block.style,
+          timestampMode: block.timestampMode,
+          thumbnailUrl: null,
+        }).values;
+        const content = styleCardLine(
+          resolveCardTemplate(block.template, { ...values, ...updateValues }),
+          block.style,
+        );
+        if (content.trim()) components.push(updateTextDisplay(content));
+      } else if (block.type === 'separator') {
+        components.push({
+          type: componentType.separator,
+          divider: block.divider,
+          spacing: block.spacing,
+        });
+      } else {
+        const items = block.items.map((item) => ({
+          media: {
+            url:
+              item.source === 'map'
+                ? mapImageUrl
+                : item.source === 'fallback'
+                  ? resolveMapImageUrl(null, null)
+                  : (item.url ?? resolveMapImageUrl(null, null)),
+          },
+          description: resolveCardTemplate(item.description || `${displayMap} map artwork`, values),
+        }));
+        components.push({ type: componentType.mediaGallery, items });
+      }
+    }
+    return components.filter((part, index) => {
+      if (part.type !== componentType.separator) return true;
+      const before = components[index - 1];
+      const after = components[index + 1];
+      return (
+        before !== undefined &&
+        after !== undefined &&
+        before.type !== componentType.separator &&
+        after.type !== componentType.separator
+      );
+    });
+  }
   const feeds = element.feedOrder
     .map((type) =>
       renderFeed(type, type === 'ANNOUNCEMENTS' ? element.announcements : element.changelog),
@@ -601,14 +845,89 @@ export function cardPlaceholderValues(
   };
 }
 
+function resolveTextRowUpdates(
+  server: ServerView,
+  element: Extract<CardLayoutElement, { type: 'text' | 'section' }>,
+): { visible: boolean; values: Record<string, string> } {
+  const threads = new Map((server.updateThreads ?? []).map((thread) => [thread.type, thread]));
+  const source =
+    element.type === 'text'
+      ? (element.conditionalVisibility?.source ?? 'ANNOUNCEMENTS')
+      : 'ANNOUNCEMENTS';
+  const conditionThread = threads.get(source);
+  const conditionHasMessage = Boolean(conditionThread?.latestMessageText?.trim());
+  const mode =
+    element.type === 'text' ? (element.conditionalVisibility?.mode ?? 'always') : 'always';
+  if (mode === 'thread_exists' && !conditionThread) return { visible: false, values: {} };
+  if (mode === 'message_exists' && !conditionHasMessage) return { visible: false, values: {} };
+  if (
+    mode === 'any_update_visible' &&
+    ![...threads.values()].some((thread) => thread.latestMessageText?.trim())
+  )
+    return { visible: false, values: {} };
+
+  const usesUpdateTokens = /\{(?:announcements|changelog)\.(?:preview|time|new|url)\}/i.test(
+    element.template,
+  );
+  if (!usesUpdateTokens) return { visible: true, values: {} };
+  const max = element.type === 'text' ? (element.previewLength ?? 140) : 140;
+  const selectedSource = source;
+  const selectedThread = threads.get(selectedSource);
+  if (
+    element.type === 'text' &&
+    element.emptyBehavior === 'hide' &&
+    !selectedThread?.latestMessageText?.trim()
+  )
+    return { visible: false, values: {} };
+  const tokenValues: Record<string, string> = {};
+  for (const selectedFeed of ['ANNOUNCEMENTS', 'CHANGELOG'] as const) {
+    const thread = threads.get(selectedFeed);
+    const rawText = thread?.latestMessageText?.trim() ?? '';
+    const excerpt = rawText
+      ? escapeUpdateMarkdown(truncateUpdateExcerpt(rawText, max))
+      : element.type === 'text' && element.emptyBehavior === 'fallback'
+        ? selectedFeed === selectedSource
+          ? escapeUpdateMarkdown(element.emptyText ?? 'No updates yet.')
+          : ''
+        : '';
+    const safeUrl =
+      thread && /^\d{17,20}$/.test(thread.threadId) && /^\d{17,20}$/.test(server.guildId)
+        ? `https://discord.com/channels/${server.guildId}/${thread.threadId}`
+        : '';
+    const prefix = selectedFeed === 'ANNOUNCEMENTS' ? 'announcements' : 'changelog';
+    tokenValues[`${prefix}.preview`] = excerpt;
+    tokenValues[`${prefix}.time`] = thread?.latestMessageAt
+      ? element.timestampMode === 'discord_native'
+        ? `<t:${String(Math.floor(thread.latestMessageAt.getTime() / 1000))}:R>`
+        : formatRelativeUpdateTimestamp(thread.latestMessageAt)
+      : '';
+    tokenValues[`${prefix}.new`] = thread && hasFreshUpdate(thread) ? '🆕' : '';
+    tokenValues[`${prefix}.url`] = safeUrl;
+  }
+  return { visible: true, values: tokenValues };
+}
+
+function escapeUpdateMarkdown(value: string): string {
+  return value.replace(/@/g, '@\u200b').replace(/([\\\x60*_{}<>\x5b\x5d()#+\-.!|>~])/g, '\\$1');
+}
+
+function truncateUpdateExcerpt(value: string, max: number): string {
+  const normalized = value.replace(/\r\n?/g, '\n').replace(/\s+/g, ' ').trim();
+  return normalized.length > max ? `${normalized.slice(0, Math.max(0, max - 1))}…` : normalized;
+}
+
 export function resolveCardTemplate(template: string, values: Record<string, string>): string {
   const withoutMissingLocationSeparator = values.location
     ? template
     : template.replace(/\s?[·|]\s*\{location\}/gi, '');
-  return withoutMissingLocationSeparator.replace(/\{([^{}]+)\}/g, (_match, rawName: string) => {
+  const withoutMissingUpdateTimestamp = withoutMissingLocationSeparator.replace(
+    /\r?\n(?:-#\s*)?\{(announcements|changelog)\.time\}/gi,
+    (match, feed: string) => (values[`${feed.toLowerCase()}.time`] ? match : ''),
+  );
+  return withoutMissingUpdateTimestamp.replace(/\{([^{}]+)\}/g, (_match, rawName: string) => {
     const value = values[rawName.toLowerCase()] ?? '';
     // Telemetry and configured text must never trigger Discord mentions.
-    return value.replace(/@/g, '@\u200b').replace(/`/g, '\\`');
+    return value.replace(/@(?!\u200b)/g, '@\u200b').replace(/`/g, '\\`');
   });
 }
 
