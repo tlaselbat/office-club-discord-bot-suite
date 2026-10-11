@@ -350,6 +350,9 @@ suite('Game Server Card Profile persistence and publication', () => {
     expect(message.edit).toHaveBeenCalledTimes(2);
     expect(channel.send).toHaveBeenCalledOnce();
 
+    const configurationBeforeFailure = await other.gameServer.findUniqueOrThrow({
+      where: { id: serverId },
+    });
     message.edit.mockRejectedValueOnce(new Error('synthetic Discord edit failure'));
     await expect(
       a.publishDeployment(serverId, channel as unknown as TextBasedChannel),
@@ -361,8 +364,6 @@ suite('Game Server Card Profile persistence and publication', () => {
     expect(failedCard.state).toBe('ERROR');
     expect(failedCard.lastError).toContain('synthetic Discord edit failure');
     const afterFailure = await other.gameServer.findUniqueOrThrow({ where: { id: serverId } });
-    expect(afterFailure.cardProfile).toEqual(
-      (await prisma.gameServer.findUniqueOrThrow({ where: { id: serverId } })).cardProfile,
-    );
+    expect(afterFailure.cardProfile).toEqual(configurationBeforeFailure.cardProfile);
   });
 });
