@@ -259,6 +259,17 @@ describe('Game Server rendering', () => {
     }
   });
 
+  it('formats relative update timestamps deterministically at unit boundaries', () => {
+    const now = new Date('2026-10-11T12:00:00.000Z');
+    expect(formatRelativeUpdateTimestamp(new Date('2026-10-11T11:59:00.000Z'), now)).toBe(
+      '1 minute ago',
+    );
+    expect(formatRelativeUpdateTimestamp(new Date('2026-10-04T12:00:00.000Z'), now)).toBe(
+      'last week',
+    );
+    expect(formatRelativeUpdateTimestamp(new Date('invalid'), now)).toBe('');
+  });
+
   it('hides update-only rows and removes their orphan separators when a feed is empty', () => {
     const elements = [
       {
@@ -344,51 +355,55 @@ describe('Game Server rendering', () => {
   ])(
     'renders cached messages and fallback text in reusable feed rows (%s, %s)',
     (announcements, changelog) => {
-      const postedAt = new Date('2026-10-04T12:00:00Z');
-      const views: UpdateThreadView[] = (['ANNOUNCEMENTS', 'CHANGELOG'] as const).map(
-        (type, index) => ({
-          type,
-          threadId: String(100000000000000010n + BigInt(index)),
-          latestMessageText: (index === 0 ? announcements : changelog) ? `${type} update` : null,
-          latestMessageAt: (index === 0 ? announcements : changelog) ? postedAt : null,
-          notificationExpiresAt: null,
-        }),
-      );
-      const container = firstContainer(
-        renderGameServerCard({ ...server, updateThreads: views }, secret),
-      );
-      const components = containerComponents(container);
-      const sections = components.filter(
-        (component) =>
-          component.type === ComponentType.Section &&
-          (component.accessory as { label?: string } | undefined)?.label === 'Open',
-      );
-      expect(sections).toHaveLength(2);
-      expect(
-        sections.map((section) => (section.components as { content: string }[])[0]?.content),
-      ).toEqual([
-        expect.stringContaining(announcements ? 'ANNOUNCEMENTS update' : 'No announcements yet'),
-        expect.stringContaining(changelog ? 'CHANGELOG update' : 'No changelog entries yet'),
-      ]);
-      expect(sections.every((section) => (section.components as unknown[]).length === 1)).toBe(
-        true,
-      );
-      expect(
-        components.some(
-          (component) =>
-            component.type === ComponentType.TextDisplay &&
-            String(component.content).includes('Latest Updates'),
-        ),
-      ).toBe(false);
-      if (announcements || changelog)
-        expect(textContents(container)).toMatch(
-          /\d+ (second|minute|hour|day|week|month|year)s? ago/,
+      // Freeze the observation date so the seven-day relative timestamp is stable.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-10-11T12:00:00.000Z'));
+        const postedAt = new Date('2026-10-04T12:00:00Z');
+        const views: UpdateThreadView[] = (['ANNOUNCEMENTS', 'CHANGELOG'] as const).map(
+          (type, index) => ({
+            type,
+            threadId: String(100000000000000010n + BigInt(index)),
+            latestMessageText: (index === 0 ? announcements : changelog) ? `${type} update` : null,
+            latestMessageAt: (index === 0 ? announcements : changelog) ? postedAt : null,
+            notificationExpiresAt: null,
+          }),
         );
-      expect(textContents(container)).not.toContain('<t:');
-      const client = new Client({ intents: [] });
-      const api = client.options.jsonTransformer?.(container) as APIContainerComponent;
-      expect(() => new ContainerBuilder(api).toJSON()).not.toThrow();
-      expect(componentCount(container)).toBeLessThanOrEqual(40);
+        const container = firstContainer(
+          renderGameServerCard({ ...server, updateThreads: views }, secret),
+        );
+        const components = containerComponents(container);
+        const sections = components.filter(
+          (component) =>
+            component.type === ComponentType.Section &&
+            (component.accessory as { label?: string } | undefined)?.label === 'Open',
+        );
+        expect(sections).toHaveLength(2);
+        expect(
+          sections.map((section) => (section.components as { content: string }[])[0]?.content),
+        ).toEqual([
+          expect.stringContaining(announcements ? 'ANNOUNCEMENTS update' : 'No announcements yet'),
+          expect.stringContaining(changelog ? 'CHANGELOG update' : 'No changelog entries yet'),
+        ]);
+        expect(sections.every((section) => (section.components as unknown[]).length === 1)).toBe(
+          true,
+        );
+        expect(
+          components.some(
+            (component) =>
+              component.type === ComponentType.TextDisplay &&
+              String(component.content).includes('Latest Updates'),
+          ),
+        ).toBe(false);
+        if (announcements || changelog) expect(textContents(container)).toContain('last week');
+        expect(textContents(container)).not.toContain('<t:');
+        const client = new Client({ intents: [] });
+        const api = client.options.jsonTransformer?.(container) as APIContainerComponent;
+        expect(() => new ContainerBuilder(api).toJSON()).not.toThrow();
+        expect(componentCount(container)).toBeLessThanOrEqual(40);
+      } finally {
+        vi.useRealTimers();
+      }
     },
   );
 
