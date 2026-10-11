@@ -319,7 +319,7 @@ suite('Game Server Card Profile persistence and publication', () => {
     expect(sentPayload).toContain('Persisted changelog excerpt');
     expect(sentPayload).toContain('https://discord.com/channels/');
     expect(sentPayload).toContain('52345678901234567');
-    const customIds = [...sentPayload.matchAll(/"custom_id":"([^"]+)"/g)].flatMap((match) =>
+    const customIds = [...sentPayload.matchAll(/"customId":"([^"]+)"/g)].flatMap((match) =>
       match[1] === undefined ? [] : [match[1]],
     );
     expect(customIds.length).toBeGreaterThan(0);
