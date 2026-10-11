@@ -52,9 +52,8 @@ suite('Game Server Card Profile persistence and publication', () => {
       prisma,
       discord: {} as never,
       dathost: {} as never,
-      cardService: {} as never,
+      cardService: new GameServerCardService(prisma, {} as Client, 'test-secret'),
     });
-    const realUpdate = vi.spyOn(admin, 'updateServer');
     const app = Fastify();
     const guild = {
       name: 'Database acceptance',
@@ -103,13 +102,6 @@ suite('Game Server Card Profile persistence and publication', () => {
           mapRulesButtonLabel: 'Rules',
         },
       });
-      if (response.statusCode !== 303) {
-        const updateResult = realUpdate.mock.results[0];
-        if (updateResult?.type === 'return')
-          await updateResult.value.catch((error: unknown) => {
-            throw error;
-          });
-      }
       expect(response.statusCode, response.body).toBe(303);
       expect(response.headers.location).toContain('?saved=1#card-designer');
       const saved = await other.gameServer.findUniqueOrThrow({ where: { id: serverId } });
