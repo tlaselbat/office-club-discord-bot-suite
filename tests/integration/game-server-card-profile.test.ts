@@ -33,6 +33,7 @@ suite('Game Server Card Profile persistence and publication', () => {
         public: true,
       },
     });
+    await prisma.gameServerSettings.create({ data: { guildId, enabled: true } });
   });
   afterAll(async () => {
     const cards = await prisma?.gameServerCard.findMany({
@@ -92,8 +93,6 @@ suite('Game Server Card Profile persistence and publication', () => {
           csrf: 'test-csrf',
           version: '0',
           displayName: 'Profile test saved',
-          enabled: '1',
-          public: '1',
           sortOrder: '0',
           accentColor: '#123456',
           layoutVersion: '3',
@@ -185,6 +184,10 @@ suite('Game Server Card Profile persistence and publication', () => {
 
   it('publishes one message for simultaneous requests from independent clients', async () => {
     if (prisma === null || other === null) throw new Error('TEST_DATABASE_URL required');
+    await prisma.gameServer.update({
+      where: { id: serverId },
+      data: { enabled: true, public: true },
+    });
     const message = {
       id: '42345678901234567',
       author: { id: 'bot' },
