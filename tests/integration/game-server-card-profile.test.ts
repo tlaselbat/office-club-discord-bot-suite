@@ -24,7 +24,14 @@ suite('Game Server Card Profile persistence and publication', () => {
     if (prisma === null) throw new Error('TEST_DATABASE_URL required');
     await prisma.guildSettings.create({ data: { guildId } });
     await prisma.gameServer.create({
-      data: { id: serverId, guildId, providerServerId: randomUUID(), displayName: 'Profile test' },
+      data: {
+        id: serverId,
+        guildId,
+        providerServerId: randomUUID(),
+        displayName: 'Profile test',
+        enabled: true,
+        public: true,
+      },
     });
   });
   afterAll(async () => {
@@ -85,6 +92,8 @@ suite('Game Server Card Profile persistence and publication', () => {
           csrf: 'test-csrf',
           version: '0',
           displayName: 'Profile test saved',
+          enabled: '1',
+          public: '1',
           sortOrder: '0',
           accentColor: '#123456',
           layoutVersion: '3',
@@ -94,7 +103,7 @@ suite('Game Server Card Profile persistence and publication', () => {
           mapRulesButtonLabel: 'Rules',
         },
       });
-      expect(response.statusCode).toBe(303);
+      expect(response.statusCode, response.body).toBe(303);
       expect(response.headers.location).toContain('?saved=1#card-designer');
       const saved = await other.gameServer.findUniqueOrThrow({ where: { id: serverId } });
       expect(saved.version).toBe(1);
