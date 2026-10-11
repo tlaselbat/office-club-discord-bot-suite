@@ -106,7 +106,7 @@ suite('Game Server Card Profile persistence and publication', () => {
       if (response.statusCode !== 303) {
         const updateResult = realUpdate.mock.results[0];
         if (updateResult?.type === 'return')
-          await (updateResult.value as Promise<void>).catch((error: unknown) => {
+          await updateResult.value.catch((error: unknown) => {
             throw error;
           });
       }
