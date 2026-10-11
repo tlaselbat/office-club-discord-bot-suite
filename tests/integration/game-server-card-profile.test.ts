@@ -6,8 +6,12 @@ import { createPrismaClient } from '../../src/database/prisma.js';
 import { registerGameServersRoutes } from '../../src/http/routes/admin/game-servers.js';
 import type { SharedHelpers } from '../../src/http/routes/admin/shared.js';
 import { GameServerCardService } from '../../src/modules/game-servers/card-service.js';
+import { parseGameServerCustomId } from '../../src/modules/game-servers/custom-id.js';
 import { GameServerAdminService } from '../../src/modules/game-servers/services/game-server-admin-service.js';
-import { resolveCardProfile } from '../../src/modules/game-servers/card-profile.js';
+import {
+  defaultUpdatesElement,
+  resolveCardProfile,
+} from '../../src/modules/game-servers/card-profile.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const suite = describe.skipIf(databaseUrl === undefined);
@@ -72,9 +76,47 @@ suite('Game Server Card Profile persistence and publication', () => {
     };
     registerGameServersRoutes(app, shared as unknown as SharedHelpers);
     try {
+      const connectButtonId = '00000000-0000-4000-8000-000000000711';
+      const copyButtonId = '00000000-0000-4000-8000-000000000712';
+      const changelogButtonId = '00000000-0000-4000-8000-000000000713';
+      const updates = defaultUpdatesElement('00000000-0000-4000-8000-000000000714') as Extract<
+        ReturnType<typeof defaultUpdatesElement>,
+        { type: 'updates' }
+      >;
+      updates.showHeading = true;
+      updates.title = 'Saved Updates heading';
+      updates.emptyBehavior = 'hide_empty_entries';
       const layout = {
         version: 3,
-        buttons: [],
+        buttons: [
+          {
+            id: connectButtonId,
+            label: 'Join server',
+            emoji: null,
+            style: 'primary',
+            action: 'connect',
+            destination: null,
+            visible: true,
+          },
+          {
+            id: copyButtonId,
+            label: 'Copy address',
+            emoji: null,
+            style: 'secondary',
+            action: 'copy-address',
+            destination: null,
+            visible: true,
+          },
+          {
+            id: changelogButtonId,
+            label: 'Changelog thread',
+            emoji: null,
+            style: 'link',
+            action: 'changelog-thread',
+            destination: null,
+            visible: true,
+          },
+        ],
         elements: [
           {
             id: '00000000-0000-4000-8000-000000000701',
@@ -84,6 +126,28 @@ suite('Game Server Card Profile persistence and publication', () => {
             visible: true,
             style: 'normal',
           },
+          {
+            id: '00000000-0000-4000-8000-000000000715',
+            type: 'gallery',
+            label: 'Hidden gallery',
+            visible: false,
+            items: [
+              {
+                id: '00000000-0000-4000-8000-000000000716',
+                source: 'custom',
+                url: 'https://example.com/card.png',
+                description: 'Hidden gallery item',
+              },
+            ],
+          },
+          {
+            id: '00000000-0000-4000-8000-000000000717',
+            type: 'button_row',
+            label: 'Reusable controls',
+            visible: true,
+            buttonIds: [connectButtonId, copyButtonId, changelogButtonId],
+          },
+          updates,
         ],
       };
       const response = await app.inject({
@@ -110,7 +174,31 @@ suite('Game Server Card Profile persistence and publication', () => {
       expect(resolveCardProfile(saved.cardProfile)).toMatchObject({
         accentColor: '#123456',
         buttons: { connect: false, mapRules: true, mapRulesLabel: 'Rules' },
-        layout: { version: 3, elements: [{ template: 'Saved through the real route' }] },
+        layout: {
+          version: 3,
+          elements: [
+            {
+              id: '00000000-0000-4000-8000-000000000701',
+              template: 'Saved through the real route',
+            },
+            { id: '00000000-0000-4000-8000-000000000715', visible: false },
+            {
+              id: '00000000-0000-4000-8000-000000000717',
+              buttonIds: [connectButtonId, copyButtonId, changelogButtonId],
+            },
+            {
+              id: '00000000-0000-4000-8000-000000000714',
+              title: 'Saved Updates heading',
+              showHeading: true,
+              emptyBehavior: 'hide_empty_entries',
+            },
+          ],
+          buttons: [
+            { id: connectButtonId, label: 'Join server' },
+            { id: copyButtonId, action: 'copy-address' },
+            { id: changelogButtonId, action: 'changelog-thread' },
+          ],
+        },
       });
       const reloadedPage = await app.inject({
         method: 'GET',
@@ -188,6 +276,18 @@ suite('Game Server Card Profile persistence and publication', () => {
       where: { id: serverId },
       data: { enabled: true, public: true },
     });
+    await prisma.gameServerUpdateThread.create({
+      data: {
+        guildId,
+        gameServerId: serverId,
+        type: 'CHANGELOG',
+        threadId: '52345678901234567',
+        parentChannelId: '32345678901234567',
+        latestMessageId: '62345678901234567',
+        latestMessageText: 'Persisted changelog excerpt',
+        latestMessageAt: new Date('2026-10-10T00:00:00Z'),
+      },
+    });
     const message = {
       id: '42345678901234567',
       author: { id: 'bot' },
@@ -215,10 +315,54 @@ suite('Game Server Card Profile persistence and publication', () => {
     expect(first.messageId).toBe(message.id);
     expect(channel.send).toHaveBeenCalledOnce();
     expect(await prisma.gameServerCard.count({ where: { gameServerId: serverId } })).toBe(1);
+    const sentPayload = JSON.stringify(channel.send.mock.calls[0]?.[0]);
+    expect(sentPayload).toContain('Persisted changelog excerpt');
+    expect(sentPayload).toContain('https://discord.com/channels/');
+    expect(sentPayload).toContain('52345678901234567');
+    const customIds = [...sentPayload.matchAll(/"custom_id":"([^"]+)"/g)].flatMap((match) =>
+      match[1] === undefined ? [] : [match[1]],
+    );
+    expect(customIds.length).toBeGreaterThan(0);
+    expect(customIds.map((id) => parseGameServerCustomId(id, 'test-secret').action)).toContain(
+      'connect',
+    );
+    expect(customIds.map((id) => parseGameServerCustomId(id, 'test-secret').action)).toContain(
+      'copy-address',
+    );
+
+    const beforeConfigChange = await other.gameServer.findUniqueOrThrow({
+      where: { id: serverId },
+    });
+    const persistedProfile = resolveCardProfile(beforeConfigChange.cardProfile);
+    await prisma.gameServer.update({
+      where: { id: serverId },
+      data: {
+        version: { increment: 1 },
+        cardProfile: {
+          ...persistedProfile,
+          accentColor: '#abcdef',
+        },
+      },
+    });
     const reconciled = await a.publishDeployment(serverId, channel as unknown as TextBasedChannel);
     expect(reconciled.id).toBe(first.id);
     expect(reconciled.messageId).toBe(first.messageId);
     expect(message.edit).toHaveBeenCalledTimes(2);
     expect(channel.send).toHaveBeenCalledOnce();
+
+    message.edit.mockRejectedValueOnce(new Error('synthetic Discord edit failure'));
+    await expect(
+      a.publishDeployment(serverId, channel as unknown as TextBasedChannel),
+    ).rejects.toThrow('synthetic Discord edit failure');
+    const failedCard = await other.gameServerCard.findFirstOrThrow({
+      where: { gameServerId: serverId },
+    });
+    expect(failedCard.messageId).toBe(message.id);
+    expect(failedCard.state).toBe('ERROR');
+    expect(failedCard.lastError).toContain('synthetic Discord edit failure');
+    const afterFailure = await other.gameServer.findUniqueOrThrow({ where: { id: serverId } });
+    expect(afterFailure.cardProfile).toEqual(
+      (await prisma.gameServer.findUniqueOrThrow({ where: { id: serverId } })).cardProfile,
+    );
   });
 });
