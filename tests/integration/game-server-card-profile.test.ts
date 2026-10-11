@@ -54,6 +54,7 @@ suite('Game Server Card Profile persistence and publication', () => {
       dathost: {} as never,
       cardService: {} as never,
     });
+    const realUpdate = vi.spyOn(admin, 'updateServer');
     const app = Fastify();
     const guild = {
       name: 'Database acceptance',
@@ -102,6 +103,13 @@ suite('Game Server Card Profile persistence and publication', () => {
           mapRulesButtonLabel: 'Rules',
         },
       });
+      if (response.statusCode !== 303) {
+        const updateResult = realUpdate.mock.results[0];
+        if (updateResult?.type === 'return')
+          await (updateResult.value as Promise<void>).catch((error: unknown) => {
+            throw error;
+          });
+      }
       expect(response.statusCode, response.body).toBe(303);
       expect(response.headers.location).toContain('?saved=1#card-designer');
       const saved = await other.gameServer.findUniqueOrThrow({ where: { id: serverId } });
