@@ -29,6 +29,8 @@ suite('Game Server Card Profile persistence and publication', () => {
         guildId,
         providerServerId: randomUUID(),
         displayName: 'Profile test',
+        enabled: false,
+        public: false,
       },
     });
     await prisma.gameServerSettings.create({ data: { guildId, enabled: true } });
