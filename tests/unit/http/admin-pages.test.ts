@@ -224,7 +224,7 @@ describe('admin page views', () => {
         hostname: 'Office CS2',
         rawIp: '127.0.0.1',
         port: 27015,
-        map: 'de_dust2',
+        map: '<img src=x onerror=alert(1)>',
         players: 2,
         maxPlayers: 10,
         datacenter: 'LA',
@@ -242,6 +242,11 @@ describe('admin page views', () => {
       },
     });
     expect(html).toContain('Gameplay state');
+    expect(html).toMatch(/<span>Last success<\/span><strong><time\b/);
+    expect(html).toContain('<dt>Last successful</dt><dd><time');
+    expect(html).not.toContain('&lt;time');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toContain('<img src=x');
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');

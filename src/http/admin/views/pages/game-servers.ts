@@ -464,11 +464,12 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
             snapshot.lastSuccessfulAt === null
               ? 'Never'
               : formatTimestamp(snapshot.lastSuccessfulAt),
+            snapshot.lastSuccessfulAt !== null,
           ],
         ]
           .map(
-            ([label, text]) =>
-              `<div><span>${escapeHtml(label ?? '')}</span><strong>${escapeHtml(text ?? '')}</strong></div>`,
+            ([label, text, formatted]) =>
+              `<div><span>${escapeHtml(label ?? '')}</span><strong>${formatted ? String(text ?? '') : escapeHtml(text ?? '')}</strong></div>`,
           )
           .join(
             '',
