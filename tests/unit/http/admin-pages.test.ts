@@ -7,9 +7,12 @@ import {
   gameServersPage,
   generalPage,
   guildIndex,
+  panelCss,
+  panelScript,
   rewardsPage,
 } from '../../../src/http/admin/views.js';
 import { cardLineScript } from '../../../src/http/admin/views/card-lines.js';
+import { assetContentVersion } from '../../../src/http/admin/views/asset-version.js';
 
 describe('admin page views', () => {
   it('guild index renders module summaries safely', () => {
@@ -390,8 +393,8 @@ describe('admin page views', () => {
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-17');
-    expect(html).toContain('panel.js?v=game-server-editor-17');
+    expect(html).toContain(`/admin/assets/panel.css?v=${assetContentVersion(panelCss)}`);
+    expect(html).toContain(`/admin/assets/panel.js?v=${assetContentVersion(panelScript)}`);
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
     expect(html).toContain('href="#card-designer">Card Design</a>');
     expect(html).toContain('href="#server-settings">Server Settings</a>');
