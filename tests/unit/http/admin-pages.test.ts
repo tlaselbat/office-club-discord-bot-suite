@@ -185,6 +185,146 @@ describe('admin page views', () => {
     expect(html).toContain('id="gameServerId-selected-value"');
   });
 
+  it.each([
+    {
+      name: 'Connect and Copy Address placements in order',
+      buttonIds: ['00000000-0000-4000-8000-000000000102', '00000000-0000-4000-8000-000000000101'],
+    },
+    {
+      name: 'Copy Address as the only reusable placement',
+      buttonIds: ['00000000-0000-4000-8000-000000000101'],
+    },
+  ])('renders version 3 $name unchanged in browser layoutJson', ({ buttonIds }) => {
+    const copyId = '00000000-0000-4000-8000-000000000101';
+    const connectId = '00000000-0000-4000-8000-000000000102';
+    const layout = {
+      version: 3,
+      buttons: [
+        {
+          id: copyId,
+          label: 'Copy Address',
+          emoji: null,
+          style: 'secondary',
+          action: 'copy-address',
+          destination: null,
+          visible: false,
+        },
+        {
+          id: connectId,
+          label: 'Connect',
+          emoji: null,
+          style: 'primary',
+          action: 'connect',
+          destination: null,
+          visible: true,
+        },
+      ],
+      elements: [
+        {
+          id: '00000000-0000-4000-8000-000000000103',
+          type: 'actions',
+          label: 'Legacy actions',
+          visible: true,
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000104',
+          type: 'button_row',
+          label: 'Custom buttons',
+          visible: true,
+          buttonIds,
+        },
+      ],
+    };
+    const html = gameServerEditPage({
+      guildId: '12345678901234567',
+      guildName: 'Office',
+      username: 'owner',
+      csrf: 'csrf-token',
+      server: {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        displayName: 'Office CS2',
+        description: null,
+        enabled: true,
+        public: true,
+        connectDomain: null,
+        joinUrl: null,
+        imageUrl: null,
+        sortOrder: 0,
+        provider: 'dathost',
+        providerServerId: 'server',
+        version: 1,
+        cardProfile: { layout, buttons: { connect: false, mapRules: false } },
+      },
+      textChannels: [],
+      cards: [],
+    });
+    const escapedLayout = html.match(/id="card-layout-json"[^>]*value="([^"]*)"/)?.[1];
+    expect(escapedLayout).toBeDefined();
+    const browserLayout = JSON.parse(
+      (escapedLayout ?? '').replaceAll('&quot;', '"'),
+    ) as typeof layout;
+    expect(browserLayout).toEqual(layout);
+    expect(browserLayout.elements[0]).toMatchObject({ type: 'actions', visible: true });
+    expect(browserLayout.elements[1]).toMatchObject({ type: 'button_row', buttonIds });
+    expect(
+      browserLayout.buttons.map(({ id, action, visible }) => ({ id, action, visible })),
+    ).toEqual([
+      { id: copyId, action: 'copy-address', visible: false },
+      { id: connectId, action: 'connect', visible: true },
+    ]);
+  });
+
+  it.each([1, 2])('keeps legacy version %i action conversion in browser layoutJson', (version) => {
+    const html = gameServerEditPage({
+      guildId: '12345678901234567',
+      guildName: 'Office',
+      username: 'owner',
+      csrf: 'csrf-token',
+      server: {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        displayName: 'Office CS2',
+        description: null,
+        enabled: true,
+        public: true,
+        connectDomain: null,
+        joinUrl: null,
+        imageUrl: null,
+        sortOrder: 0,
+        provider: 'dathost',
+        providerServerId: 'server',
+        version: 1,
+        cardProfile: {
+          layout: {
+            version,
+            buttons: [],
+            elements: [
+              {
+                id: '00000000-0000-4000-8000-000000000103',
+                type: 'actions',
+                label: 'Legacy actions',
+                visible: true,
+              },
+            ],
+          },
+          buttons: { connect: true, mapRules: true },
+        },
+      },
+      textChannels: [],
+      cards: [],
+    });
+    const escapedLayout = html.match(/id="card-layout-json"[^>]*value="([^"]*)"/)?.[1];
+    expect(escapedLayout).toBeDefined();
+    const browserLayout = JSON.parse((escapedLayout ?? '').replaceAll('&quot;', '"')) as {
+      version: number;
+      buttons: Array<{ action: string }>;
+      elements: Array<{ type: string; buttonIds?: string[] }>;
+    };
+    expect(browserLayout.version).toBe(3);
+    expect(browserLayout.elements[0]?.type).toBe('button_row');
+    expect(browserLayout.elements[0]?.buttonIds).toHaveLength(2);
+    expect(browserLayout.buttons.map(({ action }) => action)).toEqual(['connect', 'map-rules']);
+  });
+
   it('server details render persisted live state and independent display actions', () => {
     const html = gameServerEditPage({
       guildId: '12345678901234567',
