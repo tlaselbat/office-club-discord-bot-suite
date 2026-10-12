@@ -385,20 +385,26 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
         }
       : element,
   );
+  const rawLayoutVersion =
+    rawSavedLayout !== null && typeof rawSavedLayout === 'object'
+      ? (rawSavedLayout as { version?: unknown }).version
+      : undefined;
   const editorLayout = savedLayout.map((element) =>
-    element.type === 'actions' && layoutButtons.length > 0
-      ? {
-          id: element.id,
-          type: 'button_row' as const,
-          label: element.label,
-          visible: element.visible,
-          buttonIds: layoutButtons
-            .filter((button) => button.action === 'connect' || button.action === 'map-rules')
-            .map((button) => button.id),
-        }
-      : element.type === 'actions'
-        ? { ...element, visible: false }
-        : element,
+    element.type === 'actions' && rawLayoutVersion === 3
+      ? element
+      : element.type === 'actions' && layoutButtons.length > 0
+        ? {
+            id: element.id,
+            type: 'button_row' as const,
+            label: element.label,
+            visible: element.visible,
+            buttonIds: layoutButtons
+              .filter((button) => button.action === 'connect' || button.action === 'map-rules')
+              .map((button) => button.id),
+          }
+        : element.type === 'actions'
+          ? { ...element, visible: false }
+          : element,
   );
   const legacyUpdatesWarning = savedLayout.some((element) => element.type === 'updates')
     ? '<div class="notice warning">This saved Community Updates layout exceeds the automatic migration size. Its settings are preserved in compatibility mode. Reduce the number of card elements, then save to convert it to independent text rows.</div>'
@@ -464,11 +470,12 @@ export function gameServerEditPage(model: GameServerEditPageModel): string {
             snapshot.lastSuccessfulAt === null
               ? 'Never'
               : formatTimestamp(snapshot.lastSuccessfulAt),
+            snapshot.lastSuccessfulAt !== null,
           ],
         ]
           .map(
-            ([label, text]) =>
-              `<div><span>${escapeHtml(label ?? '')}</span><strong>${escapeHtml(text ?? '')}</strong></div>`,
+            ([label, text, formatted]) =>
+              `<div><span>${escapeHtml(label ?? '')}</span><strong>${formatted ? String(text ?? '') : escapeHtml(text ?? '')}</strong></div>`,
           )
           .join(
             '',

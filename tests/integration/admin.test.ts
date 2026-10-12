@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHttpServer } from '../../src/http/server.js';
 import type { AdminRoutesDependencies } from '../../src/http/routes/admin.js';
 import { sessionCookieName } from '../../src/http/admin/security.js';
+import { panelCss, panelScript } from '../../src/http/admin/views.js';
+import { assetContentVersion } from '../../src/http/admin/views/asset-version.js';
 
 const servers: Awaited<ReturnType<typeof createHttpServer>>[] = [];
 afterEach(async () => Promise.all(servers.map(async (server) => server.close())));
@@ -24,6 +26,42 @@ function adminDependencies(): AdminRoutesDependencies {
 }
 
 describe('owner panel', () => {
+  it('serves immutable content-versioned assets with matching validators', async () => {
+    const server = await createHttpServer({
+      logger: pino({ enabled: false }),
+      readiness: () => Promise.resolve(true),
+      admin: adminDependencies(),
+    });
+    servers.push(server);
+
+    for (const [basePath, contentType, expectedBody] of [
+      ['/admin/assets/panel.js', 'text/javascript', panelScript],
+      ['/admin/assets/panel.css', 'text/css', panelCss],
+    ] as const) {
+      const versionedPath = `${basePath}?v=${assetContentVersion(expectedBody)}`;
+      const path = `${basePath}?v=old-build`;
+      const versioned = await server.inject({ method: 'GET', url: versionedPath });
+      expect(versioned.statusCode).toBe(200);
+      expect(versioned.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+      expect(versioned.body).toBe(expectedBody);
+
+      const response = await server.inject({ method: 'GET', url: path });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['cache-control']).toBe('public, max-age=0, must-revalidate');
+      expect(response.headers.etag).toBeTruthy();
+      expect(response.headers['content-type']).toContain(contentType);
+      expect(response.body).toBe(expectedBody);
+
+      const cached = await server.inject({
+        method: 'GET',
+        url: path,
+        headers: { 'if-none-match': String(response.headers.etag) },
+      });
+      expect(cached.statusCode).toBe(304);
+      expect(cached.body).toBe('');
+    }
+  });
+
   it('redirects anonymous users and prevents indexing', async () => {
     const server = await createHttpServer({
       logger: pino({ enabled: false }),

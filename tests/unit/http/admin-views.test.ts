@@ -5,10 +5,12 @@ import {
   guildIndex,
   multiSelect,
   panelCss,
+  panelScript,
   rewardsPage,
   select,
   table,
 } from '../../../src/http/admin/views.js';
+import { assetContentVersion } from '../../../src/http/admin/views/asset-version.js';
 
 describe('admin views', () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -30,6 +32,19 @@ describe('admin views', () => {
       '@media(max-width:800px){form[action$="/edit"]{grid-template-columns:minmax(0,1fr)}',
     );
     expect(panelCss).toContain('.game-server-section-nav a[aria-current="location"]');
+  });
+
+  it('versions admin assets by content so changed builds receive new URLs', () => {
+    const html = adminShell(
+      { title: 'Edit server', username: 'owner', csrf: 'csrf', currentPath: '/admin' },
+      '<p>Settings</p>',
+    );
+    expect(html).toContain(`/admin/assets/panel.js?v=${assetContentVersion(panelScript)}`);
+    expect(html).toContain(`/admin/assets/panel.css?v=${assetContentVersion(panelCss)}`);
+    expect(assetContentVersion(`${panelScript}\nchanged`)).not.toBe(
+      assetContentVersion(panelScript),
+    );
+    expect(assetContentVersion(`${panelCss}\nchanged`)).not.toBe(assetContentVersion(panelCss));
   });
 
   it('marks only the current module in guild navigation', () => {

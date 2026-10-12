@@ -498,6 +498,51 @@ describe('generic card line contract', () => {
     ).toBe(false);
   });
 
+  it('keeps version 3 action and custom button row placements authoritative on normalization', () => {
+    const copyId = '00000000-0000-4000-8000-000000000101';
+    const connectId = '00000000-0000-4000-8000-000000000102';
+    const layout = {
+      version: 3 as const,
+      buttons: [
+        {
+          id: copyId,
+          label: 'Copy Address',
+          emoji: null,
+          style: 'secondary' as const,
+          action: 'copy-address' as const,
+          destination: null,
+          visible: true,
+        },
+        {
+          id: connectId,
+          label: 'Connect',
+          emoji: null,
+          style: 'primary' as const,
+          action: 'connect' as const,
+          destination: null,
+          visible: true,
+        },
+      ],
+      elements: [
+        {
+          id: '00000000-0000-4000-8000-000000000103',
+          type: 'actions' as const,
+          label: 'Legacy action placement',
+          visible: true,
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000104',
+          type: 'button_row' as const,
+          label: 'Reusable buttons',
+          visible: true,
+          buttonIds: [connectId, copyId],
+        },
+      ],
+    };
+
+    expect(normalizeCardProfile({ layout }).layout).toEqual(layout);
+  });
+
   it('defaults all new card lines and generated Updates rows to plain formatting', () => {
     expect(DEFAULT_CARD_LINE_STYLES).toEqual({
       title: 'normal',

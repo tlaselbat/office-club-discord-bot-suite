@@ -7,9 +7,12 @@ import {
   gameServersPage,
   generalPage,
   guildIndex,
+  panelCss,
+  panelScript,
   rewardsPage,
 } from '../../../src/http/admin/views.js';
 import { cardLineScript } from '../../../src/http/admin/views/card-lines.js';
+import { assetContentVersion } from '../../../src/http/admin/views/asset-version.js';
 
 describe('admin page views', () => {
   it('guild index renders module summaries safely', () => {
@@ -185,6 +188,146 @@ describe('admin page views', () => {
     expect(html).toContain('id="gameServerId-selected-value"');
   });
 
+  it.each([
+    {
+      name: 'Connect and Copy Address placements in order',
+      buttonIds: ['00000000-0000-4000-8000-000000000102', '00000000-0000-4000-8000-000000000101'],
+    },
+    {
+      name: 'Copy Address as the only reusable placement',
+      buttonIds: ['00000000-0000-4000-8000-000000000101'],
+    },
+  ])('renders version 3 $name unchanged in browser layoutJson', ({ buttonIds }) => {
+    const copyId = '00000000-0000-4000-8000-000000000101';
+    const connectId = '00000000-0000-4000-8000-000000000102';
+    const layout = {
+      version: 3,
+      buttons: [
+        {
+          id: copyId,
+          label: 'Copy Address',
+          emoji: null,
+          style: 'secondary',
+          action: 'copy-address',
+          destination: null,
+          visible: false,
+        },
+        {
+          id: connectId,
+          label: 'Connect',
+          emoji: null,
+          style: 'primary',
+          action: 'connect',
+          destination: null,
+          visible: true,
+        },
+      ],
+      elements: [
+        {
+          id: '00000000-0000-4000-8000-000000000103',
+          type: 'actions',
+          label: 'Legacy actions',
+          visible: true,
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000104',
+          type: 'button_row',
+          label: 'Custom buttons',
+          visible: true,
+          buttonIds,
+        },
+      ],
+    };
+    const html = gameServerEditPage({
+      guildId: '12345678901234567',
+      guildName: 'Office',
+      username: 'owner',
+      csrf: 'csrf-token',
+      server: {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        displayName: 'Office CS2',
+        description: null,
+        enabled: true,
+        public: true,
+        connectDomain: null,
+        joinUrl: null,
+        imageUrl: null,
+        sortOrder: 0,
+        provider: 'dathost',
+        providerServerId: 'server',
+        version: 1,
+        cardProfile: { layout, buttons: { connect: false, mapRules: false } },
+      },
+      textChannels: [],
+      cards: [],
+    });
+    const escapedLayout = html.match(/id="card-layout-json"[^>]*value="([^"]*)"/)?.[1];
+    expect(escapedLayout).toBeDefined();
+    const browserLayout = JSON.parse(
+      (escapedLayout ?? '').replaceAll('&quot;', '"'),
+    ) as typeof layout;
+    expect(browserLayout).toEqual(layout);
+    expect(browserLayout.elements[0]).toMatchObject({ type: 'actions', visible: true });
+    expect(browserLayout.elements[1]).toMatchObject({ type: 'button_row', buttonIds });
+    expect(
+      browserLayout.buttons.map(({ id, action, visible }) => ({ id, action, visible })),
+    ).toEqual([
+      { id: copyId, action: 'copy-address', visible: false },
+      { id: connectId, action: 'connect', visible: true },
+    ]);
+  });
+
+  it.each([1, 2])('keeps legacy version %i action conversion in browser layoutJson', (version) => {
+    const html = gameServerEditPage({
+      guildId: '12345678901234567',
+      guildName: 'Office',
+      username: 'owner',
+      csrf: 'csrf-token',
+      server: {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        displayName: 'Office CS2',
+        description: null,
+        enabled: true,
+        public: true,
+        connectDomain: null,
+        joinUrl: null,
+        imageUrl: null,
+        sortOrder: 0,
+        provider: 'dathost',
+        providerServerId: 'server',
+        version: 1,
+        cardProfile: {
+          layout: {
+            version,
+            buttons: [],
+            elements: [
+              {
+                id: '00000000-0000-4000-8000-000000000103',
+                type: 'actions',
+                label: 'Legacy actions',
+                visible: true,
+              },
+            ],
+          },
+          buttons: { connect: true, mapRules: true },
+        },
+      },
+      textChannels: [],
+      cards: [],
+    });
+    const escapedLayout = html.match(/id="card-layout-json"[^>]*value="([^"]*)"/)?.[1];
+    expect(escapedLayout).toBeDefined();
+    const browserLayout = JSON.parse((escapedLayout ?? '').replaceAll('&quot;', '"')) as {
+      version: number;
+      buttons: Array<{ action: string }>;
+      elements: Array<{ type: string; buttonIds?: string[] }>;
+    };
+    expect(browserLayout.version).toBe(3);
+    expect(browserLayout.elements[0]?.type).toBe('button_row');
+    expect(browserLayout.elements[0]?.buttonIds).toHaveLength(2);
+    expect(browserLayout.buttons.map(({ action }) => action)).toEqual(['connect', 'map-rules']);
+  });
+
   it('server details render persisted live state and independent display actions', () => {
     const html = gameServerEditPage({
       guildId: '12345678901234567',
@@ -224,7 +367,7 @@ describe('admin page views', () => {
         hostname: 'Office CS2',
         rawIp: '127.0.0.1',
         port: 27015,
-        map: 'de_dust2',
+        map: '<img src=x onerror=alert(1)>',
         players: 2,
         maxPlayers: 10,
         datacenter: 'LA',
@@ -242,11 +385,16 @@ describe('admin page views', () => {
       },
     });
     expect(html).toContain('Gameplay state');
+    expect(html).toMatch(/<span>Last success<\/span><strong><time\b/);
+    expect(html).toContain('<dt>Last successful</dt><dd><time');
+    expect(html).not.toContain('&lt;time');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toContain('<img src=x');
     expect(html).toContain('Open in Discord');
     expect(html).toContain('Refresh / Repair');
     expect(html).toContain('aria-label="Configuration sections"');
-    expect(html).toContain('panel.css?v=game-server-editor-17');
-    expect(html).toContain('panel.js?v=game-server-editor-17');
+    expect(html).toContain(`/admin/assets/panel.css?v=${assetContentVersion(panelCss)}`);
+    expect(html).toContain(`/admin/assets/panel.js?v=${assetContentVersion(panelScript)}`);
     expect(html).toContain('</fieldset>\n<aside id="card-template-preview"');
     expect(html).toContain('href="#card-designer">Card Design</a>');
     expect(html).toContain('href="#server-settings">Server Settings</a>');

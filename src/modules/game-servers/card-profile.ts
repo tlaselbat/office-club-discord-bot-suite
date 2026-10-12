@@ -1040,7 +1040,11 @@ export function normalizeCardProfile(value: unknown): CardProfile {
                     if (value === null || typeof value !== 'object' || Array.isArray(value))
                       return value;
                     const element = value as Record<string, unknown>;
-                    if (element.type !== 'actions') return element;
+                    // Version 3 layouts are authoritative: a saved action element
+                    // must not be rewritten from the legacy button toggles. In
+                    // v1/v2 those fields are the only source for action placements.
+                    if (element.type !== 'actions' || raw.version === CARD_LAYOUT_VERSION)
+                      return element;
                     const buttonIds = ['connect', 'map-rules']
                       .map((action) => buttonsByAction.get(action))
                       .filter((id): id is string => typeof id === 'string');

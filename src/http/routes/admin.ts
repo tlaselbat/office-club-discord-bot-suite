@@ -21,6 +21,19 @@ import { registerGameServersRoutes } from './admin/game-servers.js';
 import { registerRewardsRoutes } from './admin/rewards.js';
 import { registerAuditRoutes } from './admin/audit.js';
 import { createSharedHelpers, idSchema, type AdminRoutesDependencies } from './admin/shared.js';
+import { assetContentVersion } from '../admin/views/asset-version.js';
+
+const panelCssEtag = `"${assetContentVersion(panelCss)}"`;
+const panelScriptEtag = `"${assetContentVersion(panelScript)}"`;
+const staticAssetCacheControl = 'public, max-age=31536000, immutable';
+const unversionedAssetCacheControl = 'public, max-age=0, must-revalidate';
+
+function assetCacheControl(requestUrl: string, contentVersion: string): string {
+  const requestedVersion = new URL(requestUrl, 'http://localhost').searchParams.get('v');
+  return requestedVersion === contentVersion
+    ? staticAssetCacheControl
+    : unversionedAssetCacheControl;
+}
 
 export type { AdminRoutesDependencies } from './admin/shared.js';
 
@@ -38,12 +51,20 @@ export function registerAdminRoutes(
   const secureCookie = { secure: true, httpOnly: true, sameSite: 'lax' as const, path: '/admin' };
   const shared = createSharedHelpers(dependencies);
 
-  app.get('/admin/assets/panel.css', (_request, reply) =>
-    reply.header('cache-control', 'public, max-age=3600').type('text/css').send(panelCss),
-  );
-  app.get('/admin/assets/panel.js', (_request, reply) =>
-    reply.header('cache-control', 'public, max-age=3600').type('text/javascript').send(panelScript),
-  );
+  app.get('/admin/assets/panel.css', (request, reply) => {
+    reply
+      .header('cache-control', assetCacheControl(request.url, panelCssEtag.slice(1, -1)))
+      .header('etag', panelCssEtag);
+    if (request.headers['if-none-match'] === panelCssEtag) return reply.code(304).send();
+    return reply.type('text/css').send(panelCss);
+  });
+  app.get('/admin/assets/panel.js', (request, reply) => {
+    reply
+      .header('cache-control', assetCacheControl(request.url, panelScriptEtag.slice(1, -1)))
+      .header('etag', panelScriptEtag);
+    if (request.headers['if-none-match'] === panelScriptEtag) return reply.code(304).send();
+    return reply.type('text/javascript').send(panelScript);
+  });
 
   app.get('/admin/login', async (_request, reply) => {
     shared.headers(reply);
